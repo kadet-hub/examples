@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Usage: ./dry-run [CRD_DIR] [MANIFEST_DIR]
+# Starts etcd and kube-apiserver on 127.0.0.1, installs the CRDs and sends
+# every manifest as a server-side dry run. Needs etcd, kube-apiserver,
+# kubectl, openssl and curl on PATH.
+set -euo pipefail
+
+crds=${1:-crds}
+manifests=${2:-manifests}
+start=${EPOCHREALTIME/./}
+tmp=$(mktemp -d)
+pids=()
+cleanup() {
+  kill -9 "${pids[@]}" 2>/dev/null || true
+  wait 2>/dev/null || true
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
+
+openssl ecparam -name prime256v1 -genkey -noout -out "$tmp/sa.key" 2>/dev/null
+token=$(openssl rand -hex 16)
+echo "$token,ci,ci,system:masters" >"$tmp/tokens.csv"
+
+etcd --data-dir "$tmp/etcd" --unsafe-no-fsync \
+  --listen-client-urls http://127.0.0.1:2379 --advertise-client-urls http://127.0.0.1:2379 \
+  --listen-peer-urls http://127.0.0.1:2380 >"$tmp/etcd.log" 2>&1 &
+pids+=($!)
+
+# Admission plugins that look up other objects are off: nothing is persisted,
+# so a Pod's namespace, service account or priority class never exists.
+kube-apiserver --etcd-servers http://127.0.0.1:2379 \
+  --bind-address 127.0.0.1 --advertise-address 127.0.0.1 --secure-port 6443 \
+  --endpoint-reconciler-type none --cert-dir "$tmp" \
+  --token-auth-file "$tmp/tokens.csv" --authorization-mode AlwaysAllow --allow-privileged \
+  --service-account-issuer https://kubernetes.default.svc \
+  --service-account-key-file "$tmp/sa.key" --service-account-signing-key-file "$tmp/sa.key" \
+  --service-cluster-ip-range 10.96.0.0/12 \
+  --disable-admission-plugins NamespaceLifecycle,PodSecurity,ServiceAccount,Priority,RuntimeClass \
+  >"$tmp/apiserver.log" 2>&1 &
+pids+=($!)
+
+for _ in $(seq 120); do
+  if [ -f "$tmp/apiserver.crt" ] && curl -fsS --cacert "$tmp/apiserver.crt" \
+    -H "Authorization: Bearer $token" https://127.0.0.1:6443/readyz >/dev/null 2>&1; then
+    break
+  fi
+  for p in "${pids[@]}"; do kill -0 "$p" 2>/dev/null || break 2; done
+  sleep 0.5
+done
+if ! curl -fsS --cacert "$tmp/apiserver.crt" -H "Authorization: Bearer $token" \
+  https://127.0.0.1:6443/readyz >/dev/null 2>&1; then
+  echo "kube-apiserver did not become ready" >&2
+  tail -n 20 "$tmp/etcd.log" "$tmp/apiserver.log" >&2
+  exit 1
+fi
+elapsed() { local ms=$(((${EPOCHREALTIME/./} - start) / 1000)); printf '%d.%02d' $((ms / 1000)) $((ms % 1000 / 10)); }
+echo "kube-apiserver ready after $(elapsed) s"
+
+k() {
+  kubectl --server https://127.0.0.1:6443 --token "$token" \
+    --certificate-authority "$tmp/apiserver.crt" --cache-dir "$tmp/kubectl" "$@"
+}
+
+if [ -d "$crds" ]; then
+  k create -f "$crds" >/dev/null
+  k wait --for condition=Established crd --all --timeout 60s
+fi
+
+rc=0
+while IFS= read -r f; do
+  k apply --dry-run=server -f "$f" || rc=1
+done < <(find "$manifests" -name '*.yaml' -o -name '*.yml' -o -name '*.json' | sort)
+
+echo "total $(elapsed) s"
+exit $rc

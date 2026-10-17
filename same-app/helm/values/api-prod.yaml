@@ -1,0 +1,10 @@
+image:
+  tag: 1.9.1
+replicas: 2
+config:
+  log_level: info
+  web_url: http://web.shop.svc:80
+resources:
+  requests: {cpu: 500m, memory: 512Mi}
+  limits: {memory: 1Gi}
+pdbMinAvailable: 1

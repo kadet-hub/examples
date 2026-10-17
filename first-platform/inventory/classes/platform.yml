@@ -1,0 +1,27 @@
+# Cluster-wide pieces: a private CA, Let's Encrypt, the Argo CD project.
+parameters:
+  generators:
+    certmanager:
+      ca_issuers:
+        internal-ca:
+          common_name: ${env} internal root CA
+      clusterissuers:
+        letsencrypt:
+          letsencrypt: ${letsencrypt}
+          email: platform@example.com
+          http01_ingress_class: cilium
+    argocd:
+      projects:
+        platform:
+          source_repos: [https://git.example.com/platform/deploy.git]
+          destinations:
+            - namespace: shop
+              server: https://kubernetes.default.svc
+      applications:
+        shop:
+          project: platform
+          destination: shop
+          source:
+            repoURL: https://git.example.com/platform/deploy.git
+            targetRevision: main
+            path: compiled/${env}/apps

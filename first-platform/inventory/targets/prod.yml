@@ -1,0 +1,11 @@
+classes: [generators, platform, shop]
+parameters:
+  kapitan:
+    vars: {target: prod}
+  env: prod
+  letsencrypt: production
+  hostname: shop.example.com
+  replicas: 3
+  components:
+    web:
+      pdb_min_available: 2

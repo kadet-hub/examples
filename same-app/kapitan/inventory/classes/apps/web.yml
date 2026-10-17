@@ -1,0 +1,21 @@
+parameters:
+  components:
+    web:
+      image: ghcr.io/example/web:${web_tag}
+      ports:
+        http:
+          container_port: 8080
+          service_port: 80
+      healthcheck:
+        readiness:
+          type: http
+          port: http
+          path: /ready
+      config_maps:
+        config:
+          mount: /etc/web
+          data:
+            log_level:
+              value: ${log_level}
+      service:
+        type: ClusterIP

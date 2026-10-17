@@ -1,0 +1,21 @@
+# kadet-hub generators, pinned by version and digest (index serial 47).
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/cilium:1.0.3@sha256:8cee8be098798642199063b8afa5e5bbf8d717b0426df280dd718d998e116635
+        output_path: lib/cilium
+      - type: oci
+        source: ghcr.io/kadet-hub/certmanager:1.0.2@sha256:ba7632e9e06a593fbe20e9fa6774139203d7df65992adff9db94779606888ad9
+        output_path: lib/certmanager
+      - type: oci
+        source: ghcr.io/kadet-hub/argocd:1.0.3@sha256:49804acaf225b3337a63ec95ae3ba001a98c53e342791e1c2b1b6ed3089638d4
+        output_path: lib/argocd
+      - type: oci
+        source: ghcr.io/kadet-hub/kubernetes:1.2.0@sha256:52017626e77dd5bf7293ce465ff0c3dc7a61dae1ae8353a56a53ffebe1bfb67c
+        output_path: lib/kubernetes
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/kubernetes], output_path: apps/}
+      - {input_type: kadet, output_type: yml, input_paths: [lib/cilium], output_path: cilium/}
+      - {input_type: kadet, output_type: yml, input_paths: [lib/certmanager], output_path: cert-manager/}
+      - {input_type: kadet, output_type: yml, input_paths: [lib/argocd], output_path: argocd/}

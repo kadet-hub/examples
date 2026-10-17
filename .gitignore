@@ -1,0 +1,7 @@
+.venv/
+lib/
+compiled/
+.work/
+bin/
+dl/
+!/config-tools/tanka/lib/

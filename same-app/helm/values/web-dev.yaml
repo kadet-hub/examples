@@ -1,0 +1,8 @@
+image:
+  tag: 1.5.0-rc.1
+replicas: 1
+config:
+  log_level: debug
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {memory: 128Mi}

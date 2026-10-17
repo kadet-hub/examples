@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Renders the app with Helm, Kustomize and Kapitan and exits 0 only if all
+# three produce the same manifests for each environment.
+# Needs helm, kustomize, uv; on first run also gh and oras to fetch the generator.
+set -euo pipefail
+cd "$(dirname "$0")"
+out=$(mktemp -d)
+trap 'rm -rf -- "$out"' EXIT
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+
+# Fetch the pinned kadet-hub generator: check its attestation, then pull by digest.
+if [[ ! -d kapitan/lib/kubernetes ]]; then
+  src=$(grep -o 'ghcr.io/kadet-hub/kubernetes:[^ ]*' kapitan/inventory/classes/common.yml)
+  ref=${src%%:*}@${src#*@}
+  gh attestation verify "oci://$ref" --owner kadet-hub \
+    --cert-identity https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main >/dev/null
+  oras pull -o "$out/oci" "$ref" >/dev/null
+  mkdir -p kapitan/lib/kubernetes
+  tar -xf "$out/oci/kubernetes.tar" -C kapitan/lib/kubernetes
+fi
+
+(cd kapitan && "${py[@]}" kapitan compile --output-path "$out" >"$out/kapitan.log" 2>&1) \
+  || { cat "$out/kapitan.log"; exit 1; }
+
+# One document per object, sorted by kind/namespace/name, keys sorted. The
+# managed-by label names the tool (Helm vs kapitan) and is dropped.
+normalize() {
+  "${py[@]}" python -I -c '
+import sys, yaml
+def strip(o):
+    if isinstance(o, dict):
+        o.pop("app.kubernetes.io/managed-by", None)
+        for v in o.values(): strip(v)
+    elif isinstance(o, list):
+        for v in o: strip(v)
+docs = [d for d in yaml.safe_load_all(sys.stdin) if d]
+for d in docs: strip(d)
+docs.sort(key=lambda d: (d["kind"], d["metadata"].get("namespace", ""), d["metadata"]["name"]))
+sys.stdout.write(yaml.safe_dump_all(docs, sort_keys=True))
+'
+}
+
+status=0
+for env in dev prod; do
+  for app in helm/values/*-"$env".yaml; do
+    name=$(basename "$app" "-$env.yaml")
+    helm template "$name" helm/app -n shop -f "helm/values/$name.yaml" -f "$app"
+    echo ---
+  done | normalize >"$out/$env.helm"
+  kustomize build "kustomize/overlays/$env" | normalize >"$out/$env.kustomize"
+  find "$out/compiled/$env/manifests" -name '*.yaml' -exec sh -c 'cat "$1"; echo ---' _ {} \; \
+    | normalize >"$out/$env.kapitan"
+  for tool in helm kustomize; do
+    if diff -u "$out/$env.kapitan" "$out/$env.$tool"; then
+      echo "$env: $tool = kapitan ($(grep -c '^kind:' "$out/$env.$tool") objects)"
+    else
+      status=1
+    fi
+  done
+done
+exit $status

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Usage: ./verify <generator> <version> [min-serial]
+# Verifies the latest signed kadet-hub index, the version's digest in it and
+# the digest's attestations, then checks that forged inputs are rejected.
+# Needs gh (logged in), jq and sha256sum. Exits non-zero on any failure.
+set -euo pipefail
+
+name=${1:?usage: verify <generator> <version> [min-serial]}
+version=${2:?usage: verify <generator> <version> [min-serial]}
+min_serial=${3:-0}
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+
+dir=$(mktemp -d)
+trap 'rm -rf "$dir"' EXIT
+cd "$dir"
+
+verify() { gh attestation verify "$@" --cert-identity "$id" --format json; }
+must_fail() {
+  local what=$1; shift
+  if "$@" >/dev/null 2>&1; then echo "FAIL: accepted $what" >&2; exit 1; fi
+  echo "rejected as expected: $what"
+}
+
+# 1. The index: the latest index-<serial> release and its Sigstore bundle.
+gh release download --repo kadet-hub/registry --pattern 'index.json*'
+verify index.json --bundle index.json.sigstore.json --owner kadet-hub \
+  | jq -r '.[].verificationResult.statement.predicateType | "index.json: \(.)"'
+serial=$(jq -r .serial index.json)
+(( serial >= min_serial )) || { echo "FAIL: serial $serial < $min_serial" >&2; exit 1; }
+echo "serial: $serial"
+
+# 5. The version's digest, taken only from the verified index.
+entry=$(jq -ce --arg n "$name" --arg v "$version" '.generators[$n][$v]' index.json) \
+  || { echo "FAIL: $name $version not in index $serial" >&2; exit 1; }
+[[ $(jq -r .yanked <<<"$entry") == null ]] || { echo "FAIL: $name $version is yanked" >&2; exit 1; }
+digest=$(jq -r .digest <<<"$entry")
+ref="oci://ghcr.io/kadet-hub/$name@$digest"
+echo "$name $version: $digest"
+
+# 1. The artifact: provenance always; the SBOM for versions with a scan record
+# (both started with the same release change); the output diff when the index
+# records one.
+types=(https://slsa.dev/provenance/v1)
+[[ $(jq -r 'has("scan")' <<<"$entry") == true ]] && types+=(https://spdx.dev/Document/v2.3)
+diff_sha=$(jq -r '.output_diff.sha256 // empty' <<<"$entry")
+[[ -n $diff_sha ]] && types+=(https://kadet-hub.org/output-diff/v1)
+for t in "${types[@]}"; do
+  verify "$ref" --owner kadet-hub --predicate-type "$t" > "att.json"
+  jq -r '.[0].verificationResult | "\(.statement.predicateType): \(.signature.certificate.runInvocationURI)"' att.json
+done
+if [[ -n $diff_sha ]]; then
+  got=$(jq -j '.[0].verificationResult.statement.predicate.diff' att.json | sha256sum | cut -d' ' -f1)
+  [[ $got == "$diff_sha" ]] || { echo "FAIL: output diff hash $got, index says $diff_sha" >&2; exit 1; }
+  echo "output diff matches index: $(jq -c '.output_diff | {base, files, hunks}' <<<"$entry")"
+fi
+
+# 3. Negative tests: each of these MUST be rejected.
+jq '.serial += 1' index.json > tampered.json
+must_fail "tampered index" gh attestation verify tampered.json --bundle index.json.sigstore.json --owner kadet-hub --cert-identity "$id"
+must_fail "branch other than main" gh attestation verify index.json --bundle index.json.sigstore.json --owner kadet-hub --cert-identity "${id%main}dev"
+must_fail "wrong source repository" gh attestation verify index.json --bundle index.json.sigstore.json --repo kadet-hub/generators --cert-identity "$id"
+must_fail "workflow other than release.yml" gh attestation verify "$ref" --owner kadet-hub --cert-identity "${id/release.yml/gate.yml}"
+
+echo "OK: $name $version verified against index $serial"

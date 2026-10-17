@@ -1,0 +1,14 @@
+resources: [../../base/web, ../../base/api, pdb.yaml]
+images:
+  - name: ghcr.io/example/web
+    newTag: 1.4.2
+  - name: ghcr.io/example/api
+    newTag: 1.9.1
+replicas:
+  - name: web
+    count: 3
+  - name: api
+    count: 2
+patches:
+  - path: web.yaml
+  - path: api.yaml

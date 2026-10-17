@@ -1,0 +1,40 @@
+# One app: workload, Service, TLS certificate and network policy.
+parameters:
+  namespace: shop
+  generators:
+    kubernetes:
+      namespaces:
+        shop: {}
+    manifest:
+      default_config:
+        recommended_labels: true
+        security_profile: restricted
+    cilium:
+      network_policies:
+        web:
+          endpoint_selector:
+            match_labels: {name: web}
+          ingress:
+            - fromEntities: [ingress]
+              ports: [8080]
+          allow_dns: true
+    certmanager:
+      certs:
+        web:
+          spec:
+            secretName: web-tls
+            issuerRef: {name: letsencrypt, kind: ClusterIssuer}
+            dnsNames:
+              - ${hostname}
+  components:
+    web:
+      image: ghcr.io/stefanprodan/podinfo:6.9.2
+      replicas: ${replicas}
+      ports:
+        http: {container_port: 8080, service_port: 80}
+      healthcheck:
+        readiness: {type: http, port: http, path: /readyz}
+      resources:
+        requests: {cpu: 50m, memory: 64Mi}
+        limits: {memory: 128Mi}
+      service: {type: ClusterIP}

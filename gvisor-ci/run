@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Run the three escape scripts, first unconfined, then inside a gVisor
+# sandbox with --network=none and a read-only minimal rootfs.
+#
+# Requires: runsc on PATH, uv (for a pinned Python 3.13), docker only to
+# export a rootfs image once. Nothing here needs root; runsc runs rootless.
+set -euo pipefail
+here=$(cd -- "$(dirname -- "$0")" && pwd)
+img=python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
+work=$(mktemp -d)
+trap 'rm -rf -- "$work"' EXIT
+export XDG_RUNTIME_DIR=$work/run; mkdir -p "$XDG_RUNTIME_DIR"
+
+echo "## Unconfined (host Python 3.13 via uv)"
+for s in audit_hook_bypass dns_vs_rawip home_escape; do
+  echo "### $s"; uv run --python 3.13 python -I "$here/$s.py" || true
+done
+
+echo "## Build a minimal read-only rootfs from $img"
+mkdir -p "$work/bundle/rootfs"
+cid=$(docker create "$img" sleep 1)
+docker export "$cid" | tar -C "$work/bundle/rootfs" -xf -
+docker rm "$cid" >/dev/null
+cp "$here"/*.py "$work/bundle/rootfs/"
+( cd "$work/bundle" && runsc spec )
+
+run_in_gvisor() {  # $1 = script name without .py
+  python3 - "$work" "$1" <<'PY'
+import json, sys
+work, script = sys.argv[1], sys.argv[2]
+c = json.load(open(f"{work}/bundle/config.json"))
+c["process"]["args"] = ["/usr/local/bin/python3", "-I", f"/{script}.py"]
+c["process"]["terminal"] = False
+c["root"]["readonly"] = True
+json.dump(c, open(f"{work}/bundle/config.json", "w"))
+PY
+  ( cd "$work/bundle" && runsc --rootless --network=none --ignore-cgroups \
+      run "gv-$1" )
+}
+
+echo "## Inside gVisor (--network=none, read-only rootfs, no host mounts)"
+for s in audit_hook_bypass dns_vs_rawip home_escape; do
+  echo "### $s"; run_in_gvisor "$s" || true
+done

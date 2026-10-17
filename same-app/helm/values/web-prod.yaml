@@ -1,0 +1,9 @@
+image:
+  tag: 1.4.2
+replicas: 3
+config:
+  log_level: info
+resources:
+  requests: {cpu: 250m, memory: 256Mi}
+  limits: {memory: 512Mi}
+pdbMinAvailable: 2

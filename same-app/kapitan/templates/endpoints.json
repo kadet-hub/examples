@@ -1,0 +1,6 @@
+{% set p = inventory.parameters -%}
+{
+{% for name, c in p.components | dictsort -%}
+  "{{ name }}": {"url": "http://{{ name }}.{{ p.namespace }}.svc:{{ c.ports.http.service_port }}", "image": "{{ c.image }}"}{{ "," if not loop.last }}
+{% endfor -%}
+}

@@ -1,0 +1,18 @@
+# The selector does not match the pod template labels.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: queue-worker
+    spec:
+      containers:
+        - name: worker
+          image: busybox:1.37

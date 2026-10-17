@@ -1,0 +1,23 @@
+parameters:
+  components:
+    api:
+      image: ghcr.io/example/api:${api_tag}
+      ports:
+        http:
+          container_port: 9090
+          service_port: 80
+      healthcheck:
+        readiness:
+          type: http
+          port: http
+          path: /healthz
+      config_maps:
+        config:
+          mount: /etc/api
+          data:
+            log_level:
+              value: ${log_level}
+            web_url:
+              value: http://web.${namespace}.svc:${components:web:ports:http:service_port}
+      service:
+        type: ClusterIP

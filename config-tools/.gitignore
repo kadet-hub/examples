@@ -1,0 +1,5 @@
+tanka/vendor/
+cdk8s/node_modules/
+cdk8s/dist/
+kapitan/lib/
+kapitan/compiled/

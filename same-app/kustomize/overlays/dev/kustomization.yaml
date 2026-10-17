@@ -1,0 +1,14 @@
+resources: [../../base/web, ../../base/api]
+images:
+  - name: ghcr.io/example/web
+    newTag: 1.5.0-rc.1
+  - name: ghcr.io/example/api
+    newTag: 2.0.0-rc.3
+replicas:
+  - name: web
+    count: 1
+  - name: api
+    count: 1
+patches:
+  - path: web.yaml
+  - path: api.yaml

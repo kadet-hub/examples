@@ -1,0 +1,256 @@
+name: examples
+
+# EX-1, EX-2: each example's script on every change and weekly, so a post
+# whose claim no longer holds shows up as a failed run.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+# EX-3: checksums next to a renovate-managed version are updated by hand.
+env:
+  # renovate: datasource=github-releases depName=astral-sh/uv
+  UV_VERSION: 0.13.0
+  UV_SHA256: 1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154
+  # renovate: datasource=github-releases depName=oras-project/oras
+  ORAS_VERSION: 1.3.4
+  ORAS_SHA256: f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454
+  # renovate: datasource=github-releases depName=yannh/kubeconform
+  KUBECONFORM_VERSION: v0.8.0
+  KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
+  # renovate: datasource=github-releases depName=helm/helm
+  HELM_VERSION: v3.17.0
+  HELM_SHA256: fb5d12662fde6eeff36ac4ccacbf3abed96b0ee2de07afdde4edb14e613aee24
+  # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize
+  KUSTOMIZE_VERSION: 5.6.0
+  KUSTOMIZE_SHA256: 54e4031ddc4e7fc59e408da29e7c646e8e57b8088c51b84b3df0864f47b5148f
+  # renovate: datasource=github-releases depName=kubernetes/kubernetes
+  KUBERNETES_VERSION: v1.37.1
+  KUBE_APISERVER_SHA256: de9b1b43c10143f448408b3aaf15f44fd5248b97a56301417a1fe2f1fc47a691
+  KUBECTL_SHA256: 65691ff77eb6fa44c908b77a1082c9f092c3b9733b5cefabec0d1104890e21a8
+  # renovate: datasource=github-releases depName=etcd-io/etcd
+  ETCD_VERSION: v3.7.2
+  ETCD_SHA256: 3a3679bc51a4ee9d30bccea1da7cd4fe62c6fc1d2ca1255068d2c53bf3026135
+  # renovate: datasource=github-releases depName=grafana/tanka
+  TANKA_VERSION: v0.39.4
+  TANKA_SHA256: 71961ae30b65097c24ad481dca599116aea6b01bfe0e2ec03ab643884076443a
+  # renovate: datasource=github-releases depName=jsonnet-bundler/jsonnet-bundler
+  JB_VERSION: v0.6.0
+  JB_SHA256: 78e54afbbc3ff3e0942b1576b4992277df4f6beb64cddd58528a76f0cd70db54
+  # renovate: datasource=node-version depName=node
+  NODE_VERSION: 26.12.0
+  NODE_SHA256: fd47865ecd6391ebb431fc815e01b9135bf83ded5cf373247e9331e196b7aded
+  # renovate: datasource=github-releases depName=google/gvisor
+  GVISOR_RELEASE: "20261005"
+  GVISOR_SHA512: 27fed731b432d6a39d908956623fd273979fda66b3ccf4b9c12413ea417c516e18a9dc3cced403fb28efe495d64dce4251f51cf8c4d9f4a72f9833bd96b6bb35
+
+jobs:
+  same-app:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install helm, kustomize, oras and uv
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
+          curl -fsSLo kustomize.tgz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv$KUSTOMIZE_VERSION/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          sha256sum -c <<EOF
+          $HELM_SHA256  helm.tgz
+          $KUSTOMIZE_SHA256  kustomize.tgz
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          EOF
+          tar -xzf helm.tgz --strip-components=1 linux-amd64/helm
+          tar -xzf kustomize.tgz kustomize
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: same-app/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: same-app/check
+
+  apiserver-dry-run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install kube-apiserver, kubectl, etcd, kubeconform and uv
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo kube-apiserver "https://dl.k8s.io/release/$KUBERNETES_VERSION/bin/linux/amd64/kube-apiserver"
+          curl -fsSLo kubectl "https://dl.k8s.io/release/$KUBERNETES_VERSION/bin/linux/amd64/kubectl"
+          curl -fsSLo etcd.tgz "https://github.com/etcd-io/etcd/releases/download/$ETCD_VERSION/etcd-$ETCD_VERSION-linux-amd64.tar.gz"
+          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          sha256sum -c <<EOF
+          $KUBE_APISERVER_SHA256  kube-apiserver
+          $KUBECTL_SHA256  kubectl
+          $ETCD_SHA256  etcd.tgz
+          $KUBECONFORM_SHA256  kubeconform.tgz
+          $UV_SHA256  uv.tgz
+          EOF
+          tar -xzf etcd.tgz --strip-components=1 "etcd-$ETCD_VERSION-linux-amd64/etcd"
+          tar -xzf kubeconform.tgz kubeconform
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          rm ./*.tgz
+          chmod +x kube-apiserver kubectl
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: apiserver-dry-run/check
+
+  first-platform:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install oras, kubeconform and uv
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          sha256sum -c <<EOF
+          $ORAS_SHA256  oras.tgz
+          $KUBECONFORM_SHA256  kubeconform.tgz
+          $UV_SHA256  uv.tgz
+          EOF
+          tar -xzf oras.tgz oras
+          tar -xzf kubeconform.tgz kubeconform
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: first-platform/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: first-platform/check
+
+  bitnami:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install oras, kubeconform and uv
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          sha256sum -c <<EOF
+          $ORAS_SHA256  oras.tgz
+          $KUBECONFORM_SHA256  kubeconform.tgz
+          $UV_SHA256  uv.tgz
+          EOF
+          tar -xzf oras.tgz oras
+          tar -xzf kubeconform.tgz kubeconform
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv uv-x86_64-unknown-linux-gnu/uvx
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: bitnami/run.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bitnami/run.sh
+
+  verify-oci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+      packages: read # gh reads the attestations of ghcr.io artifacts
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: verify-oci/verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: verify-oci/verify kubernetes 1.2.0 47
+
+  gvisor-ci:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install runsc and uv
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo gvisor.tar.zstd "https://storage.googleapis.com/gvisor/releases/release/${GVISOR_RELEASE}/x86_64/gvisor.tar.zstd"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          echo "$GVISOR_SHA512  gvisor.tar.zstd" | sha512sum -c -
+          echo "$UV_SHA256  uv.tgz" | sha256sum -c -
+          # runsc starts its sidecars from gvisor-bin/ next to it, so unpack everything.
+          tar --zstd -xf gvisor.tar.zstd
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          rm gvisor.tar.zstd uv.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: gvisor-ci/check
+
+  config-tools:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install tk, jb, Node.js, oras and uv
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" "$RUNNER_TEMP/node" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo tk "https://github.com/grafana/tanka/releases/download/$TANKA_VERSION/tk-linux-amd64"
+          curl -fsSLo jb "https://github.com/jsonnet-bundler/jsonnet-bundler/releases/download/$JB_VERSION/jb-linux-amd64"
+          curl -fsSLo node.txz "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          sha256sum -c <<EOF
+          $TANKA_SHA256  tk
+          $JB_SHA256  jb
+          $NODE_SHA256  node.txz
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          EOF
+          tar -xJf node.txz --strip-components=1 -C "$RUNNER_TEMP/node"
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          rm node.txz ./*.tgz
+          chmod +x tk jb
+          echo "$RUNNER_TEMP/node/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: config-tools/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          npm_config_update_notifier: "false"
+        run: config-tools/check

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Checks the post's claims on the output of ./run: unconfined, the audit hook,
+# the DNS block and a private HOME do not confine; under gVisor the raw-IP
+# connect fails, the process sees the image's HOME and limits, and the
+# fork_exec bypass still runs. Needs what ./run needs.
+set -euo pipefail
+cd "$(dirname "$0")"
+out=$(./run 2>&1)
+printf '%s\n' "$out"
+host=$(sed -n '/^## Unconfined/,/^## Build/p' <<<"$out")
+sandbox=$(sed -n '/^## Inside gVisor/,$p' <<<"$out")
+
+expect() { # section name, section text, expected line
+  grep -qF -- "$3" <<<"$2" || { echo "$1: missing: $3" >&2; exit 1; }
+}
+expect unconfined "$host" "blocked: subprocess blocked by audit hook"
+expect unconfined "$host" "via fork_exec"
+expect unconfined "$host" "name lookup blocked: DNS blocked"
+expect unconfined "$host" "raw-IP connect reached network, result:"
+expect unconfined "$host" "read /etc/passwd -> root:"
+if grep -qF "Network is unreachable" <<<"$host"; then
+  echo "unconfined: the host has no route, the raw-IP claim is not tested" >&2
+  exit 1
+fi
+expect gvisor "$sandbox" "via fork_exec"
+expect gvisor "$sandbox" "raw-IP connect reached network, result: OSError [Errno 101] Network is unreachable"
+expect gvisor "$sandbox" "HOME = /root"
+expect gvisor "$sandbox" "RLIMIT_NOFILE = (1024, 1024)"
+expect gvisor "$sandbox" "read /etc/passwd -> root:x:0:0:root:/root:/bin/bash"

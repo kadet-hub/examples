@@ -1,0 +1,8 @@
+classes: [generators, platform, shop]
+parameters:
+  kapitan:
+    vars: {target: dev}
+  env: dev
+  letsencrypt: staging
+  hostname: shop.dev.example.com
+  replicas: 1

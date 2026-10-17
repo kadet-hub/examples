@@ -1,0 +1,38 @@
+name: dry-run
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions: {}
+jobs:
+  dry-run:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    env:
+      KUBERNETES_VERSION: v1.37.1
+      KUBE_APISERVER_SHA256: de9b1b43c10143f448408b3aaf15f44fd5248b97a56301417a1fe2f1fc47a691
+      KUBECTL_SHA256: 65691ff77eb6fa44c908b77a1082c9f092c3b9733b5cefabec0d1104890e21a8
+      ETCD_VERSION: v3.7.2
+      ETCD_SHA256: 3a3679bc51a4ee9d30bccea1da7cd4fe62c6fc1d2ca1255068d2c53bf3026135
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install kube-apiserver, kubectl and etcd
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo kube-apiserver "https://dl.k8s.io/release/$KUBERNETES_VERSION/bin/linux/amd64/kube-apiserver"
+          curl -fsSLo kubectl "https://dl.k8s.io/release/$KUBERNETES_VERSION/bin/linux/amd64/kubectl"
+          curl -fsSLo etcd.tgz "https://github.com/etcd-io/etcd/releases/download/$ETCD_VERSION/etcd-$ETCD_VERSION-linux-amd64.tar.gz"
+          sha256sum -c <<EOF
+          $KUBE_APISERVER_SHA256  kube-apiserver
+          $KUBECTL_SHA256  kubectl
+          $ETCD_SHA256  etcd.tgz
+          EOF
+          tar -xzf etcd.tgz --strip-components=1 "etcd-$ETCD_VERSION-linux-amd64/etcd"
+          rm etcd.tgz
+          chmod +x kube-apiserver kubectl
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: ./dry-run crds manifests

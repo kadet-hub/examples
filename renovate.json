@@ -1,0 +1,89 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    "github>kadet-hub/renovate-config"
+  ],
+  "minimumReleaseAge": "3 days",
+  "minimumReleaseAgeBehaviour": "timestamp-optional",
+  "internalChecksFilter": "strict",
+  "customManagers": [
+    {
+      "description": "Tool versions marked with a renovate comment; checksums next to them are updated by hand",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.yml$/",
+        "/^[^/]+/check$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?(?<currentValue>[^\"\\s]+)\"?"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Runners stay on ubuntu-24.04, the runner the posts name",
+      "matchDatasources": [
+        "github-runners"
+      ],
+      "matchPackageNames": [
+        "ubuntu"
+      ],
+      "allowedVersions": "24.04"
+    },
+    {
+      "description": "first-platform pins requires-python to what Kapitan 0.36.3 is used with in the post",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchDepNames": [
+        "python"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "oras is pinned without the v prefix",
+      "matchDepNames": [
+        "oras-project/oras"
+      ],
+      "extractVersion": "^v(?<version>.+)$"
+    },
+    {
+      "description": "kustomize release tags are kustomize/vX.Y.Z",
+      "matchDepNames": [
+        "kubernetes-sigs/kustomize"
+      ],
+      "extractVersion": "^kustomize/v(?<version>.+)$"
+    },
+    {
+      "description": "Image names in the examples are placeholders",
+      "matchPackageNames": [
+        "ghcr.io/example/**"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Kapitan 0.36.3's omegaconf backend needs ListMergeMode, which omegaconf 2.4.0 removed (kapicorp/kapitan#1621)",
+      "matchPackageNames": [
+        "omegaconf"
+      ],
+      "allowedVersions": "/^2\\.4\\.0\\.dev4$/"
+    },
+    {
+      "description": "gVisor tags are release-YYYYMMDD.N; the download path uses YYYYMMDD",
+      "matchDepNames": [
+        "google/gvisor"
+      ],
+      "extractVersion": "^release-(?<version>\\d+)\\.\\d+$",
+      "versioning": "loose"
+    },
+    {
+      "description": "config-tools stays on the TypeScript 5.9 line that the cdk8s template and ts-node 10 use",
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "allowedVersions": "<6"
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Verifies the latest signed kadet-hub index and the four generators pinned in
+# inventory/classes/generators.yml, fetches them by digest, compiles dev and
+# prod and validates the output against the schemas the generators ship.
+# Needs gh (authenticated), jq, oras, uv and kubeconform.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+tmp=$(mktemp -d)
+trap 'rm -rf -- "$tmp"' EXIT
+rm -rf lib compiled
+
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+min=$(sed -n 's/^index_serial: //p' .kapitan-sandbox.yaml)
+if ((serial < min)); then
+  echo "index serial $serial is lower than index_serial $min" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+
+n=0
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "$name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "$name $version: index has $want, inventory pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "$name $version verified and unpacked"
+  n=$((n + 1))
+done < <(sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  inventory/classes/generators.yml)
+if ((n != 4)); then
+  echo "expected 4 generators in inventory/classes/generators.yml, found $n" >&2
+  exit 1
+fi
+
+uv run kapitan compile --inventory-backend reclass-rs
+
+a=()
+for g in lib/*; do
+  a+=(-schema-location "$g/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json")
+done
+kubeconform -strict -summary "${a[@]}" \
+  -schema-location 'lib/kubernetes/schemas/core/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' compiled/

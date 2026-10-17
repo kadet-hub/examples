@@ -1,0 +1,21 @@
+parameters:
+  namespace: shop
+  kapitan:
+    vars:
+      target: ${_reclass_:name:short}
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/kubernetes:1.2.0@sha256:52017626e77dd5bf7293ce465ff0c3dc7a61dae1ae8353a56a53ffebe1bfb67c
+        output_path: lib/kubernetes
+    compile:
+      - input_type: kadet
+        input_paths: [lib/kubernetes]
+        output_path: manifests/
+      - input_type: jinja2
+        input_paths: [templates/endpoints.json]
+        output_path: .
+  generators:
+    manifest:
+      default_config:
+        recommended_labels: true
+        security_profile: restricted

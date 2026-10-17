@@ -1,0 +1,14 @@
+{{- if .Values.pdbMinAvailable }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    name: {{ .Release.Name }}
+spec:
+  minAvailable: {{ .Values.pdbMinAvailable }}
+  selector:
+    matchLabels:
+      {{- include "app.labels" . | nindent 6 }}
+{{- end }}

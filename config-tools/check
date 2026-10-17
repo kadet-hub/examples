@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Renders the app with Tanka, cdk8s and Kapitan and exits 0 only if all three
+# produce the same manifests for each environment.
+# Needs tk, jb, node/npm and uv; on first run also gh and oras to fetch the generator.
+set -euo pipefail
+cd "$(dirname "$0")"
+out=$(mktemp -d)
+trap 'rm -rf -- "$out"' EXIT
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+
+# Dependencies on first run: jsonnet libraries from the lock file, npm packages
+# from the lock file, the kadet-hub generator by attested digest.
+[[ -d tanka/vendor ]] || (cd tanka && jb install >/dev/null 2>&1)
+[[ -d cdk8s/node_modules ]] || (cd cdk8s && npm ci --no-audit --no-fund >/dev/null)
+if [[ ! -d kapitan/lib/kubernetes ]]; then
+  src=$(grep -o 'ghcr.io/kadet-hub/kubernetes:[^ ]*' kapitan/inventory/classes/common.yml)
+  ref=${src%%:*}@${src#*@}
+  gh attestation verify "oci://$ref" --owner kadet-hub \
+    --cert-identity https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main >/dev/null
+  oras pull -o "$out/oci" "$ref" >/dev/null
+  mkdir -p kapitan/lib/kubernetes
+  tar -xf "$out/oci/kubernetes.tar" -C kapitan/lib/kubernetes
+fi
+
+(cd kapitan && "${py[@]}" kapitan compile --output-path "$out" >"$out/kapitan.log" 2>&1) \
+  || { cat "$out/kapitan.log"; exit 1; }
+(cd cdk8s && npx cdk8s synth --output "$out/cdk8s" >"$out/cdk8s.log" 2>&1) \
+  || { cat "$out/cdk8s.log"; exit 1; }
+
+# One document per object, sorted by kind/namespace/name, keys sorted. The
+# app.kubernetes.io/managed-by label names the tool and only Kapitan sets it,
+# so it is dropped. Nothing else is ignored.
+normalize() {
+  "${py[@]}" python -I -c '
+import sys, yaml
+def strip(o):
+    if isinstance(o, dict):
+        o.pop("app.kubernetes.io/managed-by", None)
+        for v in o.values(): strip(v)
+    elif isinstance(o, list):
+        for v in o: strip(v)
+docs = [d for d in yaml.safe_load_all(sys.stdin) if d]
+for d in docs: strip(d)
+docs.sort(key=lambda d: (d["kind"], d["metadata"].get("namespace", ""), d["metadata"]["name"]))
+sys.stdout.write(yaml.safe_dump_all(docs, sort_keys=True))
+'
+}
+
+status=0
+for env in dev prod; do
+  # OTEL_SDK_DISABLED stops tk from trying to send traces to localhost:4318.
+  (cd tanka && OTEL_SDK_DISABLED=true tk show "environments/$env" --dangerous-allow-redirect) | normalize >"$out/$env.tanka"
+  normalize <"$out/cdk8s/$env.k8s.yaml" >"$out/$env.cdk8s"
+  find "$out/compiled/$env/manifests" -name '*.yaml' -exec sh -c 'cat "$1"; echo ---' _ {} \; \
+    | normalize >"$out/$env.kapitan"
+  for tool in tanka cdk8s; do
+    if diff -u "$out/$env.kapitan" "$out/$env.$tool"; then
+      echo "$env: $tool = kapitan ($(grep -c '^kind:' "$out/$env.$tool") objects)"
+    else
+      status=1
+    fi
+  done
+done
+exit $status

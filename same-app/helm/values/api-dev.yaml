@@ -1,0 +1,9 @@
+image:
+  tag: 2.0.0-rc.3
+replicas: 1
+config:
+  log_level: debug
+  web_url: http://web.shop.svc:80
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {memory: 128Mi}

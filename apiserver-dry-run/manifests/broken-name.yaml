@@ -1,0 +1,8 @@
+# Object names must be lowercase RFC 1123 subdomains.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: Web_Settings
+  namespace: shop
+data:
+  LOG_LEVEL: info
