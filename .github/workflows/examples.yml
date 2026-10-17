@@ -215,6 +215,10 @@ jobs:
           tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
           rm gvisor.tar.zstd uv.tgz
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # ubuntu-24.04 restricts unprivileged user namespaces with AppArmor, which
+      # rootless runsc needs (fork/exec /proc/self/exe: permission denied).
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: gvisor-ci/check
 
   config-tools:
