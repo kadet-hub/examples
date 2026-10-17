@@ -15,7 +15,7 @@ permissions: {}
 # EX-3: checksums next to a renovate-managed version are updated by hand.
 env:
   # renovate: datasource=github-releases depName=astral-sh/uv
-  UV_VERSION: 0.13.0
+  UV_VERSION: 0.13.1
   UV_SHA256: 1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154
   # renovate: datasource=github-releases depName=oras-project/oras
   ORAS_VERSION: 1.3.4
