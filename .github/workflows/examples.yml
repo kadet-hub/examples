@@ -12,40 +12,40 @@ on:
 
 permissions: {}
 
-# EX-3: checksums next to a renovate-managed version are updated by hand.
+# EX-3: Renovate updates the checksums of release-asset and image pins; the
+# pins job checks the others against their publisher's checksum file.
 env:
-  # renovate: datasource=github-releases depName=astral-sh/uv
+  # renovate: datasource=github-release-attachments depName=astral-sh/uv
   UV_VERSION: 0.13.1
   UV_SHA256: eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220
-  # renovate: datasource=github-releases depName=oras-project/oras
-  ORAS_VERSION: 1.3.4
+  # renovate: datasource=github-release-attachments depName=oras-project/oras
+  ORAS_VERSION: v1.3.4
   ORAS_SHA256: f27adb935022d94df8dc77719c322dda592c78a0d57a6f7dcdd8d900b248c454
-  # renovate: datasource=github-releases depName=yannh/kubeconform
+  # renovate: datasource=github-release-attachments depName=yannh/kubeconform
   KUBECONFORM_VERSION: v0.8.0
   KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
   # renovate: datasource=github-releases depName=helm/helm
   HELM_VERSION: v4.3.0
   HELM_SHA256: 86584a54def73570558f66f5111cc53dfed56689637ae32c1201205d494f54fb
-  # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize
-  KUSTOMIZE_VERSION: 5.8.3
-  KUSTOMIZE_SHA256: cb9e31198d3f63b44848bd0afc4c8efc56e6cfef9c93a4a39a211940e6decd61
-  # renovate: datasource=github-releases depName=pulumi/pulumi
+  # renovate: datasource=docker depName=registry.k8s.io/kustomize/kustomize
+  KUSTOMIZE_IMAGE: registry.k8s.io/kustomize/kustomize:v5.8.3@sha256:429eda4a1c76a7de458d0c4ca3ded9b5d764899ff6bdaeccc1d98b1b6ee873e4
+  # renovate: datasource=github-release-attachments depName=pulumi/pulumi
   PULUMI_VERSION: v3.270.0
   PULUMI_SHA256: d05899c251cb0413a9a2304f23229218c46852a61256913f34f08ebc27266139
   # Provider plugin linux-amd64 archive at the @pulumi/kubernetes version in
   # same-app/pulumi/package-lock.json, checked by same-app/check.
   PULUMI_KUBERNETES_SHA256: b2a3471a897d8d4aa5c6f0ea2933d363dfa72bee8ed651a16246a09e3e728bb6
-  # renovate: datasource=github-releases depName=kubernetes/kubernetes
-  KUBERNETES_VERSION: v1.37.1
-  KUBE_APISERVER_SHA256: de9b1b43c10143f448408b3aaf15f44fd5248b97a56301417a1fe2f1fc47a691
-  KUBECTL_SHA256: 65691ff77eb6fa44c908b77a1082c9f092c3b9733b5cefabec0d1104890e21a8
-  # renovate: datasource=github-releases depName=etcd-io/etcd
+  # renovate: datasource=docker depName=registry.k8s.io/kube-apiserver
+  KUBE_APISERVER_IMAGE: registry.k8s.io/kube-apiserver:v1.37.1@sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732fd1061d
+  # renovate: datasource=docker depName=registry.k8s.io/kubectl
+  KUBECTL_IMAGE: registry.k8s.io/kubectl:v1.37.1@sha256:b7cab618e281b1ee7484e7b706a96e2135fbb6e072c2a573a7dab4e87d7f2385
+  # renovate: datasource=github-release-attachments depName=etcd-io/etcd
   ETCD_VERSION: v3.7.2
   ETCD_SHA256: 3a3679bc51a4ee9d30bccea1da7cd4fe62c6fc1d2ca1255068d2c53bf3026135
-  # renovate: datasource=github-releases depName=grafana/tanka
+  # renovate: datasource=github-release-attachments depName=grafana/tanka
   TANKA_VERSION: v0.39.4
   TANKA_SHA256: 71961ae30b65097c24ad481dca599116aea6b01bfe0e2ec03ab643884076443a
-  # renovate: datasource=github-releases depName=jsonnet-bundler/jsonnet-bundler
+  # renovate: datasource=github-release-attachments depName=jsonnet-bundler/jsonnet-bundler
   JB_VERSION: v0.6.0
   JB_SHA256: 78e54afbbc3ff3e0942b1576b4992277df4f6beb64cddd58528a76f0cd70db54
   # renovate: datasource=node-version depName=node
@@ -54,16 +54,16 @@ env:
   # renovate: datasource=github-releases depName=google/gvisor
   GVISOR_RELEASE: "20261005"
   GVISOR_SHA512: 27fed731b432d6a39d908956623fd273979fda66b3ccf4b9c12413ea417c516e18a9dc3cced403fb28efe495d64dce4251f51cf8c4d9f4a72f9833bd96b6bb35
-  # renovate: datasource=github-releases depName=kubernetes-sigs/kind
+  # renovate: datasource=github-release-attachments depName=kubernetes-sigs/kind
   KIND_VERSION: v0.33.0
   KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
-  # renovate: datasource=github-releases depName=kyverno/chainsaw
+  # renovate: datasource=github-release-attachments depName=kyverno/chainsaw
   CHAINSAW_VERSION: v0.2.15
   CHAINSAW_SHA256: 295d226c89f126c0a97775d364be149f47a810c8a3f9829ee410583d0c1abe3c
-  # renovate: datasource=github-releases depName=siderolabs/talos
+  # renovate: datasource=github-release-attachments depName=siderolabs/talos
   TALOSCTL_VERSION: v1.14.4
   TALOSCTL_SHA256: 0a69e3f9b682c5cd844b78dae305f6056ceb86c5fcc6913dcea78c527ed97cee
-  # renovate: datasource=github-releases depName=opentofu/opentofu
+  # renovate: datasource=github-release-attachments depName=opentofu/opentofu
   TOFU_VERSION: v1.13.1
   TOFU_SHA256: 378ada19d4bc70c43732004e8159be771b23b9a5afdf059e5f8a2b3fa2c70a69
 
@@ -82,21 +82,19 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/bin" "$RUNNER_TEMP/node" && cd "$RUNNER_TEMP/bin"
           curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
-          curl -fsSLo kustomize.tgz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv$KUSTOMIZE_VERSION/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
           curl -fsSLo pulumi.tgz "https://github.com/pulumi/pulumi/releases/download/$PULUMI_VERSION/pulumi-$PULUMI_VERSION-linux-x64.tar.gz"
           curl -fsSLo node.txz "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
           sha256sum -c <<EOF
           $HELM_SHA256  helm.tgz
-          $KUSTOMIZE_SHA256  kustomize.tgz
           $PULUMI_SHA256  pulumi.tgz
           $NODE_SHA256  node.txz
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
           EOF
           tar -xzf helm.tgz --strip-components=1 linux-amd64/helm
-          tar -xzf kustomize.tgz kustomize
+          c=$(docker create "$KUSTOMIZE_IMAGE") && docker cp -q "$c:/app/kustomize" . && docker rm "$c" >/dev/null
           tar -xzf pulumi.tgz --strip-components=1 pulumi/pulumi pulumi/pulumi-language-nodejs
           tar -xJf node.txz --strip-components=1 -C "$RUNNER_TEMP/node"
           tar -xzf oras.tgz oras
@@ -122,14 +120,10 @@ jobs:
       - name: Install kube-apiserver, kubectl, etcd, kubeconform and uv
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo kube-apiserver "https://dl.k8s.io/release/$KUBERNETES_VERSION/bin/linux/amd64/kube-apiserver"
-          curl -fsSLo kubectl "https://dl.k8s.io/release/$KUBERNETES_VERSION/bin/linux/amd64/kubectl"
           curl -fsSLo etcd.tgz "https://github.com/etcd-io/etcd/releases/download/$ETCD_VERSION/etcd-$ETCD_VERSION-linux-amd64.tar.gz"
           curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
           sha256sum -c <<EOF
-          $KUBE_APISERVER_SHA256  kube-apiserver
-          $KUBECTL_SHA256  kubectl
           $ETCD_SHA256  etcd.tgz
           $KUBECONFORM_SHA256  kubeconform.tgz
           $UV_SHA256  uv.tgz
@@ -138,7 +132,8 @@ jobs:
           tar -xzf kubeconform.tgz kubeconform
           tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
           rm ./*.tgz
-          chmod +x kube-apiserver kubectl
+          c=$(docker create "$KUBE_APISERVER_IMAGE") && docker cp -q "$c:/usr/local/bin/kube-apiserver" . && docker rm "$c" >/dev/null
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - run: apiserver-dry-run/check
 
@@ -155,7 +150,7 @@ jobs:
       - name: Install oras, kubeconform and uv
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
           curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
           sha256sum -c <<EOF
@@ -186,7 +181,7 @@ jobs:
       - name: Install oras, kubeconform and uv
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
           curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
           sha256sum -c <<EOF
@@ -263,7 +258,7 @@ jobs:
           curl -fsSLo tk "https://github.com/grafana/tanka/releases/download/$TANKA_VERSION/tk-linux-amd64"
           curl -fsSLo jb "https://github.com/jsonnet-bundler/jsonnet-bundler/releases/download/$JB_VERSION/jb-linux-amd64"
           curl -fsSLo node.txz "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
           sha256sum -c <<EOF
           $TANKA_SHA256  tk
@@ -299,7 +294,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
           curl -fsSLo talosctl "https://github.com/siderolabs/talos/releases/download/$TALOSCTL_VERSION/talosctl-linux-amd64"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
           sha256sum -c <<EOF
           $TALOSCTL_SHA256  talosctl
@@ -330,7 +325,7 @@ jobs:
       - name: Install oras, kubeconform, uv and tofu
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
           curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
           curl -fsSLo tofu.tgz "https://github.com/opentofu/opentofu/releases/download/$TOFU_VERSION/tofu_${TOFU_VERSION#v}_linux_amd64.tar.gz"
@@ -369,17 +364,15 @@ jobs:
       - name: Install oras, kubeconform, uv, kubectl, kind and chainsaw
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
           curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kubectl "https://dl.k8s.io/release/$KUBERNETES_VERSION/bin/linux/amd64/kubectl"
           curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
           curl -fsSLo chainsaw.tgz "https://github.com/kyverno/chainsaw/releases/download/$CHAINSAW_VERSION/chainsaw_linux_amd64.tar.gz"
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $KUBECONFORM_SHA256  kubeconform.tgz
           $UV_SHA256  uv.tgz
-          $KUBECTL_SHA256  kubectl
           $KIND_SHA256  kind
           $CHAINSAW_SHA256  chainsaw.tgz
           EOF
@@ -387,7 +380,8 @@ jobs:
           tar -xzf kubeconform.tgz kubeconform
           tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
           tar -xzf chainsaw.tgz chainsaw
-          chmod +x kubectl kind
+          chmod +x kind
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
           rm ./*.tgz
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: recipes/check ${{ matrix.recipe }}
@@ -417,14 +411,13 @@ jobs:
           curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
           curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kubectl "https://dl.k8s.io/release/$KUBERNETES_VERSION/bin/linux/amd64/kubectl"
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
           curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
           curl -fsSLo chainsaw.tgz "https://github.com/kyverno/chainsaw/releases/download/$CHAINSAW_VERSION/chainsaw_linux_amd64.tar.gz"
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $KUBECONFORM_SHA256  kubeconform.tgz
           $UV_SHA256  uv.tgz
-          $KUBECTL_SHA256  kubectl
           $KIND_SHA256  kind
           $CHAINSAW_SHA256  chainsaw.tgz
           EOF
@@ -440,3 +433,48 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TOOL: ${{ matrix.tool }}
         run: argocd-vs-flux/check "$TOOL"
+
+  # EX-3: Renovate bumps these versions only; the checksum comes from the
+  # publisher, and the failure names the line to paste.
+  pins:
+    if: startsWith(github.head_ref, 'renovate/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checksums against the publishers' checksum files
+        run: |
+          status=0
+          # check <file> <line prefix> <pinned> <checksum file URL> [<name in it>]
+          check() {
+            local sum
+            if (($# == 5)); then
+              sum=$(curl -fsSL "$4" | awk -v f="$5" '$2 == f || $2 == "*" f { print $1 }')
+            else
+              sum=$(curl -fsSL "$4" | sha256sum | cut -d' ' -f1)
+            fi || { echo "::error file=$1::cannot download $4"; exit 1; }
+            if [[ -z $sum ]]; then
+              echo "::error file=$1::$5 is not listed in $4"; status=1
+            elif [[ $sum != "$3" ]]; then
+              echo "::error file=$1::checksum differs from $4; set this line: $2$sum"; status=1
+            fi
+          }
+          check .github/workflows/examples.yml "  HELM_SHA256: " "$HELM_SHA256" \
+            "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz.sha256sum" "helm-$HELM_VERSION-linux-amd64.tar.gz"
+          check .github/workflows/examples.yml "  NODE_SHA256: " "$NODE_SHA256" \
+            "https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt" "node-v$NODE_VERSION-linux-x64.tar.xz"
+          check .github/workflows/examples.yml "  GVISOR_SHA512: " "$GVISOR_SHA512" \
+            "https://storage.googleapis.com/gvisor/releases/release/$GVISOR_RELEASE/x86_64/gvisor.tar.zstd.sha512" gvisor.tar.zstd
+          v=$(jq -r '.packages["node_modules/@pulumi/kubernetes"].version' same-app/pulumi/package-lock.json)
+          check .github/workflows/examples.yml "  PULUMI_KUBERNETES_SHA256: " "$PULUMI_KUBERNETES_SHA256" \
+            "https://github.com/pulumi/pulumi-kubernetes/releases/download/v$v/pulumi-kubernetes_${v}_checksums.txt" \
+            "pulumi-resource-kubernetes-v$v-linux-amd64.tar.gz"
+          # No published checksum: the hash of the file at the pinned tag.
+          v=$(sed -n 's/^KUBECONFORM_VERSION=//p' apiserver-dry-run/check)
+          check apiserver-dry-run/check OPENAPI2JSONSCHEMA_SHA256= "$(sed -n 's/^OPENAPI2JSONSCHEMA_SHA256=//p' apiserver-dry-run/check)" \
+            "https://raw.githubusercontent.com/yannh/kubeconform/$v/scripts/openapi2jsonschema.py"
+          exit "$status"

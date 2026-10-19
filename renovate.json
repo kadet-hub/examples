@@ -10,14 +10,16 @@
   "internalChecksFilter": "strict",
   "customManagers": [
     {
-      "description": "Tool versions marked with a renovate comment; checksums next to them are updated by hand",
+      "description": "EX-3: tool versions marked with a renovate comment; release-asset and image pins carry their checksum along",
       "customType": "regex",
       "managerFilePatterns": [
         "/^\\.github/workflows/[^/]+\\.yml$/",
         "/^[^/]+/check$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?(?<currentValue>[^\"\\s]+)\"?"
+        "# renovate: datasource=(?<datasource>github-releases|node-version) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?(?<currentValue>[^\"\\s]+)\"?",
+        "# renovate: datasource=(?<datasource>github-release-attachments) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?(?<currentValue>[^\"\\s]+)\"?\\n\\s*[A-Z_]+_SHA(?:256|512)[=:] ?\"?(?<currentDigest>[0-9a-f]{64,128})\"?",
+        "# renovate: datasource=(?<datasource>docker) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?\\S+?:(?<currentValue>[^@\"\\s:]+)@(?<currentDigest>sha256:[0-9a-f]{64})\"?"
       ]
     }
   ],
@@ -41,20 +43,6 @@
         "python"
       ],
       "enabled": false
-    },
-    {
-      "description": "oras is pinned without the v prefix",
-      "matchDepNames": [
-        "oras-project/oras"
-      ],
-      "extractVersion": "^v(?<version>.+)$"
-    },
-    {
-      "description": "kustomize release tags are kustomize/vX.Y.Z",
-      "matchDepNames": [
-        "kubernetes-sigs/kustomize"
-      ],
-      "extractVersion": "^kustomize/v(?<version>.+)$"
     },
     {
       "description": "Image names in the examples are placeholders",
