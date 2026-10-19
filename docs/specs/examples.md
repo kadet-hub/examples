@@ -242,6 +242,11 @@ under Inventory names.
   manifest, which the recipe class names; cert-manager, which issues its
   webhook certificate, comes with the recipe from its chart.
 
+  Decided in this change (OQ-4): the operator stays installed by `check`
+  rather than compiled with the recipe. A Kapitan `https` dependency with a
+  `copy` entry could bring the manifest into the target, but fetches it
+  without a checksum.
+
   `check` fetches the charts with `kapitan compile --fetch -t charts`:
   target `charts` includes every operator class and no generator, so EX-4
   holds as for `helm-mutate`'s target `helm`; it is not a recipe. The
@@ -254,7 +259,7 @@ under Inventory names.
   - Test: `recipes/check` via the `examples` workflow, job `recipe` for
     `postgresql`, `keycloak`, `kafka` and `rabbitmq` (fails when helm rejects a chart's
     digest, a mutation matches nothing, or the operator does not come up)
-  - Since: #21
+  - Since: #21; OQ-4 decided: this change
 
 PowerDNS keeps its zones in SQLite on a volume rather than in PostgreSQL:
 the image ships the SQLite schema, while the PostgreSQL backend would need
@@ -401,6 +406,11 @@ neither, because Kapitan's dependency has no place for it and it would add
 a tool. The HTTP repository publishes no `.prov` files, and Kapitan does
 not pass `--verify`.
 
+Decided in this change (OQ-3): the digest pin is the chart's only check,
+because it makes the render reproducible. Renovate tracks neither the
+chart nor the image digest of `pin-image`; both are set by hand with the
+version.
+
 `check` fetches the chart with `kapitan compile --fetch -t helm`. Target
 `helm` declares the chart and no generator, so EX-4 holds; the generators
 are verified and pulled by digest before.
@@ -429,7 +439,7 @@ mutation matches them by kind and label, not by name.
   keys, so that mutate's reformatting of a rewritten file does not show.
 
   - Test: `examples` workflow, job `helm-mutate`
-  - Since: #19
+  - Since: #19; OQ-3 decided: this change
 
 - EX-10: CI MUST deploy `compiled/podinfo`, comment-only files included, to
   a new kind cluster once with `kubectl apply -R -f`, once through Argo CD
@@ -462,14 +472,6 @@ mutation matches them by kind and label, not by name.
 - OQ-2: `apiserver-dry-run/check` validates against the Kubernetes schemas
   from the default kubeconform location, which tracks the `master` branch of
   yannh/kubernetes-json-schema.
-- OQ-3: Should `helm-mutate/check` verify the podinfo chart's cosign
-  signature in addition to the digest pin? It would add cosign to the job.
-  Renovate updates neither the chart digest nor the image digest of
-  `pin-image`; both are set by hand with the version.
-- OQ-4: Should the RabbitMQ Cluster Operator come with its recipe without
-  a chart? Its manifest exists only as a release asset, which Kapitan's
-  `https` dependency fetches without a checksum, and a `copy` entry with
-  mutate would apply it.
 
 ## Inventory
 
