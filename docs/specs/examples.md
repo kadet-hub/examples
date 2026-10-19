@@ -192,11 +192,17 @@ part in a recipe whose subject is external-dns.
   `CrashLoopBackOff`, `ImagePullBackOff`, `CreateContainerConfigError` or
   `InvalidImageName`, or has restarted more
   than three times. `recipes/check` polls the pods of all namespaces every
-  10 seconds while Chainsaw runs, so a broken operator counts too. On the
-  first broken pod it prints the pod's description and its containers'
-  logs and stops Chainsaw. The watch sits in `check` because Chainsaw runs
-  the operations of a test one after another and has none that runs beside
-  an assert.
+  10 seconds from the creation of the kind cluster until Chainsaw ends, so
+  a broken pod also stops the operator installs. On the first broken pod
+  it prints the pod's description and its containers' logs and stops the
+  command `check` waits for, an operator's `rollout status` or Chainsaw.
+  The watch sits in `check` because Chainsaw runs the operations of a test
+  one after another and has none that runs beside an assert.
+
+  When a `rollout status` of an operator times out, `check` prints the
+  namespace's events sorted by time, `kubectl get pods -o wide`, and the
+  description and logs of every pod that is not ready. Without them the
+  timeout names only the Deployments that did not become available.
 
   Before every apply, of an operator's release manifest as of the compiled
   output, `check` repeats a server-side dry run of the same files for up to
@@ -224,8 +230,9 @@ part in a recipe whose subject is external-dns.
   waited for, which a timeout of `kubectl wait` does not.
 
   - Test: `examples` workflow, job `recipe` per recipe; the fail-fast path
-    by hand, with a non-existent image tag in a recipe class
-  - Since: #8, #10
+    by hand, with a non-existent image tag in a recipe class or in an
+    operator's release manifest
+  - Since: #8, #10, tbd
 
 ## Argo CD and Flux
 
@@ -251,8 +258,9 @@ to report exactly that commit. The Gitea image is pinned by digest in
   `Synced` and `Healthy` (Flux: the Kustomization is `Ready`) at the pushed
   commit and the app's Deployment has all replicas available.
 
-  The generators are verified and fetched as in EX-4, broken pods stop the
-  check as in EX-6. The Argo CD Application syncs automatically with
+  The generators are verified and fetched as in EX-4. Broken pods stop the
+  check and a timed-out install wait prints its namespace as in EX-6, for
+  the Git server and the tool as for an operator. The Argo CD Application syncs automatically with
   `prune` and `selfHeal`; the Flux objects keep the flux generator's
   defaults plus `prune: true`. `check` prints the numbers the guide quotes:
   the CRDs in the release manifest, the tool's pods and images, the seconds
