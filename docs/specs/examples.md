@@ -38,6 +38,18 @@ schedule instead of trusting the state on the publishing day.
   rejects placeholder certificates. Neither the refs nor the compiled
   configs are committed.
 
+  `helm-vs-terraform` compiles one inventory into an OpenTofu root module
+  (terraform-aws generator) and Kubernetes manifests (kubernetes
+  generator). It fails unless the bucket name and region planned by
+  `tofu plan` equal the app's ConfigMap data, both before and after the
+  two values are changed in the target alone. Its `terraform-only` module
+  writes the same ConfigMap with Terraform's own providers; the script
+  fails unless `kubernetes_config_map_v1` and `helm_release` plan without
+  a cluster, the `helm_release` plan carries the values but no rendered
+  manifest, and `kubernetes_manifest` and the helm provider's `manifest`
+  experiment fail to plan without one. A guide quotes these results, so a
+  provider release that changes them fails the job.
+
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
   default: the Pulumi provider omits zero-valued fields, Kapitan's
@@ -77,6 +89,14 @@ schedule instead of trusting the state on the publishing day.
   automatic plugin downloads are disabled during `pulumi up`. Pulumi keeps
   its state in a local file backend in a temporary directory; no Pulumi
   Cloud account is used.
+
+  The Terraform examples run OpenTofu (MPL-2.0) rather than Terraform
+  (BUSL-1.1, not an open source license). Its
+  providers are pinned by version in the configuration and by hash in a
+  committed `.terraform.lock.hcl`, which `tofu init -lockfile=readonly`
+  enforces. `tofu plan` runs with dummy AWS keys and the provider's
+  `skip_*` flags, so it contacts no AWS endpoint, and without a
+  kubeconfig, so it contacts no cluster.
 
   - Test: `manual:` review of `.github/workflows/examples.yml` and the `check` scripts
   - Since: tbd
@@ -189,6 +209,7 @@ part in a recipe whose subject is external-dns.
 | `renovate.json` | Org preset for generator pins, regex manager for `# renovate:` comments |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
+| `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |
 | `recipes/` | One Kapitan project; `check <recipe>` verifies the generators, compiles, deploys to kind and runs the recipe's check |
 
 Recipes and their checks:
