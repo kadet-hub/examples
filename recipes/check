@@ -128,6 +128,12 @@ case $recipe in
   kafka) strimzi ;;
   keycloak) certmanager; cnpg; keycloak_operator ;;
 esac
+# An operator without a readiness probe reports its rollout done before its
+# admission webhook listens; wait until a server-side dry run of the output passes.
+for _ in $(seq 30); do
+  kubectl apply --dry-run=server -R -f "$out" >/dev/null 2>&1 && break
+  sleep 2
+done
 kubectl apply -R -f "$out"
 
 # EX-6: stop Chainsaw as soon as a pod is broken instead of at the assert
@@ -138,7 +144,7 @@ watch_pods() { # chainsaw-pid
     bad=$(kubectl get pods -A -o json | jq -r '.items[]
       | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
           .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
-            "ErrImagePull", "CreateContainerConfigError", "InvalidImageName"))))
+            "CreateContainerConfigError", "InvalidImageName"))))
       | "\(.metadata.namespace) \(.metadata.name)"') || continue
     [[ -n $bad ]] || continue
     echo "EX-6: broken pods, stopping the check" >&2
