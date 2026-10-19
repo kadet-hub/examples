@@ -71,8 +71,38 @@ schedule instead of trusting the state on the publishing day.
 - EX-3: Every tool the CI jobs download MUST be pinned by version and sha256,
   and every action by full commit SHA.
 
-  Renovate bumps the versions through `# renovate:` comments; the sha256 next
-  to a version is updated by hand, so a bump fails `sha256sum -c` until it is.
+  Renovate updates a version and its checksum in the same pull request
+  wherever the source allows it. Each pin uses one of three mechanisms:
+
+  - Release asset: uv, oras, kubeconform, Pulumi, etcd, tk, jb, kind,
+    chainsaw, talosctl and tofu are GitHub release assets. Their
+    `# renovate:` comment names `datasource=github-release-attachments`,
+    which hashes the matching asset of the new release. The pinned value
+    MUST be the exact release tag, because the datasource looks the release
+    up by it; URLs that need the bare number strip the `v` with `${X#v}`.
+    The sha256 MUST be that of the downloaded file, not of a file inside
+    it, or Renovate keeps the old hash without an error.
+  - Image: kube-apiserver, kubectl and kustomize come from the Kubernetes
+    project's images on registry.k8s.io, pinned as `tag@sha256:digest`
+    with `datasource=docker`. The job copies the binary out with
+    `docker create` and `docker cp`. The kube-apiserver and kubectl
+    binaries are identical to the dl.k8s.io downloads; the kustomize binary
+    is a separate build of the same version.
+  - Check: helm, Node.js, gVisor, `openapi2jsonschema.py` and the Pulumi
+    Kubernetes plugin have neither a release asset nor an image published
+    by the project (the Docker Hub `node` image is built by Docker's
+    Official Images program). Renovate bumps the version only. On Renovate
+    pull requests the `pins` job compares each checksum with the
+    publisher's checksum file (helm `.sha256sum`, Node.js `SHASUMS256.txt`,
+    gVisor `.sha512`, the plugin's `checksums.txt` at the locked
+    `@pulumi/kubernetes` version) or, for `openapi2jsonschema.py`, which
+    has none, with the hash of the file at the pinned kubeconform tag, and
+    fails with the line to paste.
+
+  The release-asset and the version-only comments are separate match
+  strings: `github-releases` also returns digests, a commit SHA, which it
+  would write into a `_SHA256` field.
+
   Kapitan and Python packages are pinned by version through uv, npm packages
   through `package-lock.json`, jsonnet libraries through
   `jsonnetfile.lock.json`. `talosctl` is pinned by the sha256 that the
@@ -101,8 +131,10 @@ schedule instead of trusting the state on the publishing day.
   `skip_*` flags, so it contacts no AWS endpoint, and without a
   kubeconfig, so it contacts no cluster.
 
-  - Test: `manual:` review of `.github/workflows/examples.yml` and the `check` scripts
-  - Since: tbd
+  - Test: `manual:` review of `.github/workflows/examples.yml` and the `check` scripts;
+    `renovate --platform=local --dry-run=lookup` with pins set one release
+    back; workflow job `pins`
+  - Since: tbd; checksums by Renovate: #15
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
@@ -282,7 +314,7 @@ to report exactly that commit. The Gitea image is pinned by digest in
 
 | Path | Content |
 |---|---|
-| `.github/workflows/examples.yml` | One job per example, tool versions and sha256 in `env` |
+| `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3) |
 | `renovate.json` | Org preset for generator pins, regex manager for `# renovate:` comments |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
