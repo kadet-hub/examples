@@ -204,7 +204,7 @@ part in a recipe whose subject is external-dns.
   - Test: `examples` workflow, job `recipe` per recipe; the fail-fast path
     by hand, with a non-existent image tag in a recipe class or in an
     operator's release manifest
-  - Since: #8, #10, tbd
+  - Since: #8, #10, #13, #16, #17
 
 ## Argo CD and Flux
 
@@ -242,7 +242,7 @@ to report exactly that commit. The Gitea image is pinned by digest in
   after the check, read from the kubelet summary API.
 
   - Test: `examples` workflow, job `argocd-vs-flux` per tool
-  - Since: tbd
+  - Since: #14, #16
 
 - EX-8: The check MUST scale the app's Deployment to one replica with
   `kubectl scale` and fail unless Argo CD restores two replicas within a
@@ -257,7 +257,7 @@ to report exactly that commit. The Gitea image is pinned by digest in
   not react to the change in between, not that it never would.
 
   - Test: `argocd-vs-flux/tests/<tool>/chainsaw-test.yaml`, second step
-  - Since: tbd
+  - Since: #14
 
 ## Open questions
 
