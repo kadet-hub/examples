@@ -17,12 +17,18 @@ schedule instead of trusting the state on the publishing day.
   post's claim no longer holds.
 
   The script checks the claim itself, not only that the tools ran:
-  `same-app` and `config-tools` diff the three renderings,
+  `same-app` diffs the Helm, Kustomize and Pulumi renderings against
+  Kapitan's, `config-tools` diffs its three renderings,
   `apiserver-dry-run` expects exactly the five broken documents to be
   rejected and the four valid ones to be created, `gvisor-ci` compares the
   escape scripts' output inside and outside the sandbox, `verify-oci` fails
   on an index or attestation mismatch, and `first-platform` and `bitnami`
   fail on such a mismatch and on any kubeconform finding.
+
+  Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
+  label, which names the tool, and `initialDelaySeconds: 0`, the API
+  default: the Pulumi provider omits zero-valued fields, Kapitan's
+  generator writes it.
 
   - Test: `examples` workflow, one job per folder
   - Since: tbd
@@ -48,6 +54,15 @@ schedule instead of trusting the state on the publishing day.
   pinned by URL and sha256 there. Kapitan 0.36.3 with the `omegaconf`
   extra MUST be installed with `omegaconf==2.4.0.dev4`: omegaconf 2.4.0
   breaks its OmegaConf backend (kapicorp/kapitan#1621).
+
+  Pulumi's Kubernetes provider plugin is pinned by the `@pulumi/kubernetes`
+  version in `same-app/pulumi/package-lock.json` and by the sha256 of its
+  linux-amd64 archive in the workflow, which `same-app/check` passes to
+  `pulumi plugin install --checksum`. `npm ci` runs with `--ignore-scripts`,
+  because the package's install script downloads the plugin unchecked, and
+  automatic plugin downloads are disabled during `pulumi up`. Pulumi keeps
+  its state in a local file backend in a temporary directory; no Pulumi
+  Cloud account is used.
 
   - Test: `manual:` review of `.github/workflows/examples.yml` and the `check` scripts
   - Since: tbd
