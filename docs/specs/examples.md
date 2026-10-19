@@ -159,7 +159,10 @@ part in a recipe whose subject is external-dns.
   A pod is broken when one of its containers waits with
   `CrashLoopBackOff`, `ImagePullBackOff`, `CreateContainerConfigError` or
   `InvalidImageName`, or has restarted more
-  than three times. `recipes/check` polls the pods of all namespaces every
+  than three times, on two polls in a row. One poll is not enough:
+  Argo CD's server waits with `CreateContainerConfigError` for the
+  `argocd-redis` Secret until the redis pod's init container has created
+  it, and the watcher stopped a healthy install on that in CI. `recipes/check` polls the pods of all namespaces every
   10 seconds from the creation of the kind cluster until Chainsaw ends, so
   a broken pod also stops the operator installs. On the first broken pod
   it prints the pod's description and its containers' logs and stops the
@@ -232,7 +235,14 @@ to report exactly that commit. The Gitea image is pinned by digest in
 
   The generators are verified and fetched as in EX-4. Broken pods stop the
   check and a timed-out install wait prints its namespace as in EX-6, for
-  the Git server and the tool as for an operator. The Argo CD Application syncs automatically with
+  the Git server and the tool as for an operator. `check` replaces Argo
+  CD's redis image `public.ecr.aws/docker/library/redis:8.2.3-alpine` with
+  `mirror.gcr.io/library/redis:8.2.3-alpine` pinned by the same digest
+  (`sha256:08ad0b1d…`, identical on ECR Public, Docker Hub and the mirror,
+  checked 2026-10-19): ECR Public answered anonymous pulls from GitHub
+  runners with "429 Too Many Requests" in three of four runs, and the
+  manifest pulls redis with `imagePullPolicy: Always`, so a pull before the
+  install would not help. The Argo CD Application syncs automatically with
   `prune` and `selfHeal`; the Flux objects keep the flux generator's
   defaults plus `prune: true`. `check` prints the numbers the guide quotes:
   the CRDs in the release manifest, the tool's pods and images, the seconds

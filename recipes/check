@@ -87,13 +87,17 @@ describe_pods() { # namespace pod...
 # as soon as a pod is broken instead of at their timeout; Chainsaw cannot
 # run a watch beside an assert within one test.
 watch_pods() {
-  local bad
+  local bad now seen=''
   while sleep 10; do
     bad=$(kubectl get pods -A -o json | jq -r '.items[]
       | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
           .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
             "CreateContainerConfigError", "InvalidImageName"))))
       | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    # EX-6: broken on two polls in a row; Argo CD's server briefly waits for a Secret.
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
     [[ -n $bad ]] || continue
     echo "EX-6: broken pods, stopping the check" >&2
     while read -r ns pod; do
