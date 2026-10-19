@@ -217,9 +217,12 @@ under Inventory names.
   pods. Strimzi's values take a digest but then drop the tag, so mutate
   sets the reference in the container and in the three variables that run
   the same image for the entity operator and the Kafka init container.
-  cert-manager's values take tag and digest for each image and the
-  Keycloak Operator's the whole reference, so their classes have no mutate
-  entry.
+  cert-manager's values take tag and digest for each image, so its class
+  has no mutate entry. The Keycloak Operator's take the whole reference;
+  its mutate entry sets the namespace of the Deployment, the Service, the
+  ServiceAccount and one RoleBinding, which the chart leaves to `helm
+  install --namespace`, so that `kubectl apply` does not put them into
+  `default`.
   The cert-manager class sets `crds.enabled` and leaves out
   `startupapicheck`, a Helm hook that waits for the webhook during `helm
   install`. The images the operators start for the software, PostgreSQL,
