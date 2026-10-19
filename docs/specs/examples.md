@@ -143,10 +143,13 @@ part in a recipe whose subject is external-dns.
   the operations of a test one after another and has none that runs beside
   an assert.
 
-  Before the output is applied, `check` repeats a server-side dry run of it
-  for up to a minute until it passes: the RabbitMQ Cluster Operator has no
-  readiness probe, so its rollout completes before its admission webhook
-  listens, and an apply in that window fails with "connection refused".
+  Before every apply, of an operator's release manifest as of the compiled
+  output, `check` repeats a server-side dry run of the same files for up to
+  a minute until it passes. A webhook can refuse connections for a few
+  seconds after its rollout reports done: the RabbitMQ Cluster Operator has
+  no readiness probe, and cert-manager's webhook rejected the Certificates
+  of the RabbitMQ operator's manifest in CI ("failed calling webhook
+  webhook.cert-manager.io") right after `rollout status` returned.
 
   `ErrImagePull` alone does not count as broken: a registry hiccup causes
   it once, and a pull that keeps failing turns into `ImagePullBackOff`
