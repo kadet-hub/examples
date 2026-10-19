@@ -1,0 +1,138 @@
+# external-dns with PowerDNS, in place of Bitnami's external-dns chart:
+# external-dns writes a record for every annotated Service into the zone
+# example.internal on a PowerDNS Authoritative Server, which keeps its zones
+# in SQLite on a persistent volume. The init containers seed the database
+# from the image and create the zone once. The API key is a Kapitan ref,
+# generated on the first compile into refs/powerdns/api-key (see the valkey
+# recipe for the backend). No operator needed.
+classes:
+  - recipes.lib.kubernetes
+
+parameters:
+  generators:
+    kubernetes:
+      namespaces:
+        dns: {}
+  components:
+    powerdns:
+      namespace: dns
+      type: statefulset
+      image: docker.io/powerdns/pdns-auth-51:5.1.4
+      security_profile: restricted
+      workload_security_context:
+        runAsUser: 953
+        runAsGroup: 953
+        fsGroup: 953
+        sysctls:
+          - {name: net.ipv4.ip_unprivileged_port_start, value: "0"}
+      env:
+        PDNS_AUTH_API_KEY:
+          secretKeyRef:
+            key: api-key
+      secrets:
+        api:
+          string_data:
+            api-key:
+              value: ?{base64:powerdns/api-key||random:str:32}
+      init_containers:
+        seed:
+          image: docker.io/powerdns/pdns-auth-51:5.1.4
+          command: [sh, -ec, "[ -f /data/pdns.sqlite3 ] || cp /var/lib/powerdns/pdns.sqlite3 /data/"]
+          volume_mounts:
+            data:
+              mount_path: /data
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+        zone:
+          image: docker.io/powerdns/pdns-auth-51:5.1.4
+          command: [sh, -ec, "pdnsutil zone list example.internal >/dev/null 2>&1 || pdnsutil zone create example.internal ns1.example.internal"]
+          volume_mounts:
+            data:
+              mount_path: /var/lib/powerdns
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 128Mi}
+      ports:
+        dns-udp:
+          container_port: 53
+          service_port: 53
+          protocol: UDP
+        dns-tcp:
+          container_port: 53
+          service_port: 53
+        api:
+          container_port: 8081
+          service_port: 8081
+      healthcheck:
+        readiness:
+          type: tcp
+          port: dns-tcp
+      resources:
+        requests: {cpu: 100m, memory: 128Mi}
+        limits: {memory: 256Mi}
+      volume_mounts:
+        data:
+          mount_path: /var/lib/powerdns
+      volume_claims:
+        data:
+          spec:
+            accessModes: [ReadWriteOnce]
+            resources:
+              requests:
+                storage: 1Gi
+      service:
+        type: ClusterIP
+
+    external-dns:
+      namespace: dns
+      image: registry.k8s.io/external-dns/external-dns:v0.23.0
+      security_profile: restricted
+      read_only_root_filesystem: true
+      workload_security_context:
+        runAsUser: 65534
+        runAsGroup: 65534
+      automount_service_account_token: true
+      service_account:
+        create: true
+      cluster_role:
+        rules:
+          - apiGroups: [""]
+            resources: [services, pods]
+            verbs: [get, watch, list]
+          - apiGroups: [discovery.k8s.io]
+            resources: [endpointslices]
+            verbs: [get, watch, list]
+          - apiGroups: [networking.k8s.io]
+            resources: [ingresses]
+            verbs: [get, watch, list]
+          - apiGroups: [""]
+            resources: [nodes]
+            verbs: [list]
+      env:
+        PDNS_API_KEY:
+          secretKeyRef:
+            name: powerdns
+            key: api-key
+      args:
+        - --source=service
+        - --publish-internal-services
+        - --provider=pdns
+        - --pdns-server=http://powerdns.dns.svc:8081
+        - --pdns-api-key=$(PDNS_API_KEY)
+        - --domain-filter=example.internal
+        - --registry=txt
+        - --txt-owner-id=kadet-hub-recipe
+        - --policy=sync
+        - --interval=10s
+      ports:
+        http:
+          container_port: 7979
+      healthcheck:
+        readiness:
+          type: http
+          port: http
+          path: /healthz
+      resources:
+        requests: {cpu: 50m, memory: 64Mi}
+        limits: {memory: 128Mi}

@@ -48,6 +48,12 @@ env:
   # renovate: datasource=github-releases depName=google/gvisor
   GVISOR_RELEASE: "20261005"
   GVISOR_SHA512: 27fed731b432d6a39d908956623fd273979fda66b3ccf4b9c12413ea417c516e18a9dc3cced403fb28efe495d64dce4251f51cf8c4d9f4a72f9833bd96b6bb35
+  # renovate: datasource=github-releases depName=kubernetes-sigs/kind
+  KIND_VERSION: v0.33.0
+  KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+  # renovate: datasource=github-releases depName=kyverno/chainsaw
+  CHAINSAW_VERSION: v0.2.15
+  CHAINSAW_SHA256: 295d226c89f126c0a97775d364be149f47a810c8a3f9829ee410583d0c1abe3c
 
 jobs:
   same-app:
@@ -258,3 +264,48 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           npm_config_update_notifier: "false"
         run: config-tools/check
+
+  # EX-6: each recipe deployed to its own kind cluster and checked.
+  recipe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        recipe: [postgresql, keycloak, valkey, kafka, rabbitmq, external-dns-powerdns]
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install oras, kubeconform, uv, kubectl, kind and chainsaw
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSLo kubectl "https://dl.k8s.io/release/$KUBERNETES_VERSION/bin/linux/amd64/kubectl"
+          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          curl -fsSLo chainsaw.tgz "https://github.com/kyverno/chainsaw/releases/download/$CHAINSAW_VERSION/chainsaw_linux_amd64.tar.gz"
+          sha256sum -c <<EOF
+          $ORAS_SHA256  oras.tgz
+          $KUBECONFORM_SHA256  kubeconform.tgz
+          $UV_SHA256  uv.tgz
+          $KUBECTL_SHA256  kubectl
+          $KIND_SHA256  kind
+          $CHAINSAW_SHA256  chainsaw.tgz
+          EOF
+          tar -xzf oras.tgz oras
+          tar -xzf kubeconform.tgz kubeconform
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          tar -xzf chainsaw.tgz chainsaw
+          chmod +x kubectl kind
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: recipes/check ${{ matrix.recipe }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECIPE: ${{ matrix.recipe }}
+        run: recipes/check "$RECIPE"

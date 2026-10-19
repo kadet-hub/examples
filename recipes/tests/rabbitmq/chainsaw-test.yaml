@@ -1,0 +1,25 @@
+# EX-6: all three nodes are ready and RabbitMQ reports itself running.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: rabbitmq
+spec:
+  namespace: messaging
+  steps:
+    - try:
+        - assert:
+            timeout: 15m
+            resource:
+              apiVersion: rabbitmq.com/v1beta1
+              kind: RabbitmqCluster
+              metadata: {name: production}
+              status:
+                (conditions[?type == 'AllReplicasReady']):
+                  - status: "True"
+        - script:
+            timeout: 1m
+            content: kubectl -n messaging exec production-server-0 -c rabbitmq -- rabbitmq-diagnostics -q check_running
+      catch:
+        - events: {}
+        - podLogs: {}
+        - describe: {apiVersion: rabbitmq.com/v1beta1, kind: RabbitmqCluster}
