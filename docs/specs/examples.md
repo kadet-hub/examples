@@ -350,7 +350,7 @@ mutation matches them by kind and label, not by name.
   keys, so that mutate's reformatting of a rewritten file does not show.
 
   - Test: `examples` workflow, job `helm-mutate`
-  - Since: tbd
+  - Since: #19
 
 - EX-10: CI MUST deploy `compiled/podinfo`, comment-only files included, to
   a new kind cluster once with `kubectl apply -R -f`, once through Argo CD
@@ -373,7 +373,7 @@ mutation matches them by kind and label, not by name.
 
   - Test: `helm-mutate/tests/<tool>/chainsaw-test.yaml`; `examples`
     workflow, job `helm-mutate` per tool
-  - Since: tbd
+  - Since: #19
 
 ## Open questions
 
