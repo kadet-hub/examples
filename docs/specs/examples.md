@@ -170,7 +170,7 @@ schedule instead of trusting the state on the publishing day.
     `renovate --platform=local --dry-run=lookup` with pins set one release
     back; workflow job `pins`
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
-    every pin by Renovate: tbd
+    every pin by Renovate: #23
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
