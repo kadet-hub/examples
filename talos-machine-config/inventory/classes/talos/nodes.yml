@@ -1,0 +1,17 @@
+# One entry per machine: role, hostname, address.
+parameters:
+  generators:
+    talos:
+      nodes:
+        cp-1:
+          type: controlplane
+          hostname: cp-1
+          ip: 192.0.2.11/24
+        worker-1:
+          type: worker
+          hostname: worker-1
+          ip: 192.0.2.21/24
+        worker-2:
+          type: worker
+          hostname: worker-2
+          ip: 192.0.2.22/24

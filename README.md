@@ -1,7 +1,7 @@
 # examples
 
 Runnable examples behind the posts on the [kadet-hub.org blog](https://kadet-hub.org/blog/).
-Each folder belongs to one post and has a script that exits non-zero when
+Each folder belongs to one post or guide and has a script that exits non-zero when
 what the post claims no longer holds.
 
 | Folder | Post | Script |
@@ -13,6 +13,7 @@ what the post claims no longer holds.
 | [verify-oci](verify-oci/) | https://kadet-hub.org/blog/verify-oci/ | `verify-oci/verify kubernetes 1.2.0 47` |
 | [gvisor-ci](gvisor-ci/) | https://kadet-hub.org/blog/gvisor-ci/ | `gvisor-ci/check` |
 | [config-tools](config-tools/) | https://kadet-hub.org/blog/config-tools/ | `config-tools/check` |
+| [talos-machine-config](talos-machine-config/) | https://kadet-hub.org/guides/talos-machine-config/ | `talos-machine-config/check` |
 
 ## Running
 

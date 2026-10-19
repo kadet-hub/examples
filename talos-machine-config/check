@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# Verifies the latest signed kadet-hub index and the talos generator pinned in
+# inventory/classes/generators.yml, fetches it by digest, fills the secret refs
+# from a fresh `talosctl gen secrets` bundle and compiles the lab cluster. Exits
+# 0 only if
+#   - every node config passes `talosctl validate --mode metal`,
+#   - the nameserver and NTP server set once in talos/cluster reach every node,
+#   - the class talos/patches/worker-1-nvme changes worker-1's config and no
+#     other file,
+#   - an invalid value compiles but fails `talosctl validate`.
+# Needs gh (authenticated), jq, oras, uv and talosctl.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+tmp=$(mktemp -d)
+trap 'rm -rf -- "$tmp"' EXIT
+rm -rf lib compiled refs
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+echo "index serial $serial verified"
+
+read -r name version digest < <(sed -nE \
+  's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  inventory/classes/generators.yml)
+want=$(jq -er --arg n "$name" --arg v "$version" \
+  '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+  echo "$name $version is missing or yanked in index serial $serial" >&2
+  exit 1
+}
+if [[ $want != "$digest" ]]; then
+  echo "$name $version: index has $want, inventory pins $digest" >&2
+  exit 1
+fi
+gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+oras pull -o "$tmp/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+mkdir -p "lib/$name"
+tar -xf "$tmp/$name/$name.tar" -C "lib/$name" --no-same-owner
+echo "$name $version verified and unpacked"
+
+# One ref per secret. The generator writes cluster.ca, aggregatorCA and
+# serviceAccount as PEM documents and cannot decode a ref, so those refs hold
+# PEM; the bundle stores every certificate and key base64-encoded.
+talosctl gen secrets -o "$tmp/secrets.yaml" >/dev/null
+mkdir "$tmp/s"
+"${py[@]}" python -I -c '
+import base64, sys, yaml
+s = yaml.safe_load(open(sys.argv[1]))
+c = s["certs"]
+pem = lambda v: base64.b64decode(v).decode()
+refs = {
+    "machine-token": s["trustdinfo"]["token"],
+    "machine-ca-crt": c["os"]["crt"],
+    "machine-ca-key": c["os"]["key"],
+    "cluster-id": s["cluster"]["id"],
+    "cluster-secret": s["cluster"]["secret"],
+    "cluster-token": s["secrets"]["bootstraptoken"],
+    "secretbox": s["secrets"]["secretboxencryptionsecret"],
+    "cluster-ca-crt": pem(c["k8s"]["crt"]),
+    "cluster-ca-key": pem(c["k8s"]["key"]),
+    "aggregator-ca-crt": pem(c["k8saggregator"]["crt"]),
+    "aggregator-ca-key": pem(c["k8saggregator"]["key"]),
+    "service-account-key": pem(c["k8sserviceaccount"]["key"]),
+    "etcd-ca-crt": c["etcd"]["crt"],
+    "etcd-ca-key": c["etcd"]["key"],
+}
+for k, v in refs.items():
+    open(f"{sys.argv[2]}/{k}", "w").write(v)
+' "$tmp/secrets.yaml" "$tmp/s"
+for f in "$tmp"/s/*; do
+  "${py[@]}" kapitan refs --write "base64:talos/${f##*/}" -f "$f" >/dev/null
+done
+
+compile() { # inventory path, output path
+  "${py[@]}" kapitan compile --inventory-backend reclass-rs --reveal \
+    --inventory-path "$1" --output-path "$2" >"$tmp/compile.log" 2>&1 \
+    || { cat "$tmp/compile.log"; exit 1; }
+}
+compile inventory .
+out=compiled/lab/talos
+files=("$out/cp-1.yaml" "$out/worker-1.yaml" "$out/worker-2.yaml")
+
+status=0
+for f in "${files[@]}"; do
+  talosctl validate --mode metal --config "$f" || status=1
+done
+
+# Values from talos/cluster, read from the class itself.
+"${py[@]}" python -I -c '
+import sys, yaml
+base = yaml.safe_load(open("inventory/classes/talos/cluster.yml"))["parameters"]["generators"]["talos"]["base"]
+ns = base["machine"]["network"]["nameservers"]
+ntp = base["machine"]["time"]["servers"]
+ok = True
+for f in sys.argv[1:]:
+    docs = {d.get("kind", "v1alpha1"): d for d in yaml.safe_load_all(open(f)) if d}
+    got_ns = docs["ResolverConfig"]["nameservers"]
+    got_ntp = docs["TimeSyncConfig"]["ntp"]["servers"]
+    if [n["address"] for n in got_ns] != ns or got_ntp != ntp:
+        print(f"{f}: nameservers {got_ns}, ntp {got_ntp}; class sets {ns}, {ntp}", file=sys.stderr)
+        ok = False
+    else:
+        print(f"{f}: nameservers {ns} and ntp {ntp} from talos/cluster")
+sys.exit(0 if ok else 1)
+' "${files[@]}" || status=1
+
+# The same inventory without the per-node patch class: only worker-1 differs.
+cp -r inventory "$tmp/inv"
+sed -i '/talos\.patches\.worker-1-nvme/d' "$tmp/inv/targets/lab.yml"
+compile "$tmp/inv" "$tmp/unpatched"
+changed=$(diff -rq "$tmp/unpatched/compiled/lab/talos" "$out" | sed -E 's|.*/talos/([^ ]+) and .*|\1|' || true)
+if [[ $changed == worker-1.yaml ]]; then
+  echo "talos/patches/worker-1-nvme changes worker-1.yaml only:"
+  diff "$tmp/unpatched/compiled/lab/talos/worker-1.yaml" "$out/worker-1.yaml" || true
+else
+  echo "expected only worker-1.yaml to change, got: ${changed:-nothing}" >&2
+  status=1
+fi
+
+# An invalid value: Kapitan compiles it, talosctl validate rejects it.
+cp -r inventory "$tmp/bad"
+sed -i 's|endpoint: https://192.0.2.11:6443|endpoint: 192.0.2.11:6443|' "$tmp/bad/classes/talos/cluster.yml"
+compile "$tmp/bad" "$tmp/bad-out"
+bad=$tmp/bad-out/compiled/lab/talos/cp-1.yaml
+grep -q 'endpoint: 192.0.2.11:6443' "$bad"
+if talosctl validate --mode metal --config "$bad" 2>"$tmp/bad.log"; then
+  echo "cp-1 with an endpoint without scheme passed talosctl validate" >&2
+  status=1
+else
+  echo "endpoint without scheme fails talosctl validate:"
+  cat "$tmp/bad.log"
+fi
+exit "$status"

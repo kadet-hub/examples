@@ -1,0 +1,9 @@
+classes:
+  - generators
+  - talos.secrets
+  - talos.cluster
+  - talos.nodes
+  - talos.patches.worker-1-nvme
+parameters:
+  kapitan:
+    vars: {target: lab}
