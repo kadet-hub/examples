@@ -141,7 +141,7 @@ schedule instead of trusting the state on the publishing day.
   - Test: `manual:` review of `.github/workflows/examples.yml` and the `check` scripts;
     `renovate --platform=local --dry-run=lookup` with pins set one release
     back; workflow job `pins`
-  - Since: tbd; checksums by Renovate: #15; operator charts and images: this change
+  - Since: tbd; checksums by Renovate: #15; operator charts and images: #21
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
@@ -254,7 +254,7 @@ under Inventory names.
   - Test: `recipes/check` via the `examples` workflow, job `recipe` for
     `postgresql`, `keycloak`, `kafka` and `rabbitmq` (fails when helm rejects a chart's
     digest, a mutation matches nothing, or the operator does not come up)
-  - Since: this change
+  - Since: #21
 
 PowerDNS keeps its zones in SQLite on a volume rather than in PostgreSQL:
 the image ships the SQLite schema, while the PostgreSQL backend would need
@@ -319,7 +319,7 @@ part in a recipe whose subject is external-dns.
   - Test: `examples` workflow, job `recipe` per recipe; the fail-fast path
     by hand, with a non-existent image tag in a recipe class or in an
     operator's release manifest
-  - Since: #8, #10, #13, #16, #17, #20; operators from the compiled target: this change
+  - Since: #8, #10, #13, #16, #17, #20; operators from the compiled target: #21
 
 ## Argo CD and Flux
 
