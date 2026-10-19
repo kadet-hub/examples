@@ -4,9 +4,10 @@ Status: Draft
 Code: `*/check`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `.github/workflows/examples.yml`, `renovate.json`
 Verified against: main @ tbd
 
-Each folder holds the runnable part of one kadet-hub.org blog post. A post
-states results: identical manifests from three tools, documents the API server
-rejects, a verified and schema-valid compile. Those results depend on tool
+Each folder holds the runnable part of one kadet-hub.org blog post or
+guide. A post or guide states results: identical manifests from three
+tools, documents the API server rejects, a verified and schema-valid
+compile. Those results depend on tool
 versions, generator releases and the signed index, all of which move after
 the post is published. The repository therefore checks every claim on a
 schedule instead of trusting the state on the publishing day.
@@ -24,6 +25,18 @@ schedule instead of trusting the state on the publishing day.
   escape scripts' output inside and outside the sandbox, `verify-oci` fails
   on an index or attestation mismatch, and `first-platform` and `bitnami`
   fail on such a mismatch and on any kubeconform finding.
+  `talos-machine-config` fails on such a mismatch, on a node config that
+  `talosctl validate --mode metal` rejects, when the nameserver or NTP
+  server set once in the class `talos.cluster` is missing from a node's
+  config, when dropping the class `talos.patches.worker-1-nvme` changes any
+  file but `worker-1.yaml`, and when a control plane endpoint without
+  scheme passes `talosctl validate`.
+
+  `talos-machine-config/check` creates the cluster secrets with
+  `talosctl gen secrets` on every run, writes them to Kapitan refs with the
+  base64 backend and compiles with `--reveal`, because `talosctl validate`
+  rejects placeholder certificates. Neither the refs nor the compiled
+  configs are committed.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -48,8 +61,9 @@ schedule instead of trusting the state on the publishing day.
   to a version is updated by hand, so a bump fails `sha256sum -c` until it is.
   Kapitan and Python packages are pinned by version through uv, npm packages
   through `package-lock.json`, jsonnet libraries through
-  `jsonnetfile.lock.json`; `gh`, `jq`, `curl`, `openssl`, `python3` and
-  `docker` come from the runner image. kind runs the node image its release
+  `jsonnetfile.lock.json`. `talosctl` is pinned by the sha256 that the
+  Siderolabs release lists in `sha256sum.txt`. `gh`, `jq`, `curl`,
+  `openssl`, `python3` and `docker` come from the runner image. kind runs the node image its release
   names, pinned by digest in `recipes/check`; operator release manifests are
   pinned by URL and sha256 there. Kapitan 0.36.3 with the `omegaconf`
   extra MUST be installed with `omegaconf==2.4.0.dev4`: omegaconf 2.4.0
@@ -171,6 +185,7 @@ part in a recipe whose subject is external-dns.
 | `.github/workflows/examples.yml` | One job per example, tool versions and sha256 in `env` |
 | `renovate.json` | Org preset for generator pins, regex manager for `# renovate:` comments |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
+| `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
 | `recipes/` | One Kapitan project; `check <recipe>` verifies the generators, compiles, deploys to kind and runs the recipe's check |
 
 Recipes and their checks:
