@@ -1,0 +1,8 @@
+classes:
+  - generators
+  - recipes.postgresql
+
+parameters:
+  kapitan:
+    vars:
+      target: postgresql

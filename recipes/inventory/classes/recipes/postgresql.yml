@@ -1,0 +1,28 @@
+# PostgreSQL with CloudNativePG, in place of Bitnami's postgresql and
+# postgresql-ha charts: three instances with automatic failover, the database
+# "app" owned by "app" (password in the Secret app-db-app) and a PgBouncer
+# pooler in transaction mode. Needs the CloudNativePG operator.
+classes:
+  - recipes.lib.kubernetes
+  - recipes.lib.cloudnative-pg
+
+parameters:
+  generators:
+    kubernetes:
+      namespaces:
+        databases: {}
+    cloudnative-pg:
+      namespace: databases
+      clusters:
+        app-db:
+          instances: 3
+          image_name: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+          storage: 10Gi
+          bootstrap:
+            initdb:
+              database: app
+              owner: app
+      poolers:
+        app-db-pooler-rw:
+          cluster: app-db
+          pool_mode: transaction

@@ -1,0 +1,61 @@
+# Valkey, in place of Bitnami's redis chart (standalone architecture): one
+# StatefulSet with append-only persistence and a password. Valkey is the
+# BSD-3-Clause fork of Redis 7.2 and speaks the same protocol. The password
+# is a Kapitan ref, generated on the first compile into refs/valkey/password;
+# compile again with --reveal, or apply through Tesoro, to get the value into
+# the Secret. The base64 backend keeps the recipe self-contained and encrypts
+# nothing: in a real project use gpg or a KMS backend. No operator needed.
+classes:
+  - recipes.lib.kubernetes
+
+parameters:
+  generators:
+    kubernetes:
+      namespaces:
+        valkey: {}
+  components:
+    valkey:
+      namespace: valkey
+      type: statefulset
+      image: docker.io/valkey/valkey:9.1.2
+      security_profile: restricted
+      workload_security_context:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      args: [valkey-server, --requirepass, $(VALKEY_PASSWORD), --appendonly, "yes", --dir, /data]
+      env:
+        VALKEY_PASSWORD:
+          secretKeyRef:
+            key: password
+      secrets:
+        auth:
+          string_data:
+            password:
+              value: ?{base64:valkey/password||random:str:32}
+      ports:
+        valkey:
+          container_port: 6379
+          service_port: 6379
+      healthcheck:
+        readiness:
+          type: tcp
+          port: valkey
+        liveness:
+          type: tcp
+          port: valkey
+      resources:
+        requests: {cpu: 100m, memory: 128Mi}
+        limits: {memory: 512Mi}
+      volume_mounts:
+        data:
+          mount_path: /data
+      volume_claims:
+        data:
+          spec:
+            accessModes: [ReadWriteOnce]
+            resources:
+              requests:
+                storage: 8Gi
+      service:
+        type: ClusterIP

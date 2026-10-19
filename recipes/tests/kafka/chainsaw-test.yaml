@@ -1,0 +1,55 @@
+# EX-6: the KRaft cluster, topic and user are Ready, and a client with the
+# user's certificate produces and consumes a message over mutual TLS.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: kafka
+spec:
+  namespace: kafka
+  steps:
+    - try:
+        - assert:
+            timeout: 15m
+            resource:
+              apiVersion: kafka.strimzi.io/v1
+              kind: Kafka
+              metadata: {name: events}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - assert:
+            timeout: 5m
+            resource:
+              apiVersion: kafka.strimzi.io/v1
+              kind: KafkaTopic
+              metadata: {name: orders}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - assert:
+            timeout: 5m
+            resource:
+              apiVersion: kafka.strimzi.io/v1
+              kind: KafkaUser
+              metadata: {name: orders-app}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - apply:
+            file: client.yaml
+        - assert:
+            timeout: 5m
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata: {name: client}
+              status:
+                phase: Succeeded
+        - script:
+            content: kubectl -n kafka logs client
+            check:
+              (contains($stdout, 'recipe-check')): true
+      catch:
+        - events: {}
+        - podLogs: {}
+        - describe: {apiVersion: kafka.strimzi.io/v1, kind: Kafka}

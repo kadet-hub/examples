@@ -1,0 +1,39 @@
+# EX-6: the Cluster is Ready and the app user reaches its database through the pooler.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: postgresql
+spec:
+  namespace: databases
+  steps:
+    - try:
+        - assert:
+            timeout: 10m
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata: {name: app-db}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - assert:
+            timeout: 5m
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: app-db-pooler-rw}
+              status:
+                readyReplicas: 1
+        - script:
+            timeout: 1m
+            content: |
+              pass=$(kubectl -n databases get secret app-db-app -o jsonpath='{.data.password}' | base64 -d)
+              kubectl -n databases exec app-db-1 -c postgres -- \
+                env PGPASSWORD="$pass" psql -h app-db-pooler-rw -U app -d app -tAc 'select 1'
+            check:
+              ($error): ~
+              (trim_space($stdout)): "1"
+      catch:
+        - events: {}
+        - podLogs: {}
+        - describe: {apiVersion: postgresql.cnpg.io/v1, kind: Cluster}

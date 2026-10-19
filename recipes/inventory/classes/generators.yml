@@ -1,0 +1,22 @@
+# kadet-hub generators, pinned by version and digest (index serial 47).
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/cloudnative-pg:1.0.1@sha256:281417a421b0053070fbdc552f9032a3f8d564c0ca2047ec500842a0d060a8f7
+        output_path: lib/cloudnative-pg
+      - type: oci
+        source: ghcr.io/kadet-hub/keycloak:1.0.3@sha256:0902cc8a796e2a1d1708c7f9975e41e8422d0d1edff7f873faa5ecaeced13dfd
+        output_path: lib/keycloak
+      - type: oci
+        source: ghcr.io/kadet-hub/strimzi:1.0.1@sha256:2efec7979887658e10ec0c99d727cb935bcfc6a63cee51e3a24d336eaaa40de5
+        output_path: lib/strimzi
+      - type: oci
+        source: ghcr.io/kadet-hub/rabbitmq:1.0.3@sha256:7d7586b162faa9105d8d7dd5d330ec150fa66c5870925bb7857f4deb6e335aeb
+        output_path: lib/rabbitmq
+      - type: oci
+        source: ghcr.io/kadet-hub/certmanager:1.0.2@sha256:ba7632e9e06a593fbe20e9fa6774139203d7df65992adff9db94779606888ad9
+        output_path: lib/certmanager
+      - type: oci
+        source: ghcr.io/kadet-hub/kubernetes:1.2.0@sha256:52017626e77dd5bf7293ce465ff0c3dc7a61dae1ae8353a56a53ffebe1bfb67c
+        output_path: lib/kubernetes

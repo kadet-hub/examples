@@ -1,0 +1,8 @@
+classes:
+  - generators
+  - recipes.external-dns-powerdns
+
+parameters:
+  kapitan:
+    vars:
+      target: external-dns-powerdns

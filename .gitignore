@@ -5,3 +5,5 @@ compiled/
 bin/
 dl/
 !/config-tools/tanka/lib/
+!/recipes/inventory/classes/recipes/lib/
+/recipes/refs/

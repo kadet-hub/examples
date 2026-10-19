@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# Usage: check <recipe>
+#
+# Verifies the latest signed kadet-hub index and every generator pinned in
+# inventory/classes/generators.yml, fetches them by digest, compiles the
+# recipe's target, validates it against the generators' schemas, deploys it
+# to a new kind cluster with the operators it needs and runs the recipe's
+# check (EX-5, EX-6). Set KEEP=1 to keep the cluster.
+# Needs gh (authenticated), jq, oras, uv, kubeconform, kind, kubectl, chainsaw, docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+recipe=${1:?usage: check <recipe>}
+[[ -f inventory/targets/$recipe.yml ]] || { echo "no recipe $recipe" >&2; exit 1; }
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+tmp=$(mktemp -d)
+cluster=recipe-$recipe
+export KUBECONFIG=$tmp/kubeconfig  # kind and kubectl leave the caller's kubeconfig alone
+cleanup() {
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf lib compiled
+
+# EX-4: the index signature, then each generator's digest and attestation.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+min=$(sed -n 's/^index_serial: //p' .kapitan-sandbox.yaml)
+if ((serial < min)); then
+  echo "index serial $serial is lower than index_serial $min" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+if grep -E '^ *source:' inventory/classes/generators.yml | grep -vqE '@sha256:[0-9a-f]{64}$'; then
+  echo "EX-5: a generator in inventory/classes/generators.yml is not pinned by digest" >&2
+  exit 1
+fi
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "$name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "$name $version: index has $want, inventory pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "$name $version verified and unpacked"
+done < <(sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  inventory/classes/generators.yml)
+
+uv run kapitan compile --inventory-backend reclass-rs -t "$recipe"
+out=compiled/$recipe
+if grep -rqi bitnami "$out" || grep -rhv '^ *#' inventory/classes/recipes | grep -qi bitnami; then
+  echo "EX-5: bitnami in a recipe class or the compiled output" >&2
+  exit 1
+fi
+a=()
+for g in lib/*; do
+  a+=(-schema-location "$g/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json")
+done
+kubeconform -strict -summary "${a[@]}" \
+  -schema-location 'lib/kubernetes/schemas/core/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' "$out"
+
+# Kapitan refs are created by the first compile; this one writes their values.
+uv run kapitan compile --inventory-backend reclass-rs -t "$recipe" --reveal >/dev/null
+
+# EX-6: operators from their pinned release manifests.
+manifest() { # url sha256
+  curl -fsSL -o "$tmp/m.yaml" "$1"
+  echo "$2  $tmp/m.yaml" | sha256sum -c --quiet
+  kubectl apply --server-side -f "$tmp/m.yaml" >/dev/null
+}
+cnpg() {
+  manifest https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.1/cnpg-1.30.1.yaml \
+    37237f145d8138256ea25ae830f87759255665ff08f8d552fdd8224a5ec032fb
+  kubectl -n cnpg-system rollout status deploy/cnpg-controller-manager --timeout=300s
+}
+
+certmanager() {
+  manifest https://github.com/cert-manager/cert-manager/releases/download/v1.21.2/cert-manager.yaml \
+    e03b668ec8675214af6b0a671699d088f2601fa3878e0dbe1b41d3feafd1879f
+  kubectl -n cert-manager rollout status deploy/cert-manager-webhook --timeout=300s
+}
+strimzi() {  # the release manifest names the namespace myproject; it watches its own
+  curl -fsSL -o "$tmp/m.yaml" https://github.com/strimzi/strimzi-kafka-operator/releases/download/1.3.0/strimzi-cluster-operator-1.3.0.yaml
+  echo "c58da61a66c20169d1c9c42736a9355b183ee17ac7779ab7875beaedbf972232  $tmp/m.yaml" | sha256sum -c --quiet
+  sed -i 's/namespace: myproject$/namespace: kafka/' "$tmp/m.yaml"
+  kubectl -n kafka apply --server-side -f "$tmp/m.yaml" >/dev/null
+  kubectl -n kafka rollout status deploy/strimzi-cluster-operator --timeout=300s
+}
+keycloak_operator() {  # namespaced: it watches keycloak, the namespace it runs in
+  base=https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.8.1/kubernetes
+  while read -r sum file; do
+    curl -fsSL -o "$tmp/$file" "$base/$file"
+    echo "$sum  $tmp/$file" | sha256sum -c --quiet
+    kubectl -n keycloak apply --server-side -f "$tmp/$file" >/dev/null
+  done <<'FILES'
+15d9199822d1918438bd1d093eee3ec8406e7f9d0837c4527fd6da99c63b058a keycloakoidcclients.k8s.keycloak.org-v1.yml
+8d552e1864d78117a07e535479ddb36e16a42b2695726c875f44828e1323edd4 keycloakrealmimports.k8s.keycloak.org-v1.yml
+20c51247cb6cbc6158098caabeaf6b429dc8c016e35829f5ddd9c468b7582667 keycloaks.k8s.keycloak.org-v1.yml
+7c69d146f610f3c40acf4466518e89615b6fce7ee2a03d75cd93b7a9a7bf259e keycloaksamlclients.k8s.keycloak.org-v1.yml
+a6927644c271d4d392bf24aecdd8bf605fe5ee7c2810b6512969c4943f107ca2 kubernetes.yml
+FILES
+  kubectl -n keycloak rollout status deploy/keycloak-operator --timeout=300s
+}
+rabbitmq_operator() {  # its webhook and metrics certificates come from cert-manager
+  certmanager
+  manifest https://github.com/rabbitmq/cluster-operator/releases/download/v2.23.1/cluster-operator.yml \
+    ae35a547751656bc64bb734026249a845d226d96aba5a73783e05c5ec3444687
+  kubectl -n rabbitmq-system rollout status deploy/rabbitmq-cluster-operator --timeout=300s
+}
+
+# The node image kind v0.33.0 was built with.
+kind create cluster --name "$cluster" --wait 120s \
+  --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kubectl apply -f "$out/kubernetes"  # the Namespaces, which the kubernetes generator writes at its top level
+case $recipe in
+  postgresql) cnpg ;;
+  rabbitmq) rabbitmq_operator ;;
+  kafka) strimzi ;;
+  keycloak) certmanager; cnpg; keycloak_operator ;;
+esac
+kubectl apply -R -f "$out"
+
+# EX-6: the recipe's assertions and functional probe; on failure Chainsaw
+# prints the namespace's events, pod logs and the resources it waited for.
+chainsaw test --test-dir "tests/$recipe" --no-color
+echo "$recipe: deployed and checked"

@@ -1,0 +1,36 @@
+# A client with the certificate of the KafkaUser orders-app writes one
+# message to the topic orders and reads it back.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client
+spec:
+  restartPolicy: Never
+  containers:
+    - name: client
+      image: quay.io/strimzi/kafka:1.3.0-kafka-4.3.1
+      env:
+        - {name: CA_PASSWORD, valueFrom: {secretKeyRef: {name: events-cluster-ca-cert, key: ca.password}}}
+        - {name: USER_PASSWORD, valueFrom: {secretKeyRef: {name: orders-app, key: user.password}}}
+      command: [bash, -ec]
+      args:
+        - |
+          cat >/tmp/client.properties <<EOF
+          security.protocol=SSL
+          ssl.truststore.type=PKCS12
+          ssl.truststore.location=/ca/ca.p12
+          ssl.truststore.password=$CA_PASSWORD
+          ssl.keystore.type=PKCS12
+          ssl.keystore.location=/user/user.p12
+          ssl.keystore.password=$USER_PASSWORD
+          EOF
+          b=events-kafka-bootstrap:9093
+          echo recipe-check | bin/kafka-console-producer.sh --bootstrap-server $b --topic orders --producer.config /tmp/client.properties
+          bin/kafka-console-consumer.sh --bootstrap-server $b --topic orders --group orders-app --from-beginning \
+            --max-messages 1 --timeout-ms 60000 --consumer.config /tmp/client.properties
+      volumeMounts:
+        - {name: ca, mountPath: /ca}
+        - {name: user, mountPath: /user}
+  volumes:
+    - {name: ca, secret: {secretName: events-cluster-ca-cert}}
+    - {name: user, secret: {secretName: orders-app}}
