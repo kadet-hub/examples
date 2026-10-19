@@ -41,8 +41,9 @@ there.
 
 The examples workflow runs every script on pull requests, on pushes to `main`
 and weekly, so a change in a tool, a generator or the signed index that breaks
-a post shows up as a failed run. Renovate proposes version bumps; the sha256
-next to each tool version is updated by hand in the same pull request.
+a post shows up as a failed run. Renovate updates versions and digests; for
+pins Renovate cannot hash, the `pins` job prints the new hash on the Renovate
+PR.
 
 Requirements: [docs/specs/examples.md](docs/specs/examples.md).
 
