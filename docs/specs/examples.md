@@ -384,9 +384,9 @@ mutation matches them by kind and label, not by name.
   from the default kubeconform location, which tracks the `master` branch of
   yannh/kubernetes-json-schema.
 - OQ-3: Should `helm-mutate/check` verify the podinfo chart's cosign
-  signature in addition to the digest pin? It would add cosign to the job,
-  and Renovate does not update the chart digest, which is set by hand with
-  the version.
+  signature in addition to the digest pin? It would add cosign to the job.
+  Renovate updates neither the chart digest nor the image digest of
+  `pin-image`; both are set by hand with the version.
 
 ## Inventory
 
