@@ -1,0 +1,13 @@
+# kadet-hub generators, pinned by version and digest (index serial 47).
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/kubernetes:1.2.0@sha256:52017626e77dd5bf7293ce465ff0c3dc7a61dae1ae8353a56a53ffebe1bfb67c
+        output_path: lib/kubernetes
+      - type: oci
+        source: ghcr.io/kadet-hub/argocd:1.0.3@sha256:49804acaf225b3337a63ec95ae3ba001a98c53e342791e1c2b1b6ed3089638d4
+        output_path: lib/argocd
+      - type: oci
+        source: ghcr.io/kadet-hub/flux:1.0.1@sha256:2d92417b8066d3f2317e5029402bfb7a4869a4f65ab34cb4e0c68dfdf1eb4a89
+        output_path: lib/flux
