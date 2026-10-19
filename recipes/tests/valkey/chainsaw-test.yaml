@@ -4,11 +4,12 @@ kind: Test
 metadata:
   name: valkey
 spec:
+  timeouts:
+    assert: 3m
   namespace: valkey
   steps:
     - try:
         - assert:
-            timeout: 5m
             resource:
               apiVersion: apps/v1
               kind: StatefulSet

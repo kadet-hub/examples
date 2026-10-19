@@ -117,7 +117,31 @@ part in a recipe whose subject is external-dns.
 - EX-6: CI MUST, for every recipe, install the operators the recipe needs
   from their pinned release manifests into a new kind cluster, apply the
   compiled target and fail unless the recipe's check passes within its
-  time limit.
+  time limit. It MUST fail within about a minute once a pod is broken.
+
+  A pod is broken when one of its containers waits with
+  `CrashLoopBackOff`, `ImagePullBackOff`, `CreateContainerConfigError` or
+  `InvalidImageName`, or has restarted more
+  than three times. `recipes/check` polls the pods of all namespaces every
+  10 seconds while Chainsaw runs, so a broken operator counts too. On the
+  first broken pod it prints the pod's description and its containers'
+  logs and stops Chainsaw. The watch sits in `check` because Chainsaw runs
+  the operations of a test one after another and has none that runs beside
+  an assert.
+
+  Before the output is applied, `check` repeats a server-side dry run of it
+  for up to a minute until it passes: the RabbitMQ Cluster Operator has no
+  readiness probe, so its rollout completes before its admission webhook
+  listens, and an apply in that window fails with "connection refused".
+
+  `ErrImagePull` alone does not count as broken: a registry hiccup causes
+  it once, and a pull that keeps failing turns into `ImagePullBackOff`
+  seconds later.
+
+  Each test sets `spec.timeouts.assert` to three times the recipe's
+  measured Chainsaw duration, at least 3 minutes. The `recipe` job's
+  `timeout-minutes` of 15 covers the slowest recipe, about 3.5 minutes in
+  CI, with room for image pulls on a cold runner.
 
   The generators are verified and fetched as in EX-4 before the compile.
   `recipes/check` owns the supply chain, the compile, the cluster and the
@@ -127,8 +151,9 @@ part in a recipe whose subject is external-dns.
   Chainsaw prints the namespace's events, pod logs and the resources it
   waited for, which a timeout of `kubectl wait` does not.
 
-  - Test: `examples` workflow, job `recipe` per recipe
-  - Since: #8
+  - Test: `examples` workflow, job `recipe` per recipe; the fail-fast path
+    by hand, with a non-existent image tag in a recipe class
+  - Since: #8, #10
 
 ## Open questions
 

@@ -282,7 +282,7 @@ jobs:
   # EX-6: each recipe deployed to its own kind cluster and checked.
   recipe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:

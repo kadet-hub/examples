@@ -5,11 +5,12 @@ kind: Test
 metadata:
   name: kafka
 spec:
+  timeouts:
+    assert: 5m
   namespace: kafka
   steps:
     - try:
         - assert:
-            timeout: 15m
             resource:
               apiVersion: kafka.strimzi.io/v1
               kind: Kafka
@@ -18,7 +19,6 @@ spec:
                 (conditions[?type == 'Ready']):
                   - status: "True"
         - assert:
-            timeout: 5m
             resource:
               apiVersion: kafka.strimzi.io/v1
               kind: KafkaTopic
@@ -27,7 +27,6 @@ spec:
                 (conditions[?type == 'Ready']):
                   - status: "True"
         - assert:
-            timeout: 5m
             resource:
               apiVersion: kafka.strimzi.io/v1
               kind: KafkaUser
@@ -38,7 +37,6 @@ spec:
         - apply:
             file: client.yaml
         - assert:
-            timeout: 5m
             resource:
               apiVersion: v1
               kind: Pod
