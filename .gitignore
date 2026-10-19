@@ -9,3 +9,4 @@ dl/
 /recipes/refs/
 /talos-machine-config/refs/
 /helm-mutate/charts/
+/recipes/charts/

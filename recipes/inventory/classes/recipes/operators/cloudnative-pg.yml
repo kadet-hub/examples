@@ -1,0 +1,49 @@
+# The CloudNativePG operator from its chart, pinned by version and digest:
+# CRDs, webhooks and the controller in cnpg-system, watching every namespace.
+# The chart takes the image by tag only; mutate pins it by digest in the
+# container and in OPERATOR_IMAGE_NAME, which the operator passes on to the
+# instance pods.
+classes:
+  - recipes.lib.kubernetes
+
+parameters:
+  operators:
+    cloudnative-pg:
+      image: ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1@sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07
+  generators:
+    kubernetes:
+      namespaces:
+        cnpg-system: {}
+  kapitan:
+    dependencies:
+      - type: helm
+        source: oci://ghcr.io/cloudnative-pg/charts/cloudnative-pg@sha256:3245fa051bb21d0dd9246272f57a2760b4234817a164a3167d2a1e7fb9f63fd9
+        chart_name: cloudnative-pg
+        version: 0.29.1
+        output_path: charts/cloudnative-pg
+    compile:
+      - input_type: helm
+        input_paths: [charts/cloudnative-pg]
+        output_path: operators/cloudnative-pg
+        helm_params:
+          name: cnpg
+          namespace: cnpg-system
+      - input_type: kadet
+        input_paths: [lib/mutate]
+        output_path: operators/cloudnative-pg
+        output_type: plain
+        input_params:
+          mutations:
+            pin-image:
+              match: {kind: Deployment, name: cnpg-cloudnative-pg}
+              merge_lists: {containers: name, env: name}
+              merge:
+                spec:
+                  template:
+                    spec:
+                      containers:
+                        - name: manager
+                          image: ${operators:cloudnative-pg:image}
+                          env:
+                            - name: OPERATOR_IMAGE_NAME
+                              value: ${operators:cloudnative-pg:image}

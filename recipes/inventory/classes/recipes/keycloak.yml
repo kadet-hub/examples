@@ -3,13 +3,17 @@
 # and its TLS certificate from cert-manager. The initial admin is in the
 # Secret sso-initial-admin. The Issuer is self-signed so the recipe runs
 # anywhere; point the Certificate at your own issuer and set the hostname.
-# Needs cert-manager, CloudNativePG and the Keycloak Operator, which watches
-# its own namespace, here keycloak.
+# cert-manager, the CloudNativePG operator and the Keycloak Operator come
+# with it, from their Helm charts in recipes.operators.cert-manager,
+# recipes.operators.cloudnative-pg and recipes.operators.keycloak.
 classes:
   - recipes.lib.kubernetes
   - recipes.lib.cloudnative-pg
   - recipes.lib.certmanager
   - recipes.lib.keycloak
+  - recipes.operators.cert-manager
+  - recipes.operators.cloudnative-pg
+  - recipes.operators.keycloak
 
 parameters:
   generators:
