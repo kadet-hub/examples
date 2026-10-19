@@ -1,0 +1,8 @@
+classes:
+  - generators
+  - recipes.mongodb
+
+parameters:
+  kapitan:
+    vars:
+      target: mongodb
