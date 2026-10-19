@@ -123,13 +123,14 @@ install_wait() { # namespace kubectl-arguments
 }
 
 # EX-6: a webhook can refuse connections for a few seconds after its rollout
-# reports done; apply once a server-side dry run of the same files passes.
+# reports done; repeat the (idempotent) apply until the API server accepts it.
 apply() { # kubectl apply arguments
-  for _ in $(seq 30); do
-    kubectl apply --dry-run=server "$@" >/dev/null 2>&1 && break
-    sleep 2
+  local i
+  for i in $(seq 30); do
+    kubectl apply "$@" && return
+    ((i < 30)) && sleep 2
   done
-  kubectl apply "$@"
+  return 1
 }
 
 # EX-6: operators from their pinned release manifests.
