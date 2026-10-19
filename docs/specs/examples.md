@@ -119,7 +119,9 @@ schedule instead of trusting the state on the publishing day.
   classes, podinfo in `helm-mutate`); images wherever an `image:` or
   `image_name:` names one, by tag or by `tag@sha256:digest`, as
   `repository`, `tag` and `digest` values, or as a mutate `images` entry
-  with `tag` and `digest`. Package rules put what has to change together
+  with `tag` and `digest`. `renovate.json` keeps only `**/node_modules/**`
+  of the `ignorePaths` that `config:recommended` sets, because those skip
+  `tests/` and with it the image pins of the Chainsaw tests. Package rules put what has to change together
   into one pull request: an operator class's chart and images, so that a
   chart's CRDs never run with another operator version, together with the
   Keycloak image and Strimzi's Kafka client image (EX-5a); kind and its
