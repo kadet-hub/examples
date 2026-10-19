@@ -78,13 +78,17 @@ describe_pods() { # namespace pod...
 # as soon as a pod is broken instead of at their timeout; Chainsaw cannot
 # run a watch beside an assert within one test.
 watch_pods() {
-  local bad
+  local bad now seen=''
   while sleep 10; do
     bad=$(kubectl get pods -A -o json | jq -r '.items[]
       | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
           .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
             "CreateContainerConfigError", "InvalidImageName"))))
       | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    # EX-6: broken on two polls in a row; Argo CD's server briefly waits for a Secret.
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
     [[ -n $bad ]] || continue
     echo "EX-6: broken pods, stopping the check" >&2
     while read -r ns pod; do
@@ -135,6 +139,8 @@ echo "revision: $revision" >"$tmp/values.yaml"
 manifest() { # url sha256 namespace
   curl -fsSL -o "$tmp/m.yaml" "$1"
   echo "$2  $tmp/m.yaml" | sha256sum -c --quiet
+  # EX-7: ECR Public throttles anonymous pulls from runners (429); same image, same digest.
+  sed -i 's|image: public.ecr.aws/docker/library/redis:8.2.3-alpine$|image: mirror.gcr.io/library/redis:8.2.3-alpine@sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba|' "$tmp/m.yaml"
   kubectl apply -n "$3" --server-side --force-conflicts -f "$tmp/m.yaml" >/dev/null
 }
 installed=$SECONDS
