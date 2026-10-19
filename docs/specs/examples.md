@@ -172,13 +172,17 @@ part in a recipe whose subject is external-dns.
   description and logs of every pod that is not ready. Without them the
   timeout names only the Deployments that did not become available.
 
-  Before every apply, of an operator's release manifest as of the compiled
-  output, `check` repeats a server-side dry run of the same files for up to
-  a minute until it passes. A webhook can refuse connections for a few
-  seconds after its rollout reports done: the RabbitMQ Cluster Operator has
-  no readiness probe, and cert-manager's webhook rejected the Certificates
-  of the RabbitMQ operator's manifest in CI ("failed calling webhook
-  webhook.cert-manager.io") right after `rollout status` returned.
+  Every apply, of an operator's release manifest as of the compiled output,
+  is repeated for up to a minute until the API server accepts it. A webhook
+  can refuse connections for a few seconds after its rollout reports done,
+  because the deployment's readiness probe checks another port: the
+  RabbitMQ Cluster Operator's probe is `/readyz` on 8081 while its webhook
+  listens on 9443, and cert-manager's webhook rejected the Certificates of
+  the RabbitMQ operator's manifest in CI ("failed calling webhook
+  webhook.cert-manager.io") right after `rollout status` returned. `kubectl
+  apply` is idempotent, so a repeat changes nothing that already exists. A
+  server-side dry run, used before, cannot pass for a manifest that creates
+  its own Namespace and so always waited the full minute.
 
   `ErrImagePull` alone does not count as broken: a registry hiccup causes
   it once, and a pull that keeps failing turns into `ImagePullBackOff`
