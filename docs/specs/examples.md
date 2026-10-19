@@ -70,61 +70,89 @@ schedule instead of trusting the state on the publishing day.
 ## Supply chain
 
 - EX-3: Every tool the CI jobs download MUST be pinned by version and sha256,
-  and every action by full commit SHA.
+  and every action by full commit SHA. Renovate MUST update every pin in the
+  repository, with its digest wherever a datasource provides one.
 
-  Renovate updates a version and its checksum in the same pull request
-  wherever the source allows it. Each pin uses one of three mechanisms:
+  Renovate updates a version and its checksum or digest in the same pull
+  request. Each pin uses one of four mechanisms:
 
-  - Release asset: uv, oras, kubeconform, Pulumi, etcd, tk, jb, kind,
-    chainsaw, talosctl and tofu are GitHub release assets. Their
-    `# renovate:` comment names `datasource=github-release-attachments`,
-    which hashes the matching asset of the new release. The pinned value
-    MUST be the exact release tag, because the datasource looks the release
-    up by it; URLs that need the bare number strip the `v` with `${X#v}`.
-    The sha256 MUST be that of the downloaded file, not of a file inside
-    it, or Renovate keeps the old hash without an error.
+  - Release asset: uv, oras, kubeconform, Pulumi and its Kubernetes plugin,
+    etcd, tk, jb, kind, chainsaw, talosctl, tofu and gVisor are GitHub
+    release assets, and so are the install manifests of Flux and of the
+    RabbitMQ Cluster Operator. Their `# renovate:` comment names
+    `datasource=github-release-attachments`, which hashes the matching
+    asset of the new release. The pinned value MUST be the exact release
+    tag, because the datasource looks the release up by it; URLs that need
+    the bare number strip the `v` with `${X#v}`. The sha256 MUST be that of
+    the downloaded file, not of a file inside it, or Renovate keeps the old
+    hash without an error.
   - Image: kube-apiserver, kubectl and kustomize come from the Kubernetes
     project's images on registry.k8s.io, pinned as `tag@sha256:digest`
     with `datasource=docker`. The job copies the binary out with
     `docker create` and `docker cp`. The kube-apiserver and kubectl
     binaries are identical to the dl.k8s.io downloads; the kustomize binary
-    is a separate build of the same version.
-  - Check: helm, Node.js, gVisor, `openapi2jsonschema.py` and the Pulumi
-    Kubernetes plugin have neither a release asset nor an image published
-    by the project (the Docker Hub `node` image is built by Docker's
-    Official Images program). Renovate bumps the version only. On Renovate
-    pull requests the `pins` job compares each checksum with the
-    publisher's checksum file (helm `.sha256sum`, Node.js `SHASUMS256.txt`,
-    gVisor `.sha512`, the plugin's `checksums.txt` at the locked
-    `@pulumi/kubernetes` version) or, for `openapi2jsonschema.py`, which
-    has none, with the hash of the file at the pinned kubeconform tag, and
-    fails with the line to paste.
+    is a separate build of the same version. The check scripts pin kind's
+    node image and the redis image of EX-7 the same way.
+  - Commit: Argo CD's `install.yaml` and kubeconform's
+    `openapi2jsonschema.py` are files in the projects' repositories, not
+    release assets. They are fetched from raw.githubusercontent.com at the
+    commit of the pinned tag, written `X_COMMIT=<sha> # <tag>` under a
+    comment with `datasource=github-tags`, which updates tag and commit
+    together, as for an action. No datasource hashes a file in a
+    repository, so these two carry no sha256.
+  - Check: helm, Node.js, and kube-apiserver and kubectl in the
+    `apiserver-dry-run` workflow template, which downloads them from
+    dl.k8s.io, have neither a release asset nor an image published by the
+    project (the Docker Hub `node` image is built by Docker's Official
+    Images program). Renovate bumps the version only. On Renovate pull
+    requests the `pins` job compares each checksum with the publisher's
+    (helm `.sha256sum`, Node.js `SHASUMS256.txt`, the dl.k8s.io binary)
+    and fails with the line to paste.
 
-  The release-asset and the version-only comments are separate match
-  strings: `github-releases` also returns digests, a commit SHA, which it
-  would write into a `_SHA256` field.
+  The release-asset, commit and version-only comments are separate match
+  strings: `github-releases` and `github-tags` also return digests, a
+  commit SHA, which they would write into a `_SHA256` field.
 
-  Kapitan and Python packages are pinned by version through uv, npm packages
-  through `package-lock.json`, jsonnet libraries through
-  `jsonnetfile.lock.json`. `talosctl` is pinned by the sha256 that the
-  Siderolabs release lists in `sha256sum.txt`. `gh`, `jq`, `curl`,
-  `openssl`, `python3` and `docker` come from the runner image. kind runs
-  the node image its release names, pinned by digest in `recipes/check` and
-  `argocd-vs-flux/check`; the release manifests of the operators without a
-  Helm chart (EX-5a), of Argo CD and of Flux are pinned by URL and sha256
-  there. Operator charts are pinned in the recipes' operator classes by
-  version and the digest of their OCI artifact, operator images by
-  `tag@sha256:digest`; a regex manager in `renovate.json` updates both with
-  `datasource=docker`, and one package rule puts the chart and the images
-  of one operator class into one pull request, so that a chart's CRDs never
-  run with another operator version. Kapitan 0.36.3 with the `omegaconf`
+  Pins in Kapitan inventories and Kubernetes manifests are updated with
+  `datasource=docker` by regex managers: generators through the org preset;
+  charts by version and the digest of their OCI artifact (the operator
+  classes, podinfo in `helm-mutate`); images wherever an `image:` or
+  `image_name:` names one, by tag or by `tag@sha256:digest`, as
+  `repository`, `tag` and `digest` values, or as a mutate `images` entry
+  with `tag` and `digest`. `renovate.json` keeps only `**/node_modules/**`
+  of the `ignorePaths` that `config:recommended` sets, because those skip
+  `tests/` and with it the image pins of the Chainsaw tests. Package rules put what has to change together
+  into one pull request: an operator class's chart and images, so that a
+  chart's CRDs never run with another operator version, together with the
+  Keycloak image and Strimzi's Kafka client image (EX-5a); kind and its
+  node image; podinfo's chart and image; `@pulumi/kubernetes` and its
+  plugin.
+
+  Two values follow another pin, and the pull request that changes that
+  pin has to change them: the redis tag follows Argo CD's manifest (EX-7),
+  so Renovate updates only the digest of the pinned tag, and the Kafka
+  version of the `kafka` recipe follows the versions Strimzi supports. CI
+  fails when either no longer fits.
+
+  Kapitan and Python packages are pinned by version through uv or with
+  `==` in the scripts' `uv run --with` and `uvx`, which a regex manager
+  updates with `datasource=pypi`; npm packages through `package-lock.json`;
+  jsonnet libraries through `jsonnetfile.lock.json`, whose entry follows a
+  branch and which Renovate's lock file maintenance refreshes with
+  `jb update`. `talosctl` is pinned by the sha256 that the Siderolabs
+  release lists in `sha256sum.txt`. The `first-platform` workflow template
+  pins the registry's reusable workflow by the commit of `main`, for which
+  the registry publishes no release tag; Renovate follows `main` with
+  `datasource=github-digest`. `gh`, `jq`, `curl`, `openssl`, `python3` and
+  `docker` come from the runner image. Kapitan 0.36.3 with the `omegaconf`
   extra MUST be installed with `omegaconf==2.4.0.dev4`: omegaconf 2.4.0
   breaks its OmegaConf backend (kapicorp/kapitan#1621).
 
   Pulumi's Kubernetes provider plugin is pinned by the `@pulumi/kubernetes`
-  version in `same-app/pulumi/package-lock.json` and by the sha256 of its
-  linux-amd64 archive in the workflow, which `same-app/check` passes to
-  `pulumi plugin install --checksum`. `npm ci` runs with `--ignore-scripts`,
+  version in `same-app/pulumi/package-lock.json` and by version and sha256
+  of its linux-amd64 archive in the workflow; `same-app/check` passes the
+  sha256 to `pulumi plugin install --checksum`, which fails when the two
+  versions differ. `npm ci` runs with `--ignore-scripts`,
   because the package's install script downloads the plugin unchecked, and
   automatic plugin downloads are disabled during `pulumi up`. Pulumi keeps
   its state in a local file backend in a temporary directory; no Pulumi
@@ -141,7 +169,8 @@ schedule instead of trusting the state on the publishing day.
   - Test: `manual:` review of `.github/workflows/examples.yml` and the `check` scripts;
     `renovate --platform=local --dry-run=lookup` with pins set one release
     back; workflow job `pins`
-  - Since: tbd; checksums by Renovate: #15; operator charts and images: #21
+  - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
+    every pin by Renovate: #23
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
@@ -175,7 +204,7 @@ under Inventory names.
   chart.
 
   Images come from the project that builds the software, pinned by tag in
-  the class. Secrets a recipe generates, such as the Valkey password, are
+  the class, which Renovate updates (EX-3). Secrets a recipe generates, such as the Valkey password, are
   Kapitan refs created on the first compile; the recipes use the base64
   backend so they run anywhere, which encrypts nothing. Valkey stands in for Redis: Redis 8 and later are licensed
   RSALv2, SSPLv1 or AGPLv3, Valkey stays BSD-3-Clause and speaks the same
@@ -352,12 +381,12 @@ to report exactly that commit. The Gitea image is pinned by digest in
 
   The generators are verified and fetched as in EX-4. Broken pods stop the
   check and a timed-out install wait prints its namespace as in EX-6, for
-  the Git server and the tool as for an operator. `check` replaces Argo
-  CD's redis image `public.ecr.aws/docker/library/redis:8.2.3-alpine` with
-  `mirror.gcr.io/library/redis:8.2.3-alpine` pinned by the same digest
-  (`sha256:08ad0b1d…`, identical on ECR Public, Docker Hub and the mirror,
-  checked 2026-10-19): ECR Public answered anonymous pulls from GitHub
-  runners with "429 Too Many Requests" in three of four runs, and the
+  the Git server and the tool as for an operator. `check` replaces the
+  redis image of Argo CD's manifest, `public.ecr.aws/docker/library/redis`,
+  with `REDIS_IMAGE`, the same tag on `mirror.gcr.io/library/redis` pinned
+  by digest (for 8.2.3-alpine identical on ECR Public, Docker Hub and the
+  mirror, checked 2026-10-19), and fails when the manifest names another
+  tag: ECR Public answered anonymous pulls from GitHub runners with "429 Too Many Requests" in three of four runs, and the
   manifest pulls redis with `imagePullPolicy: Always`, so a pull before the
   install would not help. The Argo CD Application syncs automatically with
   `prune` and `selfHeal`; the Flux objects keep the flux generator's
@@ -407,9 +436,9 @@ a tool. The HTTP repository publishes no `.prov` files, and Kapitan does
 not pass `--verify`.
 
 Decided in #22 (OQ-3): the digest pin is the chart's only check,
-because it makes the render reproducible. Renovate tracks neither the
-chart nor the image digest of `pin-image`; both are set by hand with the
-version.
+because it makes the render reproducible. Renovate updates the chart's
+version and digest and the tag and digest of `pin-image` in one pull
+request (EX-3).
 
 `check` fetches the chart with `kapitan compile --fetch -t helm`. Target
 `helm` declares the chart and no generator, so EX-4 holds; the generators
@@ -427,7 +456,8 @@ mutation matches them by kind and label, not by name.
   mutation whose `match` names a Deployment the chart does not render
   fails the compile with `expects 1+, matched 0`, and kubeconform passes.
 
-  The mutations are `pin-image` (`images`, the podinfo image by digest),
+  The mutations are `pin-image` (`images`, the podinfo image by tag and
+  digest),
   `harden` (`merge` with `merge_lists: {containers: name}`: restricted
   `securityContext` and a memory limit, the chart's requests and env
   kept), `service-owner` (an annotation on every Service, matched by kind
@@ -471,14 +501,19 @@ mutation matches them by kind and label, not by name.
   per example worth the extra files?
 - OQ-2: `apiserver-dry-run/check` validates against the Kubernetes schemas
   from the default kubeconform location, which tracks the `master` branch of
-  yannh/kubernetes-json-schema.
+  yannh/kubernetes-json-schema. The schema version it names,
+  `-kubernetes-version 1.37.1`, is set by hand.
+- OQ-5: `apiserver-dry-run/crds/` holds the Gateway API v1.6.3 CRDs as a
+  committed copy of the release asset, which Renovate cannot replace.
+  Should `check` download them by version and sha256 instead, although the
+  post's workflow template reads them from the folder?
 
 ## Inventory
 
 | Path | Content |
 |---|---|
 | `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3) |
-| `renovate.json` | Org preset for generator pins, regex manager for `# renovate:` comments |
+| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins (EX-3) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
 | `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |

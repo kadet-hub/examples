@@ -34,6 +34,8 @@ env:
   PULUMI_SHA256: d05899c251cb0413a9a2304f23229218c46852a61256913f34f08ebc27266139
   # Provider plugin linux-amd64 archive at the @pulumi/kubernetes version in
   # same-app/pulumi/package-lock.json, checked by same-app/check.
+  # renovate: datasource=github-release-attachments depName=pulumi/pulumi-kubernetes
+  PULUMI_KUBERNETES_VERSION: v4.34.2
   PULUMI_KUBERNETES_SHA256: b2a3471a897d8d4aa5c6f0ea2933d363dfa72bee8ed651a16246a09e3e728bb6
   # renovate: datasource=docker depName=registry.k8s.io/kube-apiserver
   KUBE_APISERVER_IMAGE: registry.k8s.io/kube-apiserver:v1.37.1@sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732fd1061d
@@ -51,8 +53,8 @@ env:
   # renovate: datasource=node-version depName=node
   NODE_VERSION: 26.12.0
   NODE_SHA256: fd47865ecd6391ebb431fc815e01b9135bf83ded5cf373247e9331e196b7aded
-  # renovate: datasource=github-releases depName=google/gvisor
-  GVISOR_RELEASE: "20261005"
+  # renovate: datasource=github-release-attachments depName=google/gvisor
+  GVISOR_RELEASE: release-20261005.0
   GVISOR_SHA512: 27fed731b432d6a39d908956623fd273979fda66b3ccf4b9c12413ea417c516e18a9dc3cced403fb28efe495d64dce4251f51cf8c4d9f4a72f9833bd96b6bb35
   # renovate: datasource=github-release-attachments depName=kubernetes-sigs/kind
   KIND_VERSION: v0.33.0
@@ -213,7 +215,9 @@ jobs:
       - name: verify-oci/verify
         env:
           GH_TOKEN: ${{ github.token }}
-        run: verify-oci/verify kubernetes 1.2.0 47
+          # renovate: datasource=docker depName=ghcr.io/kadet-hub/kubernetes
+          GENERATOR_VERSION: 1.2.0
+        run: verify-oci/verify kubernetes "$GENERATOR_VERSION" 47
 
   gvisor-ci:
     runs-on: ubuntu-24.04
@@ -227,7 +231,7 @@ jobs:
       - name: Install runsc and uv
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo gvisor.tar.zstd "https://storage.googleapis.com/gvisor/releases/release/${GVISOR_RELEASE}/x86_64/gvisor.tar.zstd"
+          curl -fsSLo gvisor.tar.zstd "https://github.com/google/gvisor/releases/download/$GVISOR_RELEASE/gvisor-x86_64.tar.zstd"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
           echo "$GVISOR_SHA512  gvisor.tar.zstd" | sha512sum -c -
           echo "$UV_SHA256  uv.tgz" | sha256sum -c -
@@ -518,14 +522,11 @@ jobs:
             "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz.sha256sum" "helm-$HELM_VERSION-linux-amd64.tar.gz"
           check .github/workflows/examples.yml "  NODE_SHA256: " "$NODE_SHA256" \
             "https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt" "node-v$NODE_VERSION-linux-x64.tar.xz"
-          check .github/workflows/examples.yml "  GVISOR_SHA512: " "$GVISOR_SHA512" \
-            "https://storage.googleapis.com/gvisor/releases/release/$GVISOR_RELEASE/x86_64/gvisor.tar.zstd.sha512" gvisor.tar.zstd
-          v=$(jq -r '.packages["node_modules/@pulumi/kubernetes"].version' same-app/pulumi/package-lock.json)
-          check .github/workflows/examples.yml "  PULUMI_KUBERNETES_SHA256: " "$PULUMI_KUBERNETES_SHA256" \
-            "https://github.com/pulumi/pulumi-kubernetes/releases/download/v$v/pulumi-kubernetes_${v}_checksums.txt" \
-            "pulumi-resource-kubernetes-v$v-linux-amd64.tar.gz"
-          # No published checksum: the hash of the file at the pinned tag.
-          v=$(sed -n 's/^KUBECONFORM_VERSION=//p' apiserver-dry-run/check)
-          check apiserver-dry-run/check OPENAPI2JSONSCHEMA_SHA256= "$(sed -n 's/^OPENAPI2JSONSCHEMA_SHA256=//p' apiserver-dry-run/check)" \
-            "https://raw.githubusercontent.com/yannh/kubeconform/$v/scripts/openapi2jsonschema.py"
+          # The apiserver-dry-run template downloads both binaries from dl.k8s.io.
+          f=apiserver-dry-run/.github/workflows/dry-run.yml
+          v=$(sed -n 's/^ *KUBERNETES_VERSION: //p' "$f")
+          check "$f" "      KUBE_APISERVER_SHA256: " "$(sed -n 's/^ *KUBE_APISERVER_SHA256: //p' "$f")" \
+            "https://dl.k8s.io/release/$v/bin/linux/amd64/kube-apiserver"
+          check "$f" "      KUBECTL_SHA256: " "$(sed -n 's/^ *KUBECTL_SHA256: //p' "$f")" \
+            "https://dl.k8s.io/release/$v/bin/linux/amd64/kubectl"
           exit "$status"

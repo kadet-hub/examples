@@ -8,14 +8,11 @@ cd "$(dirname "$0")"
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 
-# kubeconform's own converter; no published checksum, sha256 computed locally.
-# renovate: datasource=github-releases depName=yannh/kubeconform
-KUBECONFORM_VERSION=v0.8.0
-OPENAPI2JSONSCHEMA_SHA256=d145babfbb765004030764e1b4e518bfb7a4bd7f111691a08fa57983b81881f3
+# kubeconform's own converter, at the commit of the kubeconform tag.
+# renovate: datasource=github-tags depName=yannh/kubeconform
+KUBECONFORM_COMMIT=02374e583d700721f57300fae78e11acd27ee539 # v0.8.0
 curl -fsSLo "$tmp/openapi2jsonschema.py" \
-  "https://raw.githubusercontent.com/yannh/kubeconform/$KUBECONFORM_VERSION/scripts/openapi2jsonschema.py"
-echo "$OPENAPI2JSONSCHEMA_SHA256  $tmp/openapi2jsonschema.py" |
-  sha256sum -c --quiet -
+  "https://raw.githubusercontent.com/yannh/kubeconform/$KUBECONFORM_COMMIT/scripts/openapi2jsonschema.py"
 mkdir "$tmp/schemas"
 (cd "$tmp/schemas" && uv run --quiet --no-project --with pyyaml==6.0.3 \
   python -I ../openapi2jsonschema.py "$OLDPWD"/crds/*.yaml >/dev/null)

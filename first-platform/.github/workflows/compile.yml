@@ -6,4 +6,4 @@ jobs:
       contents: read
       packages: read
       attestations: read
-    uses: kadet-hub/registry/.github/workflows/consumer.yml@37d5aeaa0b5f402ca36e720e14435419ad56c4df
+    uses: kadet-hub/registry/.github/workflows/consumer.yml@37d5aeaa0b5f402ca36e720e14435419ad56c4df # main

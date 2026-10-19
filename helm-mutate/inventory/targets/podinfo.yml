@@ -16,11 +16,12 @@ parameters:
         input_params:
           mutations: ${mutations}
   mutations:
-    # Pin the image by digest; the chart's values take a tag only.
+    # Pin the image by tag and digest; the chart's values take a tag only.
     pin-image:
       match: {kind: Deployment, name: podinfo}
       images:
         ghcr.io/stefanprodan/podinfo:
+          tag: 6.15.0
           digest: sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
     # Restricted Pod Security for the container, and a memory limit, merged
     # into the container named podinfo instead of replacing the list. The
