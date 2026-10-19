@@ -4,11 +4,12 @@ kind: Test
 metadata:
   name: keycloak
 spec:
+  timeouts:
+    assert: 8m
   namespace: keycloak
   steps:
     - try:
         - assert:
-            timeout: 10m
             resource:
               apiVersion: postgresql.cnpg.io/v1
               kind: Cluster
@@ -17,7 +18,6 @@ spec:
                 (conditions[?type == 'Ready']):
                   - status: "True"
         - assert:
-            timeout: 15m
             resource:
               apiVersion: k8s.keycloak.org/v2beta1
               kind: Keycloak

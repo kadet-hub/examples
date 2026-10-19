@@ -130,7 +130,35 @@ case $recipe in
 esac
 kubectl apply -R -f "$out"
 
+# EX-6: stop Chainsaw as soon as a pod is broken instead of at the assert
+# timeout; Chainsaw cannot run a watch beside an assert within one test.
+watch_pods() { # chainsaw-pid
+  local bad
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "ErrImagePull", "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      kubectl -n "$ns" describe pod "$pod" >&2 || true
+      kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+        kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+    done <<<"$bad"
+    kill "$1"
+    return
+  done
+}
 # EX-6: the recipe's assertions and functional probe; on failure Chainsaw
 # prints the namespace's events, pod logs and the resources it waited for.
-chainsaw test --test-dir "tests/$recipe" --no-color
+chainsaw test --test-dir "tests/$recipe" --no-color &
+pid=$!
+watch_pods "$pid" &
+watcher=$!
+status=0
+wait "$pid" || status=$?
+kill "$watcher" 2>/dev/null || true
+((status == 0)) || exit "$status"
 echo "$recipe: deployed and checked"

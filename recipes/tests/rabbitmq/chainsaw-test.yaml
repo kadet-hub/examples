@@ -4,11 +4,12 @@ kind: Test
 metadata:
   name: rabbitmq
 spec:
+  timeouts:
+    assert: 4m
   namespace: messaging
   steps:
     - try:
         - assert:
-            timeout: 15m
             resource:
               apiVersion: rabbitmq.com/v1beta1
               kind: RabbitmqCluster

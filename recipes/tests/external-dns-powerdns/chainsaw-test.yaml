@@ -5,11 +5,12 @@ kind: Test
 metadata:
   name: external-dns-powerdns
 spec:
+  timeouts:
+    assert: 3m
   namespace: dns
   steps:
     - try:
         - assert:
-            timeout: 5m
             resource:
               apiVersion: apps/v1
               kind: StatefulSet
@@ -17,7 +18,6 @@ spec:
               status:
                 readyReplicas: 1
         - assert:
-            timeout: 5m
             resource:
               apiVersion: apps/v1
               kind: Deployment
