@@ -63,6 +63,9 @@ env:
   # renovate: datasource=github-releases depName=siderolabs/talos
   TALOSCTL_VERSION: v1.14.4
   TALOSCTL_SHA256: 0a69e3f9b682c5cd844b78dae305f6056ceb86c5fcc6913dcea78c527ed97cee
+  # renovate: datasource=github-releases depName=opentofu/opentofu
+  TOFU_VERSION: v1.13.1
+  TOFU_SHA256: 378ada19d4bc70c43732004e8159be771b23b9a5afdf059e5f8a2b3fa2c70a69
 
 jobs:
   same-app:
@@ -312,6 +315,41 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: talos-machine-config/check
+
+
+  helm-vs-terraform:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install oras, kubeconform, uv and tofu
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSLo tofu.tgz "https://github.com/opentofu/opentofu/releases/download/$TOFU_VERSION/tofu_${TOFU_VERSION#v}_linux_amd64.tar.gz"
+          sha256sum -c <<EOF
+          $ORAS_SHA256  oras.tgz
+          $KUBECONFORM_SHA256  kubeconform.tgz
+          $UV_SHA256  uv.tgz
+          $TOFU_SHA256  tofu.tgz
+          EOF
+          tar -xzf oras.tgz oras
+          tar -xzf kubeconform.tgz kubeconform
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          tar -xzf tofu.tgz tofu
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: helm-vs-terraform/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: helm-vs-terraform/check
 
   # EX-6: each recipe deployed to its own kind cluster and checked.
   recipe:

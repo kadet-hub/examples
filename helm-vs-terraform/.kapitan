@@ -1,0 +1,5 @@
+version: 0.36.3
+compile:
+  inventory-backend: reclass-rs
+inventory:
+  inventory-backend: reclass-rs

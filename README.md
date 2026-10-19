@@ -1,10 +1,11 @@
 # examples
 
-Runnable examples behind the posts on the [kadet-hub.org blog](https://kadet-hub.org/blog/).
-Each folder belongs to one post or guide and has a script that exits non-zero when
-what the post claims no longer holds.
+Runnable examples behind the posts on the [kadet-hub.org blog](https://kadet-hub.org/blog/)
+and its [guides](https://kadet-hub.org/guides/). Each folder belongs to one
+page and has a script that exits non-zero when what the page claims no
+longer holds.
 
-| Folder | Post | Script |
+| Folder | Page | Script |
 |---|---|---|
 | [same-app](same-app/) | https://kadet-hub.org/blog/same-app/ | `same-app/check` |
 | [apiserver-dry-run](apiserver-dry-run/) | https://kadet-hub.org/blog/apiserver-dry-run/ | `apiserver-dry-run/check` |
@@ -14,6 +15,7 @@ what the post claims no longer holds.
 | [gvisor-ci](gvisor-ci/) | https://kadet-hub.org/blog/gvisor-ci/ | `gvisor-ci/check` |
 | [config-tools](config-tools/) | https://kadet-hub.org/blog/config-tools/ | `config-tools/check` |
 | [talos-machine-config](talos-machine-config/) | https://kadet-hub.org/guides/talos-machine-config/ | `talos-machine-config/check` |
+| [helm-vs-terraform](helm-vs-terraform/) | https://kadet-hub.org/guides/helm-vs-terraform/ | `helm-vs-terraform/check` |
 
 ## Running
 

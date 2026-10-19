@@ -1,0 +1,17 @@
+# kadet-hub generators, pinned by version and digest (index serial 47).
+parameters:
+  kapitan:
+    vars:
+      target: ${_reclass_:name:short}
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/kubernetes:1.2.0@sha256:52017626e77dd5bf7293ce465ff0c3dc7a61dae1ae8353a56a53ffebe1bfb67c
+        output_path: lib/kubernetes
+      - type: oci
+        source: ghcr.io/kadet-hub/terraform-aws:0.1.2@sha256:5030e53e51c3eafc3404d6c77bbf6276ce8628894d65419917945081cf2b151f
+        output_path: lib/terraform-aws
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/kubernetes], output_path: manifests/}
+      - {input_type: kadet, output_type: json, input_paths: [lib/terraform-aws], output_path: terraform/}
+      # Provider hashes for hashicorp/aws 6.69.1, which `tofu init -lockfile=readonly` checks.
+      - {input_type: copy, input_paths: [providers/.terraform.lock.hcl], output_path: terraform/}

@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+# One Kapitan inventory sets an S3 bucket name and region once; the
+# terraform-aws generator writes them into an OpenTofu root module, the
+# kubernetes generator into the app's ConfigMap. Exits 0 only if
+# - tofu validates and plans the compiled module without AWS credentials and
+#   the planned bucket and region equal the ConfigMap's data,
+# - changing both values in the target, and nowhere else, changes both outputs,
+# - terraform-only/ plans its kubernetes_config_map_v1 and helm_release
+#   without a cluster, with the bucket in the ConfigMap data and the Helm
+#   values but no rendered Helm manifest, while kubernetes_manifest and the
+#   helm provider's manifest experiment fail to plan without a cluster.
+# Needs gh (authenticated), jq, oras, uv, kubeconform and tofu.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+min_serial=47
+tmp=$(mktemp -d)
+trap 'rm -rf -- "$tmp"' EXIT
+rm -rf lib
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+# No kubeconfig: every Kubernetes API call fails. Providers are downloaded
+# once per run and checked against the committed lock files.
+export KUBECONFIG=$tmp/no-kubeconfig TF_PLUGIN_CACHE_DIR=$tmp/plugins TF_IN_AUTOMATION=1
+mkdir "$TF_PLUGIN_CACHE_DIR"
+
+# EX-4: index signature, digests and attestations, then pull by digest.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+if ((serial < min_serial)); then
+  echo "index serial $serial is lower than $min_serial" >&2
+  exit 1
+fi
+n=0
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "$name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "$name $version: index has $want, inventory pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "$name $version verified and unpacked"
+  n=$((n + 1))
+done < <(sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  inventory/classes/generators.yml)
+if ((n != 2)); then
+  echo "expected 2 generators in inventory/classes/generators.yml, found $n" >&2
+  exit 1
+fi
+
+# Static dummy keys and the skip flags stop the AWS provider from calling STS
+# or the instance metadata service; planning new resources reads nothing else.
+cat >"$tmp/offline_override.tf.json" <<'EOF'
+{"provider": {"aws": {"access_key": "offline", "secret_key": "offline",
+  "skip_credentials_validation": true, "skip_requesting_account_id": true,
+  "skip_metadata_api_check": true}}}
+EOF
+init() {
+  cp "$tmp/offline_override.tf.json" "$1/"
+  tofu -chdir="$1" init -input=false -lockfile=readonly >"$1/init.log" 2>&1 || { cat "$1/init.log"; exit 1; }
+  tofu -chdir="$1" validate -no-color >/dev/null
+}
+# plan <dir> <args>: writes <dir>/plan.json, prints the log on failure.
+plan() {
+  tofu -chdir="$1" plan -input=false -no-color -out=plan "${@:2}" >"$1/plan.log" 2>&1 || return 1
+  tofu -chdir="$1" show -json plan >"$1/plan.json"
+}
+
+# compiled <dir> <bucket> <region>: the planned bucket and the ConfigMap hold
+# exactly these values.
+compiled() {
+  local d=$1/compiled/prod tf cm
+  kubeconform -strict -summary \
+    -schema-location 'lib/kubernetes/schemas/core/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+    -schema-location 'lib/kubernetes/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+    "$d/manifests"
+  init "$d/terraform"
+  plan "$d/terraform" || { cat "$d/terraform/plan.log"; exit 1; }
+  tf=$(jq -r '.resource_changes[] | select(.address == "aws_s3_bucket.uploads") | .change.after
+    | "\(.bucket) \(.region)"' "$d/terraform/plan.json")
+  cm=$("${py[@]}" python -I -c 'import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))["data"]
+print(d["bucket"], d["region"])' "$d/manifests/shop/web-cm.yml")
+  echo "tofu plan aws_s3_bucket.uploads: $tf"
+  echo "ConfigMap shop/web data:         $cm"
+  if [[ $tf != "$2 $3" || $cm != "$2 $3" ]]; then
+    echo "expected bucket and region '$2 $3' in both outputs" >&2
+    exit 1
+  fi
+}
+
+bucket=$(sed -n 's/^  bucket: //p' inventory/targets/prod.yml)
+region=$(sed -n 's/^  region: //p' inventory/targets/prod.yml)
+"${py[@]}" kapitan compile --output-path "$tmp/a" >"$tmp/compile.log" 2>&1 || { cat "$tmp/compile.log"; exit 1; }
+compiled "$tmp/a" "$bucket" "$region"
+
+# The same project with both values changed in the target only.
+cp -r inventory "$tmp/inventory"
+sed -i -e 's/^  bucket: .*/  bucket: example-shop-uploads-staging/' \
+  -e 's/^  region: .*/  region: eu-west-1/' "$tmp/inventory/targets/prod.yml"
+diff inventory/targets/prod.yml "$tmp/inventory/targets/prod.yml" || true
+"${py[@]}" kapitan compile --inventory-path "$tmp/inventory" --output-path "$tmp/b" \
+  >"$tmp/compile.log" 2>&1 || { cat "$tmp/compile.log"; exit 1; }
+compiled "$tmp/b" example-shop-uploads-staging eu-west-1
+
+# Terraform alone, in a copy so the working tree stays clean.
+t=$tmp/terraform-only
+cp -r terraform-only "$t"
+init "$t"
+if plan "$t"; then
+  echo "kubernetes_manifest planned without a cluster" >&2
+  exit 1
+fi
+grep -q 'cannot create REST client: no client config' "$t/plan.log" || { cat "$t/plan.log"; exit 1; }
+echo "terraform-only: kubernetes_manifest needs a cluster to plan"
+plan "$t" -exclude=kubernetes_manifest.web || { cat "$t/plan.log"; exit 1; }
+jq -e --arg b "$bucket" --arg r "$region" '
+  [.resource_changes[] | {key: .address, value: .change.after}] | from_entries
+  | .["kubernetes_config_map_v1.web"].data == {bucket: $b, region: $r}
+    and (.["helm_release.web"].set | map({key: .name, value: .value}) | from_entries) == {bucket: $b, region: $r}
+    and .["helm_release.web"].manifest == null' "$t/plan.json" >/dev/null || {
+  jq '.resource_changes[] | {address, after: .change.after}' "$t/plan.json"
+  exit 1
+}
+echo "terraform-only: kubernetes_config_map_v1 and helm_release plan without a cluster; the helm_release plan has the values, no rendered manifest"
+if plan "$t" -exclude=kubernetes_manifest.web -var helm_manifest=true; then
+  echo "helm_release with experiments.manifest planned without a cluster" >&2
+  exit 1
+fi
+grep -q 'Kubernetes cluster unreachable' "$t/plan.log" || { cat "$t/plan.log"; exit 1; }
+echo "terraform-only: helm_release with experiments.manifest needs a cluster to plan"
