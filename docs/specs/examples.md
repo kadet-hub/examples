@@ -134,7 +134,7 @@ schedule instead of trusting the state on the publishing day.
   - Test: `manual:` review of `.github/workflows/examples.yml` and the `check` scripts;
     `renovate --platform=local --dry-run=lookup` with pins set one release
     back; workflow job `pins`
-  - Since: tbd; checksums by Renovate: tbd
+  - Since: tbd; checksums by Renovate: #15
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
