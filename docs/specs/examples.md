@@ -228,7 +228,14 @@ to report exactly that commit. The Gitea image is pinned by digest in
 
   The generators are verified and fetched as in EX-4. Broken pods stop the
   check and a timed-out install wait prints its namespace as in EX-6, for
-  the Git server and the tool as for an operator. The Argo CD Application syncs automatically with
+  the Git server and the tool as for an operator. `check` replaces Argo
+  CD's redis image `public.ecr.aws/docker/library/redis:8.2.3-alpine` with
+  `mirror.gcr.io/library/redis:8.2.3-alpine` pinned by the same digest
+  (`sha256:08ad0b1d…`, identical on ECR Public, Docker Hub and the mirror,
+  checked 2026-10-19): ECR Public answered anonymous pulls from GitHub
+  runners with "429 Too Many Requests" in three of four runs, and the
+  manifest pulls redis with `imagePullPolicy: Always`, so a pull before the
+  install would not help. The Argo CD Application syncs automatically with
   `prune` and `selfHeal`; the Flux objects keep the flux generator's
   defaults plus `prune: true`. `check` prints the numbers the guide quotes:
   the CRDs in the release manifest, the tool's pods and images, the seconds
