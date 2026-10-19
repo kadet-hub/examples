@@ -1,4 +1,4 @@
-# kadet-hub generators, pinned by version and digest (index serial 47).
+# kadet-hub generators, pinned by version and digest (index serial 48).
 parameters:
   kapitan:
     dependencies:
@@ -20,3 +20,6 @@ parameters:
       - type: oci
         source: ghcr.io/kadet-hub/kubernetes:1.2.0@sha256:52017626e77dd5bf7293ce465ff0c3dc7a61dae1ae8353a56a53ffebe1bfb67c
         output_path: lib/kubernetes
+      - type: oci
+        source: ghcr.io/kadet-hub/mutate:0.1.0@sha256:428e548bb10c6dda0105220c3a9f135d3a964a419303e30849a06f6d9e194a15
+        output_path: lib/mutate

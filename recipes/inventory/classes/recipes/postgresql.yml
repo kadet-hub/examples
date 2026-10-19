@@ -1,10 +1,12 @@
 # PostgreSQL with CloudNativePG, in place of Bitnami's postgresql and
 # postgresql-ha charts: three instances with automatic failover, the database
 # "app" owned by "app" (password in the Secret app-db-app) and a PgBouncer
-# pooler in transaction mode. Needs the CloudNativePG operator.
+# pooler in transaction mode. The CloudNativePG operator comes with it, from
+# its Helm chart in recipes.operators.cloudnative-pg.
 classes:
   - recipes.lib.kubernetes
   - recipes.lib.cloudnative-pg
+  - recipes.operators.cloudnative-pg
 
 parameters:
   generators:

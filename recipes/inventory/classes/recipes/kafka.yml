@@ -2,10 +2,12 @@
 # cluster of three nodes that are controllers and brokers at once, an
 # internal TLS listener with mutual TLS and ACLs, the topic "orders" and the
 # user "orders-app" allowed to use it (its certificate is in the Secret
-# orders-app). Needs the Strimzi Cluster Operator watching the namespace.
+# orders-app). The Strimzi Cluster Operator comes with it, from its Helm
+# chart in recipes.operators.strimzi.
 classes:
   - recipes.lib.kubernetes
   - recipes.lib.strimzi
+  - recipes.operators.strimzi
 
 parameters:
   generators:

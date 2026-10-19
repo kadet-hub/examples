@@ -1,12 +1,16 @@
 # RabbitMQ with the RabbitMQ Cluster Operator, in place of Bitnami's rabbitmq
 # chart: three nodes on the official image, with persistent queues. The
 # default user's credentials are in the Secret production-default-user.
-# Needs the RabbitMQ Cluster Operator, which takes its webhook certificate
-# from cert-manager. Queues, users and policies come from the same generator
-# but need the Messaging Topology Operator, which this recipe leaves out.
+# Needs the RabbitMQ Cluster Operator, which has no Helm chart of its own:
+# install it from its release manifest. cert-manager, which issues the
+# operator's webhook certificate, comes with the recipe from its Helm chart
+# in recipes.operators.cert-manager. Queues, users and policies come from
+# the same generator but need the Messaging Topology Operator, which this
+# recipe leaves out.
 classes:
   - recipes.lib.kubernetes
   - recipes.lib.rabbitmq
+  - recipes.operators.cert-manager
 
 parameters:
   generators:
