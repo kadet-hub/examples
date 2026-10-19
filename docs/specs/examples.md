@@ -175,6 +175,17 @@ under Inventory names.
   RSALv2, SSPLv1 or AGPLv3, Valkey stays BSD-3-Clause and speaks the same
   protocol.
 
+  The MySQL image is Oracle's `container-registry.oracle.com/mysql/community-server`,
+  built by the MySQL team, rather than the Docker Official Image `mysql`,
+  which docker-library builds from Oracle's packages. MongoDB Community
+  Server is licensed SSPLv1, which the OSI does not count as open source;
+  its image `mongodb/mongodb-community-server` is MongoDB Inc's, and the
+  recipe states the license in its class. Oracle's MySQL Operator (UPL-1.0)
+  and MongoDB's Controllers for Kubernetes (Apache-2.0 for Community
+  deployments) have no kadet-hub generator, so both recipes use the
+  kubernetes generator and their class names the operator as the option
+  for replication.
+
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
   - Since: #8
@@ -411,3 +422,5 @@ Recipes and their checks:
 | `kafka` | kafka | strimzi | Strimzi | Kafka `Ready`, a message produced and consumed |
 | `rabbitmq` | rabbitmq | rabbitmq | RabbitMQ Cluster Operator, cert-manager | RabbitmqCluster `AllReplicasReady` |
 | `external-dns-powerdns` | external-dns | kubernetes | none | a Service hostname resolves through PowerDNS |
+| `mysql` | mysql | kubernetes | none | StatefulSet ready, `select 1` as the app user in its own database |
+| `mongodb` | mongodb | kubernetes | none | StatefulSet ready, `mongosh` authenticates and `ping` answers `ok: 1` |
