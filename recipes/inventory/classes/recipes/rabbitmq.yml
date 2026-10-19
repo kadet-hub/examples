@@ -22,7 +22,7 @@ parameters:
       rabbitmqcluster:
         production:
           spec:
-            image: docker.io/library/rabbitmq:4.3.4-management
+            image: docker.io/library/rabbitmq:4.3.5-management
             replicas: 3
             persistence:
               storage: 10Gi
