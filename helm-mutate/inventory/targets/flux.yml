@@ -1,0 +1,22 @@
+# Flux delivers compiled/podinfo from the Git server; the path has no
+# kustomization.yaml, so kustomize-controller generates one.
+classes:
+  - generators
+
+parameters:
+  kapitan:
+    vars:
+      target: flux
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/flux], output_path: .}
+  generators:
+    flux:
+      git_repositories:
+        app:
+          url: http://gitea.git.svc.cluster.local:3000/kadet/app.git
+          ref: main
+      kustomizations:
+        podinfo:
+          source: app
+          path: ./podinfo
+          prune: true

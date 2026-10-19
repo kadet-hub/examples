@@ -1,0 +1,26 @@
+# EX-10: the patched Deployment is available under restricted Pod Security,
+# the Service carries the annotation.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: podinfo, namespace: podinfo}
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: podinfo
+          image: ghcr.io/stefanprodan/podinfo@sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
+          securityContext:
+            runAsNonRoot: true
+          resources:
+            limits: {memory: 64Mi}
+status:
+  availableReplicas: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: podinfo
+  namespace: podinfo
+  annotations:
+    example.com/owner: platform

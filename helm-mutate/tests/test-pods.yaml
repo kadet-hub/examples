@@ -1,0 +1,7 @@
+# EX-10: no helm test Pod was created.
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: podinfo
+  annotations:
+    helm.sh/hook: test-success

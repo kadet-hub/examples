@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `.github/workflows/examples.yml`, `renovate.json`
+Code: `*/check`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `helm-mutate/`, `.github/workflows/examples.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -50,7 +50,8 @@ schedule instead of trusting the state on the publishing day.
   experiment fail to plan without one. A guide quotes these results, so a
   provider release that changes them fails the job.
 
-  `argocd-vs-flux` fails unless EX-7 and EX-8 hold.
+  `argocd-vs-flux` fails unless EX-7 and EX-8 hold, `helm-mutate` unless
+  EX-9 and EX-10 hold.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -301,6 +302,79 @@ to report exactly that commit. The Gitea image is pinned by digest in
   - Test: `argocd-vs-flux/tests/<tool>/chainsaw-test.yaml`, second step
   - Since: #14
 
+## Helm chart patched with mutate
+
+`helm-mutate/` backs the kadet-hub.org guide on patching a Helm chart
+without forking it. One Kapitan project fetches podinfo's chart through
+Kapitan's `helm` dependency, renders it with the `helm` input and patches
+the output with the mutate generator, a second compile entry on the same
+`output_path` with `output_type: plain`. Target `helm` renders the chart
+alone, target `podinfo` renders and mutates it, targets `argocd` and `flux`
+deliver `compiled/podinfo` as in `argocd-vs-flux`, from the same Git server
+manifest.
+
+The dependency names the chart's OCI artifact by digest and the version
+6.15.0. Kapitan's `helm` dependency has no digest or verify field; it
+passes source and version to `helm pull`, and Helm 4.3.0 fails with
+"chart reference digest mismatch" when the tag points to another digest.
+The OCI chart is also signed with cosign and Notation; `check` verifies
+neither, because Kapitan's dependency has no place for it and it would add
+a tool. The HTTP repository publishes no `.prov` files, and Kapitan does
+not pass `--verify`.
+
+`check` fetches the chart with `kapitan compile --fetch -t helm`. Target
+`helm` declares the chart and no generator, so EX-4 holds; the generators
+are verified and pulled by digest before.
+
+Kapitan's `helm` input passes `--skip-tests` unless the entry sets
+`skip_tests: false`, which the class does, so that the chart's three helm
+test Pods are rendered and the mutation `no-test-pods` has whole files to
+empty. Their names end in five random characters (`randAlphaNum`), so the
+mutation matches them by kind and label, not by name.
+
+- EX-9: `helm-mutate/check` MUST fail unless the compiled target `podinfo`
+  carries the change of each mutation, each test Pod file is the single
+  comment line of MUT-3 (kadet-hub/generators `docs/specs/mutate.md`), a
+  mutation whose `match` names a Deployment the chart does not render
+  fails the compile with `expects 1+, matched 0`, and kubeconform passes.
+
+  The mutations are `pin-image` (`images`, the podinfo image by digest),
+  `harden` (`merge` with `merge_lists: {containers: name}`: restricted
+  `securityContext` and a memory limit, the chart's requests and env
+  kept), `service-owner` (an annotation on every Service, matched by kind
+  only), `replicas` (`json6902`: `test` that the chart renders one
+  replica, then `replace` with two) and `no-test-pods` (`delete`). The
+  failing mutation is added to a copy of the inventory in a temporary
+  directory, never to a committed target. `check` prints the diff between
+  the two renders with both sides loaded and dumped again with sorted
+  keys, so that mutate's reformatting of a rewritten file does not show.
+
+  - Test: `examples` workflow, job `helm-mutate`
+  - Since: #19
+
+- EX-10: CI MUST deploy `compiled/podinfo`, comment-only files included, to
+  a new kind cluster once with `kubectl apply -R -f`, once through Argo CD
+  and once through Flux, and fail unless the patched Deployment has two
+  available replicas in a namespace that enforces restricted Pod Security,
+  the Service carries the annotation, no helm test Pod exists, and the
+  Application is `Synced` and `Healthy` (Flux: the Kustomization is
+  `Ready`) at the pushed commit.
+
+  A file that holds only a comment is the case to prove. Argo CD reads the
+  path as a directory source with `recurse: true`. Flux's
+  kustomize-controller finds no `kustomization.yaml` and generates one
+  that lists every `.yaml` file kustomize's resource factory decodes
+  without error; a comment decodes to zero objects. The restricted
+  namespace admits podinfo's Pods only with the `harden` mutation, because
+  the chart's defaults set no `securityContext`; the image's user is the
+  name `app`, so `harden` sets a numeric `runAsUser` for `runAsNonRoot`.
+  Install pins, the redis image rewrite and the failure output are those
+  of EX-6 and EX-7.
+
+  - Test: `helm-mutate/tests/<tool>/chainsaw-test.yaml`; `examples`
+    workflow, job `helm-mutate` per tool
+  - Since: #19
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -309,6 +383,10 @@ to report exactly that commit. The Gitea image is pinned by digest in
 - OQ-2: `apiserver-dry-run/check` validates against the Kubernetes schemas
   from the default kubeconform location, which tracks the `master` branch of
   yannh/kubernetes-json-schema.
+- OQ-3: Should `helm-mutate/check` verify the podinfo chart's cosign
+  signature in addition to the digest pin? It would add cosign to the job.
+  Renovate updates neither the chart digest nor the image digest of
+  `pin-image`; both are set by hand with the version.
 
 ## Inventory
 
@@ -321,6 +399,7 @@ to report exactly that commit. The Gitea image is pinned by digest in
 | `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |
 | `recipes/` | One Kapitan project; `check <recipe>` verifies the generators, compiles, deploys to kind and runs the recipe's check |
 | `argocd-vs-flux/` | One Kapitan project (targets `web`, `argocd`, `flux`), the Gitea manifest and a Chainsaw test per tool; `check <argocd\|flux>` |
+| `helm-mutate/` | One Kapitan project (targets `helm`, `podinfo`, `argocd`, `flux`), the podinfo chart pinned in `inventory/classes/podinfo.yml`, the mutations in `inventory/targets/podinfo.yml`, a Chainsaw test per tool; `check <kubectl\|argocd\|flux>` |
 
 Recipes and their checks:
 
