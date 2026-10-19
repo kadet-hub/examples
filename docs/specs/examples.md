@@ -159,7 +159,10 @@ part in a recipe whose subject is external-dns.
   A pod is broken when one of its containers waits with
   `CrashLoopBackOff`, `ImagePullBackOff`, `CreateContainerConfigError` or
   `InvalidImageName`, or has restarted more
-  than three times. `recipes/check` polls the pods of all namespaces every
+  than three times, on two polls in a row. One poll is not enough:
+  Argo CD's server waits with `CreateContainerConfigError` for the
+  `argocd-redis` Secret until the redis pod's init container has created
+  it, and the watcher stopped a healthy install on that in CI. `recipes/check` polls the pods of all namespaces every
   10 seconds from the creation of the kind cluster until Chainsaw ends, so
   a broken pod also stops the operator installs. On the first broken pod
   it prints the pod's description and its containers' logs and stops the
