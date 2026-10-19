@@ -8,32 +8,55 @@
   "minimumReleaseAge": "3 days",
   "minimumReleaseAgeBehaviour": "timestamp-optional",
   "internalChecksFilter": "strict",
+  "ignorePaths": [
+    "**/node_modules/**"
+  ],
+  "jsonnet-bundler": {
+    "lockFileMaintenance": {
+      "enabled": true
+    }
+  },
   "customManagers": [
     {
-      "description": "EX-3: tool versions marked with a renovate comment; release-asset and image pins carry their checksum along",
+      "description": "EX-3: tool versions marked with a renovate comment; release-asset and image pins carry their checksum along, repository files their commit",
       "customType": "regex",
       "managerFilePatterns": [
-        "/^\\.github/workflows/[^/]+\\.yml$/",
+        "/(^|/)\\.github/workflows/[^/]+\\.yml$/",
         "/^[^/]+/check$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>github-releases|node-version) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?(?<currentValue>[^\"\\s]+)\"?",
+        "# renovate: datasource=(?<datasource>github-releases|node-version|docker) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?(?<currentValue>[^\"\\s:@]+)\"?\\n",
         "# renovate: datasource=(?<datasource>github-release-attachments) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?(?<currentValue>[^\"\\s]+)\"?\\n\\s*[A-Z_]+_SHA(?:256|512)[=:] ?\"?(?<currentDigest>[0-9a-f]{64,128})\"?",
-        "# renovate: datasource=(?<datasource>docker) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?\\S+?:(?<currentValue>[^@\"\\s:]+)@(?<currentDigest>sha256:[0-9a-f]{64})\"?"
+        "# renovate: datasource=(?<datasource>docker) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?\\S+?:(?<currentValue>[^@\"\\s:]+)@(?<currentDigest>sha256:[0-9a-f]{64})\"?",
+        "# renovate: datasource=(?<datasource>github-tags) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+_COMMIT[=:] ?(?<currentDigest>[0-9a-f]{40}) # (?<currentValue>\\S+)"
       ]
     },
     {
-      "description": "EX-3: operator charts and images in the recipes' operator classes, by version and digest",
+      "description": "EX-3: charts by version and the digest of their OCI artifact, images by tag or tag and digest, in inventories and manifests",
       "customType": "regex",
       "managerFilePatterns": [
-        "/^recipes/inventory/classes/recipes/operators/[^/]+\\.yml$/"
+        "**/inventory/**/*.yml",
+        "*/tests/**/*.yaml",
+        "argocd-vs-flux/git-server.yaml"
       ],
       "matchStrings": [
         "source: oci://(?<depName>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})\\n\\s*chart_name: \\S+\\n\\s*version: (?<currentValue>\\S+)",
-        "image: (?<depName>[a-z0-9.-]+/[^:@\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})",
-        "repository: (?<depName>\\S+)\\n\\s*tag: (?<currentValue>\\S+)\\n\\s*digest: (?<currentDigest>sha256:[0-9a-f]{64})"
+        "image(?:_name)?: (?<depName>[a-z0-9.-]+\\.[a-z]+/[^:@\\s]+):(?<currentValue>[^@\\s]+)(?:@(?<currentDigest>sha256:[0-9a-f]{64}))?",
+        "repository: (?<depName>\\S+)\\n\\s*tag: (?<currentValue>\\S+)\\n\\s*digest: (?<currentDigest>sha256:[0-9a-f]{64})",
+        "\\n\\s+(?<depName>[a-z0-9.-]+\\.[a-z]+/[^:@\\s]+):\\n\\s+tag: (?<currentValue>\\S+)\\n\\s+digest: (?<currentDigest>sha256:[0-9a-f]{64})"
       ],
       "datasourceTemplate": "docker"
+    },
+    {
+      "description": "EX-3: Python packages pinned with == in the scripts' uv run --with and uvx",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^[^/]+/(check|run\\.sh)$/"
+      ],
+      "matchStrings": [
+        "--(?:with|from) '?(?<depName>[A-Za-z0-9_.-]+)(?:\\[[^\\]]*\\])?==(?<currentValue>[^'\\s)]+)"
+      ],
+      "datasourceTemplate": "pypi"
     }
   ],
   "packageRules": [
@@ -43,6 +66,56 @@
         "recipes/inventory/classes/recipes/operators/*.yml"
       ],
       "groupName": "{{replace '^.+/([^/]+)\\.yml$' '$1' packageFile}} operator"
+    },
+    {
+      "description": "EX-3: the Keycloak image with the Keycloak Operator",
+      "matchPackageNames": [
+        "quay.io/keycloak/keycloak"
+      ],
+      "groupName": "keycloak operator"
+    },
+    {
+      "description": "EX-3: Strimzi's Kafka client image with the Strimzi operator",
+      "matchPackageNames": [
+        "quay.io/strimzi/kafka"
+      ],
+      "groupName": "strimzi operator"
+    },
+    {
+      "description": "EX-3: kind and the node image of its release",
+      "matchDepNames": [
+        "kubernetes-sigs/kind",
+        "kindest/node"
+      ],
+      "groupName": "kind"
+    },
+    {
+      "description": "EX-3: podinfo's chart and the image that pin-image pins",
+      "matchPackageNames": [
+        "ghcr.io/stefanprodan/charts/podinfo",
+        "ghcr.io/stefanprodan/podinfo"
+      ],
+      "groupName": "podinfo"
+    },
+    {
+      "description": "EX-3: the Pulumi Kubernetes plugin at the @pulumi/kubernetes version",
+      "matchPackageNames": [
+        "@pulumi/kubernetes",
+        "pulumi/pulumi-kubernetes"
+      ],
+      "groupName": "pulumi-kubernetes"
+    },
+    {
+      "description": "EX-7: the redis tag follows Argo CD's manifest; Renovate updates its digest only",
+      "matchPackageNames": [
+        "mirror.gcr.io/library/redis"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "enabled": false
     },
     {
       "description": "Runners stay on ubuntu-24.04, the runner the posts name",
@@ -79,12 +152,11 @@
       "allowedVersions": "/^2\\.4\\.0\\.dev4$/"
     },
     {
-      "description": "gVisor tags are release-YYYYMMDD.N; the download path uses YYYYMMDD",
+      "description": "gVisor tags are release-YYYYMMDD.N",
       "matchDepNames": [
         "google/gvisor"
       ],
-      "extractVersion": "^release-(?<version>\\d+)\\.\\d+$",
-      "versioning": "loose"
+      "versioning": "regex:^release-(?<major>\\d+)\\.(?<minor>\\d+)$"
     },
     {
       "description": "config-tools stays on the TypeScript 5.9 line that the cdk8s template and ts-node 10 use",

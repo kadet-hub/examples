@@ -148,16 +148,21 @@ operator() { # name namespace
 
 # EX-6: the RabbitMQ Cluster Operator has no Helm chart, so it comes from its
 # pinned release manifest; its webhook and metrics certificates come from cert-manager.
+# renovate: datasource=github-release-attachments depName=rabbitmq/cluster-operator
+RABBITMQ_OPERATOR_VERSION=v2.23.1
+RABBITMQ_OPERATOR_SHA256=ae35a547751656bc64bb734026249a845d226d96aba5a73783e05c5ec3444687
 rabbitmq_operator() {
-  curl -fsSL -o "$tmp/m.yaml" https://github.com/rabbitmq/cluster-operator/releases/download/v2.23.1/cluster-operator.yml
-  echo "ae35a547751656bc64bb734026249a845d226d96aba5a73783e05c5ec3444687  $tmp/m.yaml" | sha256sum -c --quiet
+  curl -fsSL -o "$tmp/m.yaml" \
+    "https://github.com/rabbitmq/cluster-operator/releases/download/$RABBITMQ_OPERATOR_VERSION/cluster-operator.yml"
+  echo "$RABBITMQ_OPERATOR_SHA256  $tmp/m.yaml" | sha256sum -c --quiet
   apply --server-side -f "$tmp/m.yaml" >/dev/null
   install_wait rabbitmq-system rollout status deploy/rabbitmq-cluster-operator --timeout=300s
 }
 
-# The node image kind v0.33.0 was built with.
-kind create cluster --name "$cluster" --wait 120s \
-  --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+# The node image of the workflow's kind release; Renovate updates both together.
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
 watch_pods &
 watcher=$!
 kubectl apply -f "$out/kubernetes"  # the Namespaces, which the kubernetes generator writes at its top level
