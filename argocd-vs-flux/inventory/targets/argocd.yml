@@ -1,0 +1,27 @@
+# Argo CD delivers compiled/web from the Git server: one Application with
+# automated sync, pruning and self-heal.
+classes:
+  - generators
+
+parameters:
+  kapitan:
+    vars:
+      target: argocd
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/argocd], output_path: .}
+  generators:
+    argocd:
+      applications:
+        web:
+          project: default
+          destination: web
+          source:
+            repoURL: http://gitea.git.svc.cluster.local:3000/kadet/app.git
+            targetRevision: main
+            path: web
+            directory:
+              recurse: true
+          sync_policy:
+            automated:
+              prune: true
+              selfHeal: true

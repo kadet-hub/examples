@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `.github/workflows/examples.yml`, `renovate.json`
+Code: `*/check`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `.github/workflows/examples.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -50,6 +50,8 @@ schedule instead of trusting the state on the publishing day.
   experiment fail to plan without one. A guide quotes these results, so a
   provider release that changes them fails the job.
 
+  `argocd-vs-flux` fails unless EX-7 and EX-8 hold.
+
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
   default: the Pulumi provider omits zero-valued fields, Kapitan's
@@ -75,8 +77,9 @@ schedule instead of trusting the state on the publishing day.
   through `package-lock.json`, jsonnet libraries through
   `jsonnetfile.lock.json`. `talosctl` is pinned by the sha256 that the
   Siderolabs release lists in `sha256sum.txt`. `gh`, `jq`, `curl`,
-  `openssl`, `python3` and `docker` come from the runner image. kind runs the node image its release
-  names, pinned by digest in `recipes/check`; operator release manifests are
+  `openssl`, `python3` and `docker` come from the runner image. kind runs
+  the node image its release names, pinned by digest in `recipes/check` and
+  `argocd-vs-flux/check`; operator, Argo CD and Flux release manifests are
   pinned by URL and sha256 there. Kapitan 0.36.3 with the `omegaconf`
   extra MUST be installed with `omegaconf==2.4.0.dev4`: omegaconf 2.4.0
   breaks its OmegaConf backend (kapicorp/kapitan#1621).
@@ -192,6 +195,58 @@ part in a recipe whose subject is external-dns.
     by hand, with a non-existent image tag in a recipe class
   - Since: #8, #10
 
+## Argo CD and Flux
+
+`argocd-vs-flux/` backs the kadet-hub.org guide that compares the two
+delivery tools. The guide states what each one needs installed, how long the
+same app takes to come up and what each does when someone changes a
+deployed object by hand. One Kapitan project renders the app with the
+kubernetes generator, an Argo CD Application with the argocd generator and a
+GitRepository plus Kustomization with the flux generator; `check <tool>`
+runs one tool per kind cluster, so the two never manage the same objects.
+
+Both tools read the compiled app from a Gitea in the cluster, not from
+GitHub. The commit they deploy has to exist before the check runs, and a
+commit of this repository reaches GitHub only after the push, so a local
+run or a pull request could not deploy its own change. `check` pushes
+`compiled/web` as one commit to `main` of that server and expects both tools
+to report exactly that commit. The Gitea image is pinned by digest in
+`argocd-vs-flux/git-server.yaml`.
+
+- EX-7: CI MUST, for Argo CD and for Flux, install the tool from its pinned
+  release manifest into a new kind cluster, apply the tool's compiled
+  target and fail unless, within the time limit, the Application is
+  `Synced` and `Healthy` (Flux: the Kustomization is `Ready`) at the pushed
+  commit and the app's Deployment has all replicas available.
+
+  The generators are verified and fetched as in EX-4, broken pods stop the
+  check as in EX-6. The Argo CD Application syncs automatically with
+  `prune` and `selfHeal`; the Flux objects keep the flux generator's
+  defaults plus `prune: true`. `check` prints the numbers the guide quotes:
+  the CRDs in the release manifest, the tool's pods and images, the seconds
+  from applying the manifest until its Deployments are available, the
+  seconds from creating the Application or Kustomization until the app's
+  Deployment is available, and the memory working set of the tool's pods
+  after the check, read from the kubelet summary API.
+
+  - Test: `examples` workflow, job `argocd-vs-flux` per tool
+  - Since: tbd
+
+- EX-8: The check MUST scale the app's Deployment to one replica with
+  `kubectl scale` and fail unless Argo CD restores two replicas within a
+  minute on its own, and unless Flux keeps one replica for 30 seconds and
+  restores two within a minute of a requested reconciliation.
+
+  Argo CD watches the objects it deployed and, with `selfHeal`, syncs back
+  on a difference. Flux's kustomize-controller applies the source again on
+  its interval, 60 minutes for this Kustomization, or when the
+  `reconcile.fluxcd.io/requestedAt` annotation changes, which is what
+  `flux reconcile kustomization` sets. The 30 seconds show that Flux does
+  not react to the change in between, not that it never would.
+
+  - Test: `argocd-vs-flux/tests/<tool>/chainsaw-test.yaml`, second step
+  - Since: tbd
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -211,6 +266,7 @@ part in a recipe whose subject is external-dns.
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
 | `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |
 | `recipes/` | One Kapitan project; `check <recipe>` verifies the generators, compiles, deploys to kind and runs the recipe's check |
+| `argocd-vs-flux/` | One Kapitan project (targets `web`, `argocd`, `flux`), the Gitea manifest and a Chainsaw test per tool; `check <argocd\|flux>` |
 
 Recipes and their checks:
 

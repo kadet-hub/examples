@@ -1,0 +1,22 @@
+# Flux delivers compiled/web from the Git server: a GitRepository and a
+# Kustomization with pruning, at the generator's default intervals.
+classes:
+  - generators
+
+parameters:
+  kapitan:
+    vars:
+      target: flux
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/flux], output_path: .}
+  generators:
+    flux:
+      git_repositories:
+        app:
+          url: http://gitea.git.svc.cluster.local:3000/kadet/app.git
+          ref: main
+      kustomizations:
+        web:
+          source: app
+          path: ./web
+          prune: true

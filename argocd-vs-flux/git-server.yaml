@@ -1,0 +1,57 @@
+# The Git server both tools read from: Gitea, data in an emptyDir, anonymous
+# read access, repositories created by the first push.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: git
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  namespace: git
+spec:
+  selector:
+    matchLabels: {app: gitea}
+  template:
+    metadata:
+      labels: {app: gitea}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: gitea
+          image: docker.io/gitea/gitea:28.2.0-rootless@sha256:94807314454f6525994a3b76286ba12bc7e7f8cd14f61d9e67431767f8103306
+          env:
+            - {name: GITEA__security__INSTALL_LOCK, value: "true"}
+            - {name: GITEA__database__DB_TYPE, value: sqlite3}
+            - {name: GITEA__repository__ENABLE_PUSH_CREATE_USER, value: "true"}
+            - {name: GITEA__repository__DEFAULT_PUSH_CREATE_PRIVATE, value: "false"}
+            - {name: GITEA__server__ROOT_URL, value: http://gitea.git.svc.cluster.local:3000/}
+          ports:
+            - {name: http, containerPort: 3000}
+          readinessProbe:
+            httpGet: {path: /api/healthz, port: http}
+            periodSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/gitea}
+            - {name: config, mountPath: /etc/gitea}
+      volumes:
+        - {name: data, emptyDir: {}}
+        - {name: config, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea
+  namespace: git
+spec:
+  selector: {app: gitea}
+  ports:
+    - {name: http, port: 3000, targetPort: http}

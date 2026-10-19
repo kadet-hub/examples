@@ -1,0 +1,35 @@
+# The app both tools deploy: compiled/web is pushed to the Git server and
+# applied from there, never from this checkout.
+classes:
+  - generators
+
+parameters:
+  kapitan:
+    vars:
+      target: web
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/kubernetes], output_path: .}
+  generators:
+    kubernetes:
+      namespaces:
+        web: {}
+  components:
+    web:
+      namespace: web
+      image: docker.io/nginxinc/nginx-unprivileged:1.31.7-alpine
+      replicas: 2
+      security_profile: restricted
+      ports:
+        http:
+          container_port: 8080
+          service_port: 80
+      healthcheck:
+        readiness:
+          type: http
+          port: http
+          path: /
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {memory: 64Mi}
+      service:
+        type: ClusterIP

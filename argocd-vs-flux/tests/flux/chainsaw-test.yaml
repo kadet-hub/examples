@@ -1,0 +1,68 @@
+# EX-7: the GitRepository and Kustomization are Ready at the pushed commit,
+# the app's Deployment is available. EX-8: Flux leaves a manual scale alone
+# until the next reconciliation, here requested by annotation.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: flux
+spec:
+  timeouts:
+    assert: 3m
+  steps:
+    - try:
+        - assert:
+            resource:
+              apiVersion: kustomize.toolkit.fluxcd.io/v1
+              kind: Kustomization
+              metadata: {name: web, namespace: flux-system}
+              status:
+                lastAppliedRevision: (join('', ['main@sha1:', $values.revision]))
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: web, namespace: web}
+              status:
+                availableReplicas: 2
+        - script:
+            content: |
+              created=$(kubectl -n flux-system get kustomization web -o jsonpath='{.metadata.creationTimestamp}')
+              available=$(kubectl -n web get deploy web -o jsonpath='{.status.conditions[?(@.type=="Available")].lastTransitionTime}')
+              echo "Deployment available $(( $(date -d "$available" +%s) - $(date -d "$created" +%s) ))s after the Kustomization was created"
+            check:
+              ($error): ~
+      catch:
+        - events: {namespace: web}
+        - events: {namespace: flux-system}
+        - podLogs: {namespace: flux-system}
+    - try:
+        - script:
+            timeout: 2m
+            content: |
+              kubectl -n web scale deploy/web --replicas=1 >/dev/null
+              sleep 30
+              [ "$(kubectl -n web get deploy web -o jsonpath='{.spec.replicas}')" = 1 ] || { echo "replicas restored without a reconciliation"; exit 1; }
+              echo "replicas still 1 after 30s, Kustomization Ready=$(kubectl -n flux-system get kustomization web -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')"
+              kubectl -n flux-system annotate kustomization web --overwrite reconcile.fluxcd.io/requestedAt="$(date +%s)" >/dev/null
+              start=$(date +%s)
+              until [ "$(kubectl -n web get deploy web -o jsonpath='{.spec.replicas}')" = 2 ]; do
+                [ $(( $(date +%s) - start )) -lt 60 ] || { echo "replicas still 1 60s after the reconcile request"; exit 1; }
+                sleep 1
+              done
+              echo "replicas back to 2 $(( $(date +%s) - start ))s after the reconcile request"
+            check:
+              ($error): ~
+        - assert:
+            resource:
+              apiVersion: kustomize.toolkit.fluxcd.io/v1
+              kind: Kustomization
+              metadata: {name: web, namespace: flux-system}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+      catch:
+        - events: {namespace: web}
+        - events: {namespace: flux-system}
+        - podLogs: {namespace: flux-system}
