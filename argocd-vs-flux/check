@@ -135,6 +135,8 @@ echo "revision: $revision" >"$tmp/values.yaml"
 manifest() { # url sha256 namespace
   curl -fsSL -o "$tmp/m.yaml" "$1"
   echo "$2  $tmp/m.yaml" | sha256sum -c --quiet
+  # EX-7: ECR Public throttles anonymous pulls from runners (429); same image, same digest.
+  sed -i 's|image: public.ecr.aws/docker/library/redis:8.2.3-alpine$|image: mirror.gcr.io/library/redis:8.2.3-alpine@sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba|' "$tmp/m.yaml"
   kubectl apply -n "$3" --server-side --force-conflicts -f "$tmp/m.yaml" >/dev/null
 }
 installed=$SECONDS
