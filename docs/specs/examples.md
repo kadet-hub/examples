@@ -92,7 +92,7 @@ under Inventory names.
 
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
-  - Since: this change
+  - Since: #8
 
 PowerDNS keeps its zones in SQLite on a volume rather than in PostgreSQL:
 the image ships the SQLite schema, while the PostgreSQL backend would need
@@ -113,7 +113,7 @@ part in a recipe whose subject is external-dns.
   waited for, which a timeout of `kubectl wait` does not.
 
   - Test: `examples` workflow, job `recipe` per recipe
-  - Since: this change
+  - Since: #8
 
 ## Open questions
 
