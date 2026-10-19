@@ -1,0 +1,34 @@
+# EX-10: the Kustomization is Ready at the pushed commit with the
+# comment-only files in its path, and applied the patched objects only.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: flux
+spec:
+  timeouts:
+    assert: 3m
+  steps:
+    - try:
+        - assert:
+            resource:
+              apiVersion: kustomize.toolkit.fluxcd.io/v1
+              kind: Kustomization
+              metadata: {name: podinfo, namespace: flux-system}
+              status:
+                lastAppliedRevision: (join('', ['main@sha1:', $values.revision]))
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - assert:
+            file: ../podinfo.yaml
+        - error:
+            file: ../test-pods.yaml
+        - script:
+            content: |
+              kubectl -n flux-system get kustomization podinfo -o json |
+                jq -r '"inventory: \([.status.inventory.entries[].id] | join(", "))"'
+            check:
+              ($error): ~
+      catch:
+        - events: {namespace: podinfo}
+        - events: {namespace: flux-system}
+        - podLogs: {namespace: flux-system}

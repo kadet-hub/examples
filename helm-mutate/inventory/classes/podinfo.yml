@@ -1,0 +1,20 @@
+# podinfo's chart, pinned by version and by the digest of its OCI artifact,
+# rendered with Kapitan's helm input into compiled/<target>/podinfo.
+parameters:
+  kapitan:
+    dependencies:
+      - type: helm
+        source: oci://ghcr.io/stefanprodan/charts/podinfo@sha256:ff3d3e14728f75476ed4d43c14f80d52d81d36bc16906843463d464c6146f0d8
+        chart_name: podinfo
+        version: 6.15.0
+        output_path: charts/podinfo
+    compile:
+      - input_type: helm
+        input_paths: [charts/podinfo]
+        output_path: podinfo
+        helm_params:
+          name: podinfo
+          namespace: podinfo
+          # Kapitan passes --skip-tests by default; the chart's helm test Pods
+          # are rendered so that a mutation can remove them.
+          skip_tests: false

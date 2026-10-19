@@ -8,3 +8,4 @@ dl/
 !/recipes/inventory/classes/recipes/lib/
 /recipes/refs/
 /talos-machine-config/refs/
+/helm-mutate/charts/

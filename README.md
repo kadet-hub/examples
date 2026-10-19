@@ -17,6 +17,7 @@ longer holds.
 | [talos-machine-config](talos-machine-config/) | https://kadet-hub.org/guides/talos-machine-config/ | `talos-machine-config/check` |
 | [helm-vs-terraform](helm-vs-terraform/) | https://kadet-hub.org/guides/helm-vs-terraform/ | `helm-vs-terraform/check` |
 | [argocd-vs-flux](argocd-vs-flux/) | https://kadet-hub.org/guides/argocd-vs-flux/ | `argocd-vs-flux/check argocd`, `argocd-vs-flux/check flux` |
+| [helm-mutate](helm-mutate/) | https://kadet-hub.org/guides/patch-helm-chart/ | `helm-mutate/check kubectl`, `helm-mutate/check argocd`, `helm-mutate/check flux` |
 
 ## Running
 

@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+# Usage: check <kubectl|argocd|flux>
+#
+# Verifies the latest signed kadet-hub index and the generators pinned in
+# inventory/classes/generators.yml, fetches them by digest, fetches the
+# podinfo chart through Kapitan's helm dependency and compiles. Fails unless
+# the mutated output carries every patch, a mutation that matches nothing
+# fails the compile and kubeconform passes (EX-9). Then deploys the mutated
+# output to a new kind cluster with plain kubectl apply, Argo CD or Flux and
+# runs tests/<tool> (EX-10). Set KEEP=1 to keep the cluster.
+# Needs gh (authenticated), jq, oras, uv, helm, kubeconform, kind, kubectl,
+# chainsaw, openssl, docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+tool=${1:?usage: check <kubectl|argocd|flux>}
+[[ $tool == kubectl || $tool == argocd || $tool == flux ]] || { echo "usage: check <kubectl|argocd|flux>" >&2; exit 1; }
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+tmp=$(mktemp -d)
+cluster=helm-mutate-$tool
+export KUBECONFIG=$tmp/kubeconfig  # kind and kubectl leave the caller's kubeconfig alone
+cleanup() {
+  kill "${watcher:-}" 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf lib compiled charts
+
+# EX-4: the index signature, then each generator's digest and attestation.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+min=$(sed -n 's/^index_serial: //p' .kapitan-sandbox.yaml)
+if ((serial < min)); then
+  echo "index serial $serial is lower than index_serial $min" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "$name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "$name $version: index has $want, inventory pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "$name $version verified and unpacked"
+done < <(sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  inventory/classes/generators.yml)
+
+run() { # command and arguments, in Kapitan's environment
+  uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4 "$@"
+}
+# EX-9: --fetch on target helm, which depends on the chart only; helm checks
+# the digest of the OCI artifact against the pinned one.
+run kapitan compile --inventory-backend reclass-rs --fetch -t helm >/dev/null
+run kapitan compile --inventory-backend reclass-rs
+
+# EX-9: the patches, and the diff against the plain render with both sides
+# loaded and dumped again, so that mutate's reformatting does not show.
+run python3 - compiled/helm/podinfo compiled/podinfo/podinfo "$tmp/diff" <<'EOF'
+import pathlib, sys, yaml
+helm, mutated, out = (pathlib.Path(p) for p in sys.argv[1:])
+for side, root in (("helm", helm), ("mutate", mutated)):
+    for f in root.rglob("*.yaml"):
+        docs = [d for d in yaml.safe_load_all(f.read_text()) if d]
+        dst = out / side / f.relative_to(root)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_text(yaml.safe_dump_all(docs, sort_keys=True) if docs else f.read_text())
+def load(rel):
+    return yaml.safe_load((mutated / rel).read_text())
+deploy = load("podinfo/templates/deployment.yaml")
+c = deploy["spec"]["template"]["spec"]["containers"][0]
+checks = {
+    "pin-image": c["image"] == "ghcr.io/stefanprodan/podinfo@sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da",
+    "harden": c["securityContext"]["runAsNonRoot"] is True and c["resources"] == {
+        "requests": {"cpu": "1m", "memory": "16Mi"}, "limits": {"memory": "64Mi"}} and c["env"][0]["name"] == "PODINFO_UI_COLOR",
+    "service-owner": load("podinfo/templates/service.yaml")["metadata"]["annotations"] == {"example.com/owner": "platform"},
+    "replicas": deploy["spec"]["replicas"] == 2,
+}
+for name in ("grpc", "jwt", "service"):
+    rel = f"podinfo/templates/tests/{name}.yaml"
+    checks[f"no-test-pods {rel}"] = (yaml.safe_load((helm / rel).read_text())["kind"] == "Pod"
+        and (mutated / rel).read_text() == "# all objects removed by mutation no-test-pods\n")
+for name, ok in checks.items():
+    print(f"EX-9: {name}: {'patched' if ok else 'NOT patched'}")
+sys.exit(not all(checks.values()))
+EOF
+status=0
+(cd "$tmp/diff" && diff -ru helm mutate) || status=$?
+((status == 1)) || { echo "EX-9: no difference between the helm and the mutated render" >&2; exit 1; }
+
+# EX-9: a mutation for a Deployment the chart does not render fails the compile.
+cp -r inventory "$tmp/inventory"
+sed 's/target: podinfo$/target: renamed/' inventory/targets/podinfo.yml >"$tmp/inventory/targets/renamed.yml"
+cat >>"$tmp/inventory/targets/renamed.yml" <<'EOF'
+    renamed:
+      match: {kind: Deployment, name: podinfo-frontend}
+      merge: {metadata: {labels: {tier: frontend}}}
+EOF
+if run kapitan compile --inventory-backend reclass-rs --inventory-path "$tmp/inventory" \
+  --output-path "$tmp/negative" -t renamed >"$tmp/negative.log" 2>&1; then
+  echo "EX-9: the compile with mutation renamed passed" >&2
+  exit 1
+fi
+echo "EX-9: the compile with mutation renamed failed:"
+grep -F 'mutate: mutation renamed: expects 1+, matched 0' "$tmp/negative.log" || {
+  cat "$tmp/negative.log" >&2
+  exit 1
+}
+
+a=()
+for g in lib/*; do
+  a+=(-schema-location "$g/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json")
+done
+kubeconform -strict -summary "${a[@]}" \
+  -schema-location 'lib/mutate/schemas/core/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' compiled/
+
+# EX-6: what a broken or not ready pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop the installs or Chainsaw as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    # EX-6: broken on two polls in a row; Argo CD's server briefly waits for a Secret.
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$  # check's children: the command it waits for and this watch
+    return
+  done
+}
+# EX-6: a kubectl rollout status or wait that prints the namespace on a timeout.
+install_wait() { # namespace kubectl-arguments
+  local ns=$1 s
+  shift
+  kubectl -n "$ns" "$@" && return
+  s=$?
+  kubectl -n "$ns" get events --sort-by=.lastTimestamp >&2 || true
+  kubectl -n "$ns" get pods -o wide >&2 || true
+  # shellcheck disable=SC2046 # one pod name per word
+  describe_pods "$ns" $(kubectl -n "$ns" get pods -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded" and (any(.status.conditions[]?;
+        .type == "Ready" and .status == "True") | not)) | .metadata.name')
+  return "$s"
+}
+
+# The node image kind v0.33.0 was built with.
+kind create cluster --name "$cluster" --wait 120s \
+  --image kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+watch_pods &
+watcher=$!
+# EX-10: restricted Pod Security admits the Deployment only with the harden mutation.
+kubectl create namespace podinfo >/dev/null
+kubectl label namespace podinfo pod-security.kubernetes.io/enforce=restricted >/dev/null
+
+if [[ $tool == kubectl ]]; then
+  # EX-10: the directory as it is, comment-only files included.
+  kubectl apply -R -f compiled/podinfo/podinfo
+  echo "revision: none" >"$tmp/values.yaml"
+else
+  # EX-7: the mutated output as one commit on main of the in-cluster Git server.
+  kubectl apply -f ../argocd-vs-flux/git-server.yaml >/dev/null
+  install_wait git rollout status deploy/gitea --timeout=300s
+  pass=$(openssl rand -hex 16)
+  kubectl -n git exec deploy/gitea -- gitea admin user create --admin --username kadet \
+    --password "$pass" --email kadet@example.com --must-change-password=false >/dev/null
+  # shellcheck disable=SC2016 # $1 expands in the pod's shell
+  revision=$(tar -C compiled/podinfo -cf - podinfo | kubectl -n git exec -i deploy/gitea -- sh -euc '
+    mkdir /tmp/app && cd /tmp/app && tar -xf -
+    git init -q -b main && git add .
+    git -c user.name=check -c user.email=check@example.com commit -qm app
+    git push -q "http://kadet:$1@localhost:3000/kadet/app.git" main
+    git rev-parse HEAD' sh "$pass")
+  echo "pushed $revision"
+  echo "revision: $revision" >"$tmp/values.yaml"
+
+  # EX-7: the tool from its pinned release manifest.
+  manifest() { # url sha256 namespace
+    curl -fsSL -o "$tmp/m.yaml" "$1"
+    echo "$2  $tmp/m.yaml" | sha256sum -c --quiet
+    # EX-7: ECR Public throttles anonymous pulls from runners (429); same image, same digest.
+    sed -i 's|image: public.ecr.aws/docker/library/redis:8.2.3-alpine$|image: mirror.gcr.io/library/redis:8.2.3-alpine@sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba|' "$tmp/m.yaml"
+    kubectl apply -n "$3" --server-side --force-conflicts -f "$tmp/m.yaml" >/dev/null
+  }
+  case $tool in
+    argocd)
+      ns=argocd
+      kubectl create namespace argocd >/dev/null
+      manifest https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.5/manifests/install.yaml \
+        90dc9094bf4c5964afd9c0e35d735e1c2fcbbda4f8e36799c092d9864ed65f50 argocd
+      install_wait argocd rollout status statefulset/argocd-application-controller --timeout=300s
+      ;;
+    flux)
+      ns=flux-system
+      manifest https://github.com/fluxcd/flux2/releases/download/v2.9.6/install.yaml \
+        9c1fda7e401429531ed1478f67ba06b3edff6513b75da7ee47bde9f1c4d4251c flux-system
+      ;;
+  esac
+  install_wait "$ns" wait --for=condition=Available deploy --all --timeout=300s >/dev/null
+  kubectl apply -R -f "compiled/$tool"
+fi
+
+# EX-10: the patched objects in the cluster, no test Pod, the tool's state.
+chainsaw test --test-dir "tests/$tool" --values "$tmp/values.yaml" --no-color &
+pid=$!
+status=0
+wait "$pid" || status=$?
+((status == 0)) || exit "$status"
+echo "$tool: mutated output deployed and checked"

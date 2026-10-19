@@ -1,0 +1,8 @@
+# The chart as Helm renders it, for the diff in check.
+classes:
+  - podinfo
+
+parameters:
+  kapitan:
+    vars:
+      target: helm

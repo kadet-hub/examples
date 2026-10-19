@@ -1,0 +1,26 @@
+# Argo CD delivers compiled/podinfo from the Git server as a directory source.
+classes:
+  - generators
+
+parameters:
+  kapitan:
+    vars:
+      target: argocd
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/argocd], output_path: .}
+  generators:
+    argocd:
+      applications:
+        podinfo:
+          project: default
+          destination: podinfo
+          source:
+            repoURL: http://gitea.git.svc.cluster.local:3000/kadet/app.git
+            targetRevision: main
+            path: podinfo
+            directory:
+              recurse: true
+          sync_policy:
+            automated:
+              prune: true
+              selfHeal: true

@@ -1,0 +1,36 @@
+# EX-10: the Application is Synced to the pushed commit and Healthy with the
+# comment-only files in its path, and deployed the patched objects only.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: argocd
+spec:
+  timeouts:
+    assert: 3m
+  steps:
+    - try:
+        - assert:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Application
+              metadata: {name: podinfo, namespace: argocd}
+              status:
+                sync:
+                  status: Synced
+                  revision: ($values.revision)
+                health:
+                  status: Healthy
+        - assert:
+            file: ../podinfo.yaml
+        - error:
+            file: ../test-pods.yaml
+        - script:
+            content: |
+              kubectl -n argocd get application podinfo -o json |
+                jq -r '"resources: \([.status.resources[] | "\(.kind)/\(.name)"] | join(", ")), conditions: \(.status.conditions // [] | length)"'
+            check:
+              ($error): ~
+      catch:
+        - events: {namespace: podinfo}
+        - events: {namespace: argocd}
+        - podLogs: {namespace: argocd}

@@ -1,0 +1,16 @@
+# EX-10: kubectl apply -R -f created the patched objects and no test Pod.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: kubectl
+spec:
+  timeouts:
+    assert: 3m
+  steps:
+    - try:
+        - assert:
+            file: ../podinfo.yaml
+        - error:
+            file: ../test-pods.yaml
+      catch:
+        - events: {namespace: podinfo}

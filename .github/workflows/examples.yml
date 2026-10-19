@@ -434,6 +434,54 @@ jobs:
           TOOL: ${{ matrix.tool }}
         run: argocd-vs-flux/check "$TOOL"
 
+  # EX-9, EX-10: podinfo's chart patched by mutate, deployed by kubectl, Argo CD
+  # and Flux, one kind cluster each.
+  helm-mutate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [kubectl, argocd, flux]
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install helm, oras, kubeconform, uv, kubectl, kind and chainsaw
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
+          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          curl -fsSLo chainsaw.tgz "https://github.com/kyverno/chainsaw/releases/download/$CHAINSAW_VERSION/chainsaw_linux_amd64.tar.gz"
+          sha256sum -c <<EOF
+          $HELM_SHA256  helm.tgz
+          $ORAS_SHA256  oras.tgz
+          $KUBECONFORM_SHA256  kubeconform.tgz
+          $UV_SHA256  uv.tgz
+          $KIND_SHA256  kind
+          $CHAINSAW_SHA256  chainsaw.tgz
+          EOF
+          tar -xzf helm.tgz --strip-components=1 linux-amd64/helm
+          tar -xzf oras.tgz oras
+          tar -xzf kubeconform.tgz kubeconform
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          tar -xzf chainsaw.tgz chainsaw
+          chmod +x kubectl kind
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: helm-mutate/check ${{ matrix.tool }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOOL: ${{ matrix.tool }}
+        run: helm-mutate/check "$TOOL"
+
   # EX-3: Renovate bumps these versions only; the checksum comes from the
   # publisher, and the failure names the line to paste.
   pins:
