@@ -72,11 +72,21 @@ kubeconform -strict -summary "${a[@]}" \
 # Kapitan refs are created by the first compile; this one writes their values.
 uv run kapitan compile --inventory-backend reclass-rs -t "$recipe" --reveal >/dev/null
 
+# EX-6: a webhook can refuse connections for a few seconds after its rollout
+# reports done; apply once a server-side dry run of the same files passes.
+apply() { # kubectl apply arguments
+  for _ in $(seq 30); do
+    kubectl apply --dry-run=server "$@" >/dev/null 2>&1 && break
+    sleep 2
+  done
+  kubectl apply "$@"
+}
+
 # EX-6: operators from their pinned release manifests.
 manifest() { # url sha256
   curl -fsSL -o "$tmp/m.yaml" "$1"
   echo "$2  $tmp/m.yaml" | sha256sum -c --quiet
-  kubectl apply --server-side -f "$tmp/m.yaml" >/dev/null
+  apply --server-side -f "$tmp/m.yaml" >/dev/null
 }
 cnpg() {
   manifest https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.1/cnpg-1.30.1.yaml \
@@ -93,7 +103,7 @@ strimzi() {  # the release manifest names the namespace myproject; it watches it
   curl -fsSL -o "$tmp/m.yaml" https://github.com/strimzi/strimzi-kafka-operator/releases/download/1.3.0/strimzi-cluster-operator-1.3.0.yaml
   echo "c58da61a66c20169d1c9c42736a9355b183ee17ac7779ab7875beaedbf972232  $tmp/m.yaml" | sha256sum -c --quiet
   sed -i 's/namespace: myproject$/namespace: kafka/' "$tmp/m.yaml"
-  kubectl -n kafka apply --server-side -f "$tmp/m.yaml" >/dev/null
+  apply -n kafka --server-side -f "$tmp/m.yaml" >/dev/null
   kubectl -n kafka rollout status deploy/strimzi-cluster-operator --timeout=300s
 }
 keycloak_operator() {  # namespaced: it watches keycloak, the namespace it runs in
@@ -101,7 +111,7 @@ keycloak_operator() {  # namespaced: it watches keycloak, the namespace it runs 
   while read -r sum file; do
     curl -fsSL -o "$tmp/$file" "$base/$file"
     echo "$sum  $tmp/$file" | sha256sum -c --quiet
-    kubectl -n keycloak apply --server-side -f "$tmp/$file" >/dev/null
+    apply -n keycloak --server-side -f "$tmp/$file" >/dev/null
   done <<'FILES'
 15d9199822d1918438bd1d093eee3ec8406e7f9d0837c4527fd6da99c63b058a keycloakoidcclients.k8s.keycloak.org-v1.yml
 8d552e1864d78117a07e535479ddb36e16a42b2695726c875f44828e1323edd4 keycloakrealmimports.k8s.keycloak.org-v1.yml
@@ -128,13 +138,7 @@ case $recipe in
   kafka) strimzi ;;
   keycloak) certmanager; cnpg; keycloak_operator ;;
 esac
-# An operator without a readiness probe reports its rollout done before its
-# admission webhook listens; wait until a server-side dry run of the output passes.
-for _ in $(seq 30); do
-  kubectl apply --dry-run=server -R -f "$out" >/dev/null 2>&1 && break
-  sleep 2
-done
-kubectl apply -R -f "$out"
+apply -R -f "$out"
 
 # EX-6: stop Chainsaw as soon as a pod is broken instead of at the assert
 # timeout; Chainsaw cannot run a watch beside an assert within one test.
