@@ -1,0 +1,30 @@
+# EX-6: the StatefulSet is ready and mongosh authenticates as root and gets ping ok.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: mongodb
+spec:
+  timeouts:
+    assert: 3m
+  namespace: mongodb
+  steps:
+    - try:
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata: {name: mongodb}
+              status:
+                readyReplicas: 1
+        - script:
+            timeout: 1m
+            content: |
+              pass=$(kubectl -n mongodb get secret mongodb -o jsonpath='{.data.password}' | base64 -d)
+              kubectl -n mongodb exec mongodb-0 -- mongosh --quiet -u root -p "$pass" \
+                --authenticationDatabase admin --eval 'db.runCommand({ping: 1}).ok'
+            check:
+              ($error): ~
+              (trim_space($stdout)): "1"
+      catch:
+        - events: {}
+        - podLogs: {}

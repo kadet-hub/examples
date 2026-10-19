@@ -1,0 +1,70 @@
+# MongoDB Community Server, in place of Bitnami's mongodb chart (standalone
+# architecture): one StatefulSet with authentication and the user "root" in
+# the admin database. MongoDB Community Server is licensed SSPLv1, which the
+# OSI does not approve as open source; the image is MongoDB Inc's own. The
+# password is a Kapitan ref, generated on the first compile into
+# refs/mongodb/password; compile again with --reveal, or apply through
+# Tesoro, to get the value into the Secret. The base64 backend keeps the
+# recipe self-contained and encrypts nothing: in a real project use gpg or
+# a KMS backend. For replica sets, MongoDB Controllers for Kubernetes
+# (Apache-2.0 for Community deployments) has no kadet-hub generator yet.
+classes:
+  - recipes.lib.kubernetes
+
+parameters:
+  generators:
+    kubernetes:
+      namespaces:
+        mongodb: {}
+  components:
+    mongodb:
+      namespace: mongodb
+      type: statefulset
+      image: docker.io/mongodb/mongodb-community-server:9.0.4-ubi9-slim
+      security_profile: restricted
+      workload_security_context:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      env:
+        MONGO_INITDB_ROOT_USERNAME: root
+        MONGO_INITDB_ROOT_PASSWORD:
+          secretKeyRef:
+            key: password
+      secrets:
+        auth:
+          string_data:
+            password:
+              value: ?{base64:mongodb/password||random:str:32}
+      ports:
+        mongodb:
+          container_port: 27017
+          service_port: 27017
+      # The entrypoint creates the root user on a first mongod bound to
+      # localhost, so the port opens on the pod IP once that is done.
+      healthcheck:
+        startup:
+          type: tcp
+          port: mongodb
+          failure_threshold: 30
+        readiness:
+          type: tcp
+          port: mongodb
+        liveness:
+          type: tcp
+          port: mongodb
+      resources:
+        requests: {cpu: 100m, memory: 512Mi}
+        limits: {memory: 1Gi}
+      volume_mounts:
+        data:
+          mount_path: /data/db
+      volume_claims:
+        data:
+          spec:
+            accessModes: [ReadWriteOnce]
+            resources:
+              requests:
+                storage: 8Gi
+      service:
+        type: ClusterIP

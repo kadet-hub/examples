@@ -353,7 +353,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        recipe: [postgresql, keycloak, valkey, kafka, rabbitmq, external-dns-powerdns]
+        recipe: [postgresql, keycloak, valkey, kafka, rabbitmq, external-dns-powerdns, mysql, mongodb]
     permissions:
       contents: read
       attestations: read # gh attestation verify
