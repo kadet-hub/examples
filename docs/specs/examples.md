@@ -153,7 +153,7 @@ part in a recipe whose subject is external-dns.
 
   - Test: `examples` workflow, job `recipe` per recipe; the fail-fast path
     by hand, with a non-existent image tag in a recipe class
-  - Since: #8, tbd
+  - Since: #8, #10
 
 ## Open questions
 
