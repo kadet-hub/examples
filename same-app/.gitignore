@@ -1,2 +1,5 @@
 kapitan/lib/
 kapitan/compiled/
+pulumi/node_modules/
+pulumi/rendered/
+pulumi/Pulumi.*.yaml

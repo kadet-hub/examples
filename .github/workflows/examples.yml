@@ -29,6 +29,12 @@ env:
   # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize
   KUSTOMIZE_VERSION: 5.8.3
   KUSTOMIZE_SHA256: cb9e31198d3f63b44848bd0afc4c8efc56e6cfef9c93a4a39a211940e6decd61
+  # renovate: datasource=github-releases depName=pulumi/pulumi
+  PULUMI_VERSION: v3.270.0
+  PULUMI_SHA256: d05899c251cb0413a9a2304f23229218c46852a61256913f34f08ebc27266139
+  # Provider plugin linux-amd64 archive at the @pulumi/kubernetes version in
+  # same-app/pulumi/package-lock.json, checked by same-app/check.
+  PULUMI_KUBERNETES_SHA256: b2a3471a897d8d4aa5c6f0ea2933d363dfa72bee8ed651a16246a09e3e728bb6
   # renovate: datasource=github-releases depName=kubernetes/kubernetes
   KUBERNETES_VERSION: v1.37.1
   KUBE_APISERVER_SHA256: de9b1b43c10143f448408b3aaf15f44fd5248b97a56301417a1fe2f1fc47a691
@@ -66,28 +72,36 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install helm, kustomize, oras and uv
+      - name: Install helm, kustomize, Pulumi, Node.js, oras and uv
         run: |
-          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          mkdir -p "$RUNNER_TEMP/bin" "$RUNNER_TEMP/node" && cd "$RUNNER_TEMP/bin"
           curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
           curl -fsSLo kustomize.tgz "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv$KUSTOMIZE_VERSION/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo pulumi.tgz "https://github.com/pulumi/pulumi/releases/download/$PULUMI_VERSION/pulumi-$PULUMI_VERSION-linux-x64.tar.gz"
+          curl -fsSLo node.txz "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz"
           curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/v$ORAS_VERSION/oras_${ORAS_VERSION}_linux_amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
           sha256sum -c <<EOF
           $HELM_SHA256  helm.tgz
           $KUSTOMIZE_SHA256  kustomize.tgz
+          $PULUMI_SHA256  pulumi.tgz
+          $NODE_SHA256  node.txz
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
           EOF
           tar -xzf helm.tgz --strip-components=1 linux-amd64/helm
           tar -xzf kustomize.tgz kustomize
+          tar -xzf pulumi.tgz --strip-components=1 pulumi/pulumi pulumi/pulumi-language-nodejs
+          tar -xJf node.txz --strip-components=1 -C "$RUNNER_TEMP/node"
           tar -xzf oras.tgz oras
           tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
-          rm ./*.tgz
+          rm node.txz ./*.tgz
+          echo "$RUNNER_TEMP/node/bin" >> "$GITHUB_PATH"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: same-app/check
         env:
           GH_TOKEN: ${{ github.token }}
+          npm_config_update_notifier: "false"
         run: same-app/check
 
   apiserver-dry-run:

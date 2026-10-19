@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Renders the app with Helm, Kustomize and Kapitan and exits 0 only if all
-# three produce the same manifests for each environment.
-# Needs helm, kustomize, uv; on first run also gh and oras to fetch the generator.
+# Renders the app with Helm, Kustomize, Pulumi and Kapitan and exits 0 only if
+# all four produce the same manifests for each environment.
+# Needs helm, kustomize, pulumi, node/npm and uv; on first run also gh and oras
+# to fetch the generator. PULUMI_KUBERNETES_SHA256, if set, is the expected
+# sha256 of the provider plugin archive.
 set -euo pipefail
 cd "$(dirname "$0")"
 out=$(mktemp -d)
@@ -19,17 +21,38 @@ if [[ ! -d kapitan/lib/kubernetes ]]; then
   tar -xf "$out/oci/kubernetes.tar" -C kapitan/lib/kubernetes
 fi
 
+# Pulumi: npm packages from the lock file without install scripts, because
+# the one in @pulumi/kubernetes downloads the provider plugin unchecked. The
+# plugin is installed at the locked version instead and automatic plugin
+# downloads are off. State goes to a local file backend, not Pulumi Cloud, and
+# no kubeconfig is read.
+[[ -d pulumi/node_modules ]] || (cd pulumi && npm ci --ignore-scripts --no-audit --no-fund >/dev/null)
+rm -rf pulumi/rendered pulumi/Pulumi.*.yaml
+mkdir "$out/pulumi"
+(
+  cd pulumi
+  pulumi plugin install resource kubernetes "$(node -p 'require("@pulumi/kubernetes/package.json").version')" \
+    ${PULUMI_KUBERNETES_SHA256:+--checksum "$PULUMI_KUBERNETES_SHA256"} || exit
+  export PULUMI_BACKEND_URL="file://$out/pulumi" PULUMI_CONFIG_PASSPHRASE='' KUBECONFIG=/dev/null \
+    PULUMI_SKIP_UPDATE_CHECK=true PULUMI_DISABLE_AUTOMATIC_PLUGIN_ACQUISITION=true
+  for env in dev prod; do
+    pulumi stack init "$env" && pulumi up --yes --skip-preview --non-interactive --stack "$env" || exit
+  done
+) >"$out/pulumi.log" 2>&1 || { cat "$out/pulumi.log"; exit 1; }
+
 (cd kapitan && "${py[@]}" kapitan compile --output-path "$out" >"$out/kapitan.log" 2>&1) \
   || { cat "$out/kapitan.log"; exit 1; }
 
 # One document per object, sorted by kind/namespace/name, keys sorted. The
-# managed-by label names the tool (Helm vs kapitan) and is dropped.
+# managed-by label names the tool (Helm vs kapitan) and is dropped. Pulumi
+# omits initialDelaySeconds: 0, the API default, so it is dropped as well.
 normalize() {
   "${py[@]}" python -I -c '
 import sys, yaml
 def strip(o):
     if isinstance(o, dict):
         o.pop("app.kubernetes.io/managed-by", None)
+        if o.get("initialDelaySeconds") == 0: del o["initialDelaySeconds"]
         for v in o.values(): strip(v)
     elif isinstance(o, list):
         for v in o: strip(v)
@@ -50,7 +73,9 @@ for env in dev prod; do
   kustomize build "kustomize/overlays/$env" | normalize >"$out/$env.kustomize"
   find "$out/compiled/$env/manifests" -name '*.yaml' -exec sh -c 'cat "$1"; echo ---' _ {} \; \
     | normalize >"$out/$env.kapitan"
-  for tool in helm kustomize; do
+  find "pulumi/rendered/$env" -name '*.yaml' -exec sh -c 'cat "$1"; echo ---' _ {} \; \
+    | normalize >"$out/$env.pulumi"
+  for tool in helm kustomize pulumi; do
     if diff -u "$out/$env.kapitan" "$out/$env.$tool"; then
       echo "$env: $tool = kapitan ($(grep -c '^kind:' "$out/$env.$tool") objects)"
     else
