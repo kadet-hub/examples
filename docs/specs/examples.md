@@ -188,7 +188,7 @@ under Inventory names.
 
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
-  - Since: #8
+  - Since: #8, #20
 
 PowerDNS keeps its zones in SQLite on a volume rather than in PostgreSQL:
 the image ships the SQLite schema, while the PostgreSQL backend would need
@@ -251,7 +251,7 @@ part in a recipe whose subject is external-dns.
   - Test: `examples` workflow, job `recipe` per recipe; the fail-fast path
     by hand, with a non-existent image tag in a recipe class or in an
     operator's release manifest
-  - Since: #8, #10, #13, #16, #17
+  - Since: #8, #10, #13, #16, #17, #20
 
 ## Argo CD and Flux
 
