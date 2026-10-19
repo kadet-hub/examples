@@ -110,8 +110,14 @@ schedule instead of trusting the state on the publishing day.
   Siderolabs release lists in `sha256sum.txt`. `gh`, `jq`, `curl`,
   `openssl`, `python3` and `docker` come from the runner image. kind runs
   the node image its release names, pinned by digest in `recipes/check` and
-  `argocd-vs-flux/check`; operator, Argo CD and Flux release manifests are
-  pinned by URL and sha256 there. Kapitan 0.36.3 with the `omegaconf`
+  `argocd-vs-flux/check`; the release manifests of the operators without a
+  Helm chart (EX-5a), of Argo CD and of Flux are pinned by URL and sha256
+  there. Operator charts are pinned in the recipes' operator classes by
+  version and the digest of their OCI artifact, operator images by
+  `tag@sha256:digest`; a regex manager in `renovate.json` updates both with
+  `datasource=docker`, and one package rule puts the chart and the images
+  of one operator class into one pull request, so that a chart's CRDs never
+  run with another operator version. Kapitan 0.36.3 with the `omegaconf`
   extra MUST be installed with `omegaconf==2.4.0.dev4`: omegaconf 2.4.0
   breaks its OmegaConf backend (kapicorp/kapitan#1621).
 
@@ -135,7 +141,7 @@ schedule instead of trusting the state on the publishing day.
   - Test: `manual:` review of `.github/workflows/examples.yml` and the `check` scripts;
     `renovate --platform=local --dry-run=lookup` with pins set one release
     back; workflow job `pins`
-  - Since: tbd; checksums by Renovate: #15
+  - Since: tbd; checksums by Renovate: #15; operator charts and images: this change
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
@@ -190,15 +196,73 @@ under Inventory names.
     `bitnami` in a class or the compiled output)
   - Since: #8, #20
 
+- EX-5a: A recipe whose resources need an operator MUST install it from
+  the project's Helm chart through an operator class
+  `recipes/inventory/classes/recipes/operators/<operator>.yml`, where the
+  project publishes one.
+
+  An operator class pins the chart's OCI artifact by version and digest in
+  a Kapitan `helm` dependency and renders it with the `helm` input into
+  `operators/<operator>`. Where the chart needs a change its values cannot
+  make, the mutate generator runs as a second compile entry on the same
+  `output_path` with `output_type: plain`, as in `helm-mutate`. The class
+  adds the operator's namespace to the kubernetes generator's namespaces.
+  CloudNativePG, cert-manager and Strimzi run in their own namespaces and
+  watch every namespace, so a target that combines recipes installs each
+  once, as it compiles a generator once.
+
+  The operator image is pinned as `tag@sha256:digest`. CloudNativePG's
+  values take a tag only, so mutate sets the reference in the container
+  and in `OPERATOR_IMAGE_NAME`, which the operator gives the instance
+  pods. Strimzi's values take a digest but then drop the tag, so mutate
+  sets the reference in the container and in the three variables that run
+  the same image for the entity operator and the Kafka init container.
+  cert-manager's values take tag and digest for each image and the
+  Keycloak Operator's the whole reference, so their classes have no mutate
+  entry.
+  The cert-manager class sets `crds.enabled` and leaves out
+  `startupapicheck`, a Helm hook that waits for the webhook during `helm
+  install`. The images the operators start for the software, PostgreSQL,
+  Kafka and Keycloak, stay pinned by tag in the recipe classes (EX-5).
+
+  The Keycloak Operator's chart, `oci://quay.io/keycloak/keycloak-operator-helm`,
+  is marked experimental by the project and defaults to watching every
+  namespace, which the project calls a preview. The class keeps the chart
+  and sets the four controllers to `JOSDK_WATCH_CURRENT`, so the operator
+  runs in `keycloak` and watches that namespace only, as its release
+  manifests install it.
+
+  The RabbitMQ Cluster Operator has no Helm chart from its project (checked
+  2026-10-19): rabbitmq/cluster-operator publishes release manifests and
+  Kustomize bases, and Bitnami's `rabbitmq-cluster-operator` chart is
+  excluded by EX-5. `recipes/check` installs it from its pinned release
+  manifest, which the recipe class names; cert-manager, which issues its
+  webhook certificate, comes with the recipe from its chart.
+
+  `check` fetches the charts with `kapitan compile --fetch -t charts`:
+  target `charts` includes every operator class and no generator, so EX-4
+  holds as for `helm-mutate`'s target `helm`; it is not a recipe. The
+  operators are applied server-side, because their CRDs exceed the
+  annotation size of a client-side apply, and before the generators'
+  output, which needs their CRDs and webhooks. kubeconform skips
+  `CustomResourceDefinition`, for which the generators carry no schema,
+  and validates the rest of the chart output.
+
+  - Test: `recipes/check` via the `examples` workflow, job `recipe` for
+    `postgresql`, `keycloak`, `kafka` and `rabbitmq` (fails when helm rejects a chart's
+    digest, a mutation matches nothing, or the operator does not come up)
+  - Since: this change
+
 PowerDNS keeps its zones in SQLite on a volume rather than in PostgreSQL:
 the image ships the SQLite schema, while the PostgreSQL backend would need
 the schema loaded through CloudNativePG's post-init SQL, one more moving
 part in a recipe whose subject is external-dns.
 
-- EX-6: CI MUST, for every recipe, install the operators the recipe needs
-  from their pinned release manifests into a new kind cluster, apply the
-  compiled target and fail unless the recipe's check passes within its
-  time limit. It MUST fail within about a minute once a pod is broken.
+- EX-6: CI MUST, for every recipe, apply the operators the recipe compiled
+  (EX-5a), and install those without a Helm chart from their pinned release
+  manifests, into a new kind cluster, apply the compiled target and fail
+  unless the recipe's check passes within its time limit. It MUST fail
+  within about a minute once a pod is broken.
 
   A pod is broken when one of its containers waits with
   `CrashLoopBackOff`, `ImagePullBackOff`, `CreateContainerConfigError` or
@@ -210,11 +274,12 @@ part in a recipe whose subject is external-dns.
   10 seconds from the creation of the kind cluster until Chainsaw ends, so
   a broken pod also stops the operator installs. On the first broken pod
   it prints the pod's description and its containers' logs and stops the
-  command `check` waits for, an operator's `rollout status` or Chainsaw.
+  command `check` waits for, an operator's `rollout status` or `wait`, or
+  Chainsaw.
   The watch sits in `check` because Chainsaw runs the operations of a test
   one after another and has none that runs beside an assert.
 
-  When a `rollout status` of an operator times out, `check` prints the
+  When a `rollout status` or `wait` of an operator times out, `check` prints the
   namespace's events sorted by time, `kubectl get pods -o wide`, and the
   description and logs of every pod that is not ready. Without them the
   timeout names only the Deployments that did not become available.
@@ -251,7 +316,7 @@ part in a recipe whose subject is external-dns.
   - Test: `examples` workflow, job `recipe` per recipe; the fail-fast path
     by hand, with a non-existent image tag in a recipe class or in an
     operator's release manifest
-  - Since: #8, #10, #13, #16, #17, #20
+  - Since: #8, #10, #13, #16, #17, #20; operators from the compiled target: this change
 
 ## Argo CD and Flux
 
@@ -398,6 +463,10 @@ mutation matches them by kind and label, not by name.
   signature in addition to the digest pin? It would add cosign to the job.
   Renovate updates neither the chart digest nor the image digest of
   `pin-image`; both are set by hand with the version.
+- OQ-4: Should the RabbitMQ Cluster Operator come with its recipe without
+  a chart? Its manifest exists only as a release asset, which Kapitan's
+  `https` dependency fetches without a checksum, and a `copy` entry with
+  mutate would apply it.
 
 ## Inventory
 
@@ -409,6 +478,8 @@ mutation matches them by kind and label, not by name.
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
 | `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |
 | `recipes/` | One Kapitan project; `check <recipe>` verifies the generators, compiles, deploys to kind and runs the recipe's check |
+| `recipes/inventory/classes/recipes/operators/` | One class per operator with a Helm chart: chart pin, `helm` and `mutate` entries, image pins (EX-5a) |
+| `recipes/inventory/targets/charts.yml` | Every operator class and no generator, for `check` to fetch the charts (EX-4, EX-5a) |
 | `argocd-vs-flux/` | One Kapitan project (targets `web`, `argocd`, `flux`), the Gitea manifest and a Chainsaw test per tool; `check <argocd\|flux>` |
 | `helm-mutate/` | One Kapitan project (targets `helm`, `podinfo`, `argocd`, `flux`), the podinfo chart pinned in `inventory/classes/podinfo.yml`, the mutations in `inventory/targets/podinfo.yml`, a Chainsaw test per tool; `check <kubectl\|argocd\|flux>` |
 
@@ -416,11 +487,11 @@ Recipes and their checks:
 
 | Recipe | Replaces (Bitnami) | Generators | Operators | Check |
 |---|---|---|---|---|
-| `postgresql` | postgresql, postgresql-ha | cloudnative-pg | CloudNativePG | Cluster `Ready`, `select 1` as the app user through the pooler |
-| `keycloak` | keycloak | keycloak, cloudnative-pg, certmanager | Keycloak Operator, CloudNativePG, cert-manager | Keycloak `Ready`, `/realms/master` answers 200 over TLS |
+| `postgresql` | postgresql, postgresql-ha | cloudnative-pg, mutate | CloudNativePG (chart) | Cluster `Ready`, `select 1` as the app user through the pooler |
+| `keycloak` | keycloak | keycloak, cloudnative-pg, certmanager, mutate | Keycloak Operator, CloudNativePG, cert-manager (charts) | Keycloak `Ready`, `/realms/master` answers 200 over TLS |
 | `valkey` | redis | kubernetes | none | StatefulSet ready, `valkey-cli ping` answers `PONG` |
-| `kafka` | kafka | strimzi | Strimzi | Kafka `Ready`, a message produced and consumed |
-| `rabbitmq` | rabbitmq | rabbitmq | RabbitMQ Cluster Operator, cert-manager | RabbitmqCluster `AllReplicasReady` |
+| `kafka` | kafka | strimzi, mutate | Strimzi (chart) | Kafka `Ready`, a message produced and consumed |
+| `rabbitmq` | rabbitmq | rabbitmq | RabbitMQ Cluster Operator (release manifest), cert-manager (chart) | RabbitmqCluster `AllReplicasReady` |
 | `external-dns-powerdns` | external-dns | kubernetes | none | a Service hostname resolves through PowerDNS |
 | `mysql` | mysql | kubernetes | none | StatefulSet ready, `select 1` as the app user in its own database |
 | `mongodb` | mongodb | kubernetes | none | StatefulSet ready, `mongosh` authenticates and `ping` answers `ok: 1` |
