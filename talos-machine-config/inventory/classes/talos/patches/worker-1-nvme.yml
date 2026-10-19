@@ -1,0 +1,10 @@
+# worker-1 installs to NVMe instead of the shared /dev/sda: the inventory
+# counterpart of a config patch applied to one node.
+parameters:
+  generators:
+    talos:
+      nodes:
+        worker-1:
+          machine:
+            install:
+              disk: /dev/nvme0n1

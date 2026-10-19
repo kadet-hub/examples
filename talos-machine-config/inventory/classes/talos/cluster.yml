@@ -1,0 +1,23 @@
+# Settings every node shares: cluster name and endpoint, static network on
+# eth0, DNS and NTP, the install disk.
+parameters:
+  generators:
+    talos:
+      base:
+        machine:
+          install:
+            disk: /dev/sda
+          network:
+            nameservers: [192.0.2.53]
+            interfaces:
+              eth0:
+                dhcp: false
+                routes:
+                  0.0.0.0/0:
+                    gateway: 192.0.2.1
+          time:
+            servers: [time.example.com]
+        cluster:
+          clusterName: lab
+          controlPlane:
+            endpoint: https://192.0.2.11:6443

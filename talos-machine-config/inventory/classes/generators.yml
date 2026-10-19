@@ -1,0 +1,9 @@
+# kadet-hub talos generator, pinned by version and digest (index serial 47).
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/talos:1.1.0@sha256:106b46183d93c308fe27331b87bdf67478244f75b196d9f0c2ff4be49af3809f
+        output_path: lib/talos
+    compile:
+      - {input_type: kadet, input_paths: [lib/talos], output_path: talos/}
