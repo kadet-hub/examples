@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `.github/workflows/examples.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `.github/workflows/examples.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -92,7 +92,8 @@ schedule instead of trusting the state on the publishing day.
     `docker create` and `docker cp`. The kube-apiserver and kubectl
     binaries are identical to the dl.k8s.io downloads; the kustomize binary
     is a separate build of the same version. The check scripts pin kind's
-    node image and the redis image of EX-7 the same way.
+    node image and the redis image of EX-7 the same way, `gvisor-ci/run`
+    the image of its sandbox rootfs.
   - Commit: Argo CD's `install.yaml` and kubeconform's
     `openapi2jsonschema.py` are files in the projects' repositories, not
     release assets. They are fetched from raw.githubusercontent.com at the
@@ -175,10 +176,11 @@ schedule instead of trusting the state on the publishing day.
     `renovate --platform=local --dry-run=lookup` with pins set one release
     back; workflow job `pins`
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
-    every pin by Renovate: #23; `cert-manager-mutate`: #28
+    every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
+    #33
 
-- EX-3a: Every image that an inventory, a Chainsaw test, a check script or
-  a workflow names MUST be pinned as `tag@sha256:digest`.
+- EX-3a: Every image that an inventory, a Chainsaw test, a script or a
+  workflow names MUST be pinned as `tag@sha256:digest`.
 
   The tag tells the reader which release runs, the digest makes every run
   pull the image CI checked. Renovate updates tag and digest in one pull
@@ -192,6 +194,12 @@ schedule instead of trusting the state on the publishing day.
   The recipe pins the digest of the amd64 image, the one the tag alone
   pulled before.
 
+  The rootfs image of `gvisor-ci/run` stays on Python 3.13, the version
+  `run` also uses on the host through `uv run --python 3.13`, so that the
+  escape scripts run on the same minor version inside and outside the
+  sandbox. A package rule for that file keeps it below 3.14; Renovate
+  updates the digest of `3.13-slim` and proposes no `3.14-slim`.
+
   Three kinds of reference carry no digest. The `ghcr.io/example/*` images
   in `same-app` and `config-tools` are placeholders that no registry holds;
   Renovate skips them. The documents in `apiserver-dry-run/manifests/` only
@@ -204,8 +212,10 @@ schedule instead of trusting the state on the publishing day.
 
   - Test: `manual:` `git grep -nE 'image(_name)?: [a-z0-9.-]+\.[a-z]+/' -- '**/inventory/**' '*/tests/**' | grep -v @sha256:`
     lists the placeholders only; `renovate --platform=local --dry-run=lookup`
-    reports every image with its current digest
-  - Since: #32
+    reports every image with its current digest, and with the digest of
+    `gvisor-ci/run` set back proposes the current `3.13-slim` digest and
+    no 3.14
+  - Since: #32; `gvisor-ci/run`: #33
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
@@ -635,7 +645,7 @@ selector would need the same change.
 | Path | Content |
 |---|---|
 | `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3) |
-| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins (EX-3) and keep MySQL on 9.7 (EX-5b) |
+| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins (EX-3), keep MySQL on 9.7 (EX-5b) and the Python image of `gvisor-ci/run` on 3.13 (EX-3a) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
 | `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |

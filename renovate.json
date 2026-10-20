@@ -22,7 +22,7 @@
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.github/workflows/[^/]+\\.yml$/",
-        "/^[^/]+/check$/"
+        "/^[^/]+/(check|run)$/"
       ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>github-releases|node-version|docker) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?(?<currentValue>[^\"\\s:@]+)\"?\\n",
@@ -173,6 +173,16 @@
         "container-registry.oracle.com/mysql/community-server"
       ],
       "allowedVersions": "<10"
+    },
+    {
+      "description": "EX-3a: gvisor-ci/run also runs the escape scripts on the host's Python 3.13, so its rootfs image stays on 3.13",
+      "matchFileNames": [
+        "gvisor-ci/run"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "allowedVersions": "<3.14"
     }
   ]
 }
