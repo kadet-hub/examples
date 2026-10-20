@@ -110,7 +110,7 @@ schedule instead of trusting the state on the publishing day.
   - Test: `examples` workflow, jobs `first-platform` and
     `helm-vs-terraform`; the other deploys as in EX-6, EX-7, EX-10 and
     EX-11
-  - Since: tbd
+  - Since: #34
 
 ## Supply chain
 
