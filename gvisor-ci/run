@@ -6,7 +6,8 @@
 # export a rootfs image once. Nothing here needs root; runsc runs rootless.
 set -euo pipefail
 here=$(cd -- "$(dirname -- "$0")" && pwd)
-img=python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
+# renovate: datasource=docker depName=python
+PYTHON_IMAGE=python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 export XDG_RUNTIME_DIR=$work/run; mkdir -p "$XDG_RUNTIME_DIR"
@@ -16,9 +17,9 @@ for s in audit_hook_bypass dns_vs_rawip home_escape; do
   echo "### $s"; uv run --python 3.13 python -I "$here/$s.py" || true
 done
 
-echo "## Build a minimal read-only rootfs from $img"
+echo "## Build a minimal read-only rootfs from $PYTHON_IMAGE"
 mkdir -p "$work/bundle/rootfs"
-cid=$(docker create "$img" sleep 1)
+cid=$(docker create "$PYTHON_IMAGE" sleep 1)
 docker export "$cid" | tar -C "$work/bundle/rootfs" -xf -
 docker rm "$cid" >/dev/null
 cp "$here"/*.py "$work/bundle/rootfs/"
