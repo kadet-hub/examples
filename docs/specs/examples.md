@@ -175,7 +175,7 @@ schedule instead of trusting the state on the publishing day.
     `renovate --platform=local --dry-run=lookup` with pins set one release
     back; workflow job `pins`
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
-    every pin by Renovate: #23; `cert-manager-mutate`: tbd
+    every pin by Renovate: #23; `cert-manager-mutate`: #28
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
@@ -568,7 +568,7 @@ selector would need the same change.
 
   - Test: `cert-manager-mutate/tests/chainsaw-test.yaml`; `examples`
     workflow, job `cert-manager-mutate`
-  - Since: tbd
+  - Since: #28
 
 ## Open questions
 
