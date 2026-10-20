@@ -358,7 +358,7 @@ part in a recipe whose subject is external-dns.
   - Test: `examples` workflow, job `recipe` per recipe; the fail-fast path
     by hand, with a non-existent image tag in a recipe class or in an
     operator's release manifest
-  - Since: #8, #10, #13, #16, #17, #20; operators from the compiled target: #21
+  - Since: #8, #10, #13, #16, #17, #20, #31; operators from the compiled target: #21
 
 ## Argo CD and Flux
 

@@ -20,7 +20,8 @@ spec:
             timeout: 1m
             content: |
               pass=$(kubectl -n mongodb get secret mongodb -o jsonpath='{.data.password}' | base64 -d)
-              kubectl -n mongodb exec mongodb-0 -- mongosh --quiet -u root -p "$pass" \
+              # -p "$pass" reads a password starting with "-" as an option and prints it.
+              kubectl -n mongodb exec mongodb-0 -- mongosh --quiet -u root --password="$pass" \
                 --authenticationDatabase admin --eval 'db.runCommand({ping: 1}).ok'
             check:
               ($error): ~
