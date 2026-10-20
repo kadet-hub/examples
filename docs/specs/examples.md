@@ -259,7 +259,7 @@ schedule instead of trusting the state on the publishing day.
     and cdk8s 2.70.112; with the previous configuration it dated 3.4.0
     2026-10-16T16:43:56Z and proposed it (partial: the lookup does not
     update the lock file; the next provider pull request does)
-  - Since: this change
+  - Since: #35
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
