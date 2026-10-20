@@ -17,7 +17,7 @@ parameters:
     powerdns:
       namespace: dns
       type: statefulset
-      image: docker.io/powerdns/pdns-auth-51:5.1.4
+      image: docker.io/powerdns/pdns-auth-51:5.1.4@sha256:bb5b1c133bcca1dd455075321de7d55db4945a8d7f2ba23339e3c7bbe416b205
       security_profile: restricted
       workload_security_context:
         runAsUser: 953
@@ -36,7 +36,7 @@ parameters:
               value: ?{base64:powerdns/api-key||random:str:32}
       init_containers:
         seed:
-          image: docker.io/powerdns/pdns-auth-51:5.1.4
+          image: docker.io/powerdns/pdns-auth-51:5.1.4@sha256:bb5b1c133bcca1dd455075321de7d55db4945a8d7f2ba23339e3c7bbe416b205
           command: [sh, -ec, "[ -f /data/pdns.sqlite3 ] || cp /var/lib/powerdns/pdns.sqlite3 /data/"]
           volume_mounts:
             data:
@@ -45,7 +45,7 @@ parameters:
             requests: {cpu: 10m, memory: 16Mi}
             limits: {memory: 64Mi}
         zone:
-          image: docker.io/powerdns/pdns-auth-51:5.1.4
+          image: docker.io/powerdns/pdns-auth-51:5.1.4@sha256:bb5b1c133bcca1dd455075321de7d55db4945a8d7f2ba23339e3c7bbe416b205
           command: [sh, -ec, "pdnsutil zone list example.internal >/dev/null 2>&1 || pdnsutil zone create example.internal ns1.example.internal"]
           volume_mounts:
             data:
@@ -86,7 +86,7 @@ parameters:
 
     external-dns:
       namespace: dns
-      image: registry.k8s.io/external-dns/external-dns:v0.23.0
+      image: registry.k8s.io/external-dns/external-dns:v0.23.0@sha256:1854499e2b08cee47c40a08e356bff20dcb192dbcfde8378fc3f900f12cad5a3
       security_profile: restricted
       read_only_root_filesystem: true
       workload_security_context:
