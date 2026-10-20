@@ -1,0 +1,7 @@
+# kadet-hub generators, pinned by version and digest (index serial 48).
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/mutate:0.1.0@sha256:428e548bb10c6dda0105220c3a9f135d3a964a419303e30849a06f6d9e194a15
+        output_path: lib/mutate

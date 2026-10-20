@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `helm-mutate/`, `.github/workflows/examples.yml`, `renovate.json`
+Code: `*/check`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `.github/workflows/examples.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -51,7 +51,7 @@ schedule instead of trusting the state on the publishing day.
   provider release that changes them fails the job.
 
   `argocd-vs-flux` fails unless EX-7 and EX-8 hold, `helm-mutate` unless
-  EX-9 and EX-10 hold.
+  EX-9 and EX-10 hold, `cert-manager-mutate` unless EX-11 holds.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -116,15 +116,20 @@ schedule instead of trusting the state on the publishing day.
   Pins in Kapitan inventories and Kubernetes manifests are updated with
   `datasource=docker` by regex managers: generators through the org preset;
   charts by version and the digest of their OCI artifact (the operator
-  classes, podinfo in `helm-mutate`); images wherever an `image:` or
+  classes, podinfo in `helm-mutate`, cert-manager and trust-manager in
+  `cert-manager-mutate`); images wherever an `image:` or
   `image_name:` names one, by tag or by `tag@sha256:digest`, as
   `repository`, `tag` and `digest` values, or as a mutate `images` entry
-  with `tag` and `digest`. `renovate.json` keeps only `**/node_modules/**`
+  with `tag` and `digest`. A `tag` value may be quoted: trust-manager's
+  default package image has the tag `20250419.2`, which YAML reads as a
+  number otherwise. `renovate.json` keeps only `**/node_modules/**`
   of the `ignorePaths` that `config:recommended` sets, because those skip
   `tests/` and with it the image pins of the Chainsaw tests. Package rules put what has to change together
   into one pull request: an operator class's chart and images, so that a
   chart's CRDs never run with another operator version, together with the
-  Keycloak image and Strimzi's Kafka client image (EX-5a); kind and its
+  Keycloak image and Strimzi's Kafka client image (EX-5a), and the same
+  for the cert-manager and trust-manager classes of `cert-manager-mutate`,
+  so that one pull request moves both cert-manager pins; kind and its
   node image; podinfo's chart and image; `@pulumi/kubernetes` and its
   plugin.
 
@@ -170,7 +175,7 @@ schedule instead of trusting the state on the publishing day.
     `renovate --platform=local --dry-run=lookup` with pins set one release
     back; workflow job `pins`
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
-    every pin by Renovate: #23
+    every pin by Renovate: #23; `cert-manager-mutate`: #28
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
@@ -494,6 +499,77 @@ mutation matches them by kind and label, not by name.
     workflow, job `helm-mutate` per tool
   - Since: #19
 
+## cert-manager and trust-manager charts patched with mutate
+
+`cert-manager-mutate/` backs the kadet-hub.org blog post that fixes two
+requests against the cert-manager project's Helm charts with mutate
+instead of a chart value. cert-manager/cert-manager#6071 asks for init
+containers on the controller Deployment; a maintainer declined the value
+and pointed to a Helm post-rendering step. cert-manager/trust-manager#778
+asks for the webhook certificate to come from an issuer managed outside
+the chart; the chart always renders a selfSigned Issuer `trust-manager`
+and points the webhook's Certificate `trust-manager` at it. Neither
+cert-manager v1.21.2 nor trust-manager v0.25.0, the latest releases on
+2026-10-20, has a value for it; cert-manager's chart takes
+`extraContainers` only.
+
+The project has the layout of `helm-mutate`. Classes `cert-manager` and
+`trust-manager` pin each chart by version and OCI digest and render it
+with the `helm` input. Both charts' values take tag and digest for every
+image, so no mutation pins an image. Target `helm` renders both charts
+alone and is the target `check` fetches with (EX-4); targets
+`cert-manager` and `trust-manager` add one mutate entry each on the
+chart's `output_path` with `output_type: plain`. trust-manager is
+rendered into `cert-manager`, its default trust namespace.
+
+`internal-ca.yaml` is the issuer managed outside the chart: a selfSigned
+ClusterIssuer issues the CA Certificate `internal-ca` into
+`cert-manager`, where cert-manager reads the Secrets of ClusterIssuers,
+and the CA ClusterIssuer `internal-ca` signs with it. `bundle.yaml`
+distributes that CA with a trust-manager Bundle, from the Secret in the
+trust namespace. approver-policy is not installed, so
+`app.webhook.tls.approverPolicy.enabled` stays false and the chart
+renders no CertificateRequestPolicy; with it, the policy's `issuerRef`
+selector would need the same change.
+
+- EX-11: `cert-manager-mutate/check` MUST fail unless the compiled
+  Deployment `cert-manager` carries the init container and the other two
+  Deployments none, the compiled trust-manager output holds no Issuer and
+  its Certificate `trust-manager` names the ClusterIssuer `internal-ca`,
+  and, deployed to a new kind cluster, the controller pod is Ready with
+  the init container terminated with exit code 0, the Certificate is
+  Ready, no Issuer `trust-manager` exists, the webhook certificate
+  verifies against the CA of `internal-ca`, that CA is the `ca.crt` of
+  the webhook's Secret, the webhook's caBundle and the Bundle's
+  ConfigMap, and the Bundle is Synced.
+
+  The mutations are `init-containers` (`json6902` `add` of
+  `/spec/template/spec/initContainers` on `apps/v1` Deployment
+  `cert-manager`: a busybox container, pinned by tag and digest, that
+  echoes one line), `no-selfsigned-issuer` (`delete` of
+  `cert-manager.io/v1` Issuer `trust-manager`) and `webhook-issuer`
+  (`merge` of `spec.issuerRef` on `cert-manager.io/v1` Certificate
+  `trust-manager`). `add` creates the list because the chart renders
+  none; on an existing list it would replace it. The pod sets
+  `runAsNonRoot` and busybox runs as root, so the init container sets
+  `runAsUser`.
+
+  The Bundle passes trust-manager's webhook, whose caBundle cainjector
+  copies from the webhook's Secret (`cert-manager.io/inject-ca-from-secret`),
+  so its creation shows that the API server trusts the certificate
+  `internal-ca` issued. `check` applies cert-manager's chart server-side,
+  because three of its CRDs exceed the annotation size of a client-side
+  apply, and repeats every apply as in EX-6, because cert-manager's
+  webhook admits the Certificates and trust-manager's the Bundle. Broken pods and a
+  timed-out wait are reported as in EX-6, and the diff between the two
+  renders is printed as in EX-9. kubeconform is not run: mutate's schemas
+  cover five core kinds, and the API server validates every object of the
+  output on apply.
+
+  - Test: `cert-manager-mutate/tests/chainsaw-test.yaml`; `examples`
+    workflow, job `cert-manager-mutate`
+  - Since: #28
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -522,6 +598,7 @@ mutation matches them by kind and label, not by name.
 | `recipes/inventory/targets/charts.yml` | Every operator class and no generator, for `check` to fetch the charts (EX-4, EX-5a) |
 | `argocd-vs-flux/` | One Kapitan project (targets `web`, `argocd`, `flux`), the Gitea manifest and a Chainsaw test per tool; `check <argocd\|flux>` |
 | `helm-mutate/` | One Kapitan project (targets `helm`, `podinfo`, `argocd`, `flux`), the podinfo chart pinned in `inventory/classes/podinfo.yml`, the mutations in `inventory/targets/podinfo.yml`, a Chainsaw test per tool; `check <kubectl\|argocd\|flux>` |
+| `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
 
 Recipes and their checks:
 

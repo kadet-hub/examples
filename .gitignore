@@ -9,4 +9,5 @@ dl/
 /recipes/refs/
 /talos-machine-config/refs/
 /helm-mutate/charts/
+/cert-manager-mutate/charts/
 /recipes/charts/

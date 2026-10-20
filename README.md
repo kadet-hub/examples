@@ -18,6 +18,7 @@ longer holds.
 | [helm-vs-terraform](helm-vs-terraform/) | https://kadet-hub.org/guides/helm-vs-terraform/ | `helm-vs-terraform/check` |
 | [argocd-vs-flux](argocd-vs-flux/) | https://kadet-hub.org/guides/argocd-vs-flux/ | `argocd-vs-flux/check argocd`, `argocd-vs-flux/check flux` |
 | [helm-mutate](helm-mutate/) | https://kadet-hub.org/guides/patch-helm-chart/ | `helm-mutate/check kubectl`, `helm-mutate/check argocd`, `helm-mutate/check flux` |
+| [cert-manager-mutate](cert-manager-mutate/) | https://kadet-hub.org/blog/cert-manager-helm-chart-patches/ | `cert-manager-mutate/check` |
 
 ## Running
 

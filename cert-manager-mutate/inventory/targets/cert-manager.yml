@@ -1,0 +1,35 @@
+# cert-manager/cert-manager#6071: the chart has no value for init containers
+# on the controller. The second compile entry rewrites the files the helm
+# entry wrote to the same output_path.
+classes:
+  - generators
+  - cert-manager
+
+parameters:
+  kapitan:
+    vars:
+      target: cert-manager
+    compile:
+      - input_type: kadet
+        input_paths: [lib/mutate]
+        output_path: cert-manager
+        output_type: plain
+        input_params:
+          mutations: ${mutations}
+  mutations:
+    # The chart renders no initContainers, so add creates the list. The pod
+    # sets runAsNonRoot and busybox runs as root, hence runAsUser.
+    init-containers:
+      match: {apiVersion: apps/v1, kind: Deployment, name: cert-manager}
+      json6902:
+        - op: add
+          path: /spec/template/spec/initContainers
+          value:
+            - name: init
+              image: docker.io/library/busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e
+              command: [echo, init container added by mutate]
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+                readOnlyRootFilesystem: true
+                runAsUser: 65534

@@ -1,0 +1,29 @@
+# trust-manager's chart, pinned by version and by the digest of its OCI
+# artifact, rendered with Kapitan's helm input into compiled/<target>/trust-manager,
+# in cert-manager, its default trust namespace. The values take tag and
+# digest for both images; the default package tag is quoted, or YAML reads
+# it as a number.
+parameters:
+  kapitan:
+    dependencies:
+      - type: helm
+        source: oci://quay.io/jetstack/charts/trust-manager@sha256:ef4540d4c3b7eb8cd498e3420aa5171ccc7434b7fa5e3168f1218d22906dbecb
+        chart_name: trust-manager
+        version: v0.25.0
+        output_path: charts/trust-manager
+    compile:
+      - input_type: helm
+        input_paths: [charts/trust-manager]
+        output_path: trust-manager
+        helm_params:
+          name: trust-manager
+          namespace: cert-manager
+        helm_values:
+          image:
+            repository: quay.io/jetstack/trust-manager
+            tag: v0.25.0
+            digest: sha256:0521921c2a46d14d0417336b20bcde69215ef3164f2977cc939d53c6e5224a17
+          defaultPackageImage:
+            repository: quay.io/jetstack/trust-pkg-debian-trixie
+            tag: "20250419.2"
+            digest: sha256:3093d4f6634fbd9eaf6a70a06d809132850d7cae30da82396d3b1f884c1135e7
