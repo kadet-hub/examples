@@ -51,7 +51,8 @@ schedule instead of trusting the state on the publishing day.
   provider release that changes them fails the job.
 
   `argocd-vs-flux` fails unless EX-7 and EX-8 hold, `helm-mutate` unless
-  EX-9 and EX-10 hold, `cert-manager-mutate` unless EX-11 holds.
+  EX-9 and EX-10 hold, `cert-manager-mutate` unless EX-11 holds,
+  `first-platform` and `helm-vs-terraform` unless EX-12 holds.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -67,20 +68,48 @@ schedule instead of trusting the state on the publishing day.
   - Test: `examples` workflow, `schedule` trigger
   - Since: tbd
 
-- EX-12: The podinfo Deployment that `first-platform` and
-  `helm-vs-terraform` compile MUST become available in a namespace that
-  enforces restricted Pod Security.
+- EX-12: CI MUST deploy every workload that an example renders to run to
+  a new kind cluster and fail unless the workload becomes ready.
 
-  Both checks only compile and validate, and kubeconform accepts manifests
-  the kubelet cannot run. podinfo listens on 9898 unless `--port` is set,
-  so both classes pass `--port=8080`, the container port that the
-  readiness probe and, in `first-platform`, the CiliumNetworkPolicy use.
-  The image names its user `app`, which the kubelet cannot check against
-  the profile's `runAsNonRoot`, so both set `runAsUser: 65534`.
+  kubeconform and an API server accept manifests that the kubelet cannot
+  run, such as a readiness probe on a port the app does not listen on.
+  `recipes`, `argocd-vs-flux`, `helm-mutate` and `cert-manager-mutate`
+  deploy their workloads under EX-6, EX-7, EX-10 and EX-11.
+  `first-platform/check` deploys `compiled/prod/apps` (Namespace,
+  Deployment, Service, PodDisruptionBudget), `helm-vs-terraform/check`
+  the Deployment, Service and ConfigMap of its first compile. Both create
+  the namespace with `pod-security.kubernetes.io/enforce=restricted`,
+  wait for `rollout status` of `deploy/web` and stop on a broken pod as
+  in EX-6.
 
-  - Test: `manual:` on kind, apply the compiled Namespace, label it
-    `pod-security.kubernetes.io/enforce=restricted`, apply the Deployment
-    and Service, then `kubectl -n shop rollout status deploy/web`
+  The rest of `first-platform`'s output is not deployed. Its Certificates
+  need cert-manager and an ACME server that reaches the hostnames, its
+  CiliumNetworkPolicy needs Cilium as the CNI, and its Argo CD
+  Application points to a Git server that does not exist. `dev` differs
+  from `prod` only in replicas and the PodDisruptionBudget.
+
+  The other examples have no workload of their own to deploy. `same-app`
+  and `config-tools` render the placeholder images `ghcr.io/example/*`
+  (EX-3a), `apiserver-dry-run` sends its documents to an API server
+  without a kubelet, `talos-machine-config` renders node configs, and
+  `verify-oci` and `gvisor-ci` render no manifests. `bitnami` renders a
+  CloudNativePG Cluster with the same generator digest, name, namespace,
+  image, instances, storage and bootstrap as the `postgresql` recipe,
+  whose Cluster the `recipe` job deploys.
+
+  podinfo listens on 9898 unless `--port` is set. Both classes start it
+  as its chart does, `command: [./podinfo, --port=8080]`, on the
+  container port that the readiness probe and, in `first-platform`, the
+  CiliumNetworkPolicy use. `args` alone replaces the image's `CMD`, the
+  only start command it has. The image names its user `app`, which the
+  kubelet cannot verify against the restricted profile's `runAsNonRoot`,
+  so both classes set `runAsUser: 65534`.
+
+  Related: EX-6
+
+  - Test: `examples` workflow, jobs `first-platform` and
+    `helm-vs-terraform`; the other deploys as in EX-6, EX-7, EX-10 and
+    EX-11
   - Since: tbd
 
 ## Supply chain
