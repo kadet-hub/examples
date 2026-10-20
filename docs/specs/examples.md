@@ -177,7 +177,7 @@ schedule instead of trusting the state on the publishing day.
     back; workflow job `pins`
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
-    this change
+    #33
 
 - EX-3a: Every image that an inventory, a Chainsaw test, a script or a
   workflow names MUST be pinned as `tag@sha256:digest`.
@@ -215,7 +215,7 @@ schedule instead of trusting the state on the publishing day.
     reports every image with its current digest, and with the digest of
     `gvisor-ci/run` set back proposes the current `3.13-slim` digest and
     no 3.14
-  - Since: #32; `gvisor-ci/run`: this change
+  - Since: #32; `gvisor-ci/run`: #33
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
