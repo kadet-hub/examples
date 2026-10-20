@@ -105,12 +105,18 @@ schedule instead of trusting the state on the publishing day.
   kubelet cannot verify against the restricted profile's `runAsNonRoot`,
   so both classes set `runAsUser: 65534`.
 
+  Nothing runs `apiserver-dry-run`'s documents, but readers copy them.
+  `manifests/web.yaml` therefore uses port 80, on which `nginx:1.29`
+  listens, as container port and Service `targetPort`.
+
   Related: EX-6
 
   - Test: `examples` workflow, jobs `first-platform` and
     `helm-vs-terraform`; the other deploys as in EX-6, EX-7, EX-10 and
-    EX-11
-  - Since: #34
+    EX-11; `manual:` `docker run --rm nginx:1.29 grep listen
+    /etc/nginx/conf.d/default.conf` prints the port of
+    `apiserver-dry-run/manifests/web.yaml`
+  - Since: #34; `apiserver-dry-run` port: this change
 
 ## Supply chain
 
