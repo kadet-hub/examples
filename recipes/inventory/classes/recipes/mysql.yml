@@ -21,7 +21,7 @@ parameters:
     mysql:
       namespace: mysql
       type: statefulset
-      image: container-registry.oracle.com/mysql/community-server:9.7.3
+      image: container-registry.oracle.com/mysql/community-server:26.7.1
       security_profile: restricted
       workload_security_context:
         runAsUser: 27
