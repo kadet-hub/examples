@@ -217,6 +217,50 @@ schedule instead of trusting the state on the publishing day.
     no 3.14
   - Since: #32; `gvisor-ci/run`: #33
 
+- EX-3b: Renovate MUST propose a version only once it has been published
+  for three days.
+
+  `minimumReleaseAge` counts from the release timestamp the datasource
+  reports, and `internalChecksFilter: strict` holds back branch and pull
+  request until then. A version without a timestamp is held
+  (`minimumReleaseAgeBehaviour: timestamp-required`). npm, PyPI, GitHub
+  releases and their assets report the publish time; `github-tags` does
+  where the tag has a GitHub release, as argo-cd's and kubeconform's have.
+  `github-digest` reports the date of the commit that `main` points to,
+  which for the registry's merge commits is the merge.
+
+  Registries other than Docker Hub list tags without a date, so images and
+  OCI charts from ghcr.io, quay.io, registry.k8s.io, mirror.gcr.io and
+  Oracle's registry cannot be held and go through at once
+  (`timestamp-optional`), as do the generator pins of the org preset. Docker
+  Hub dates a tag by its last push, which a rebuild only moves later.
+
+  Renovate's `terraform-provider` datasource dates a version on
+  registry.opentofu.org by the `published` field of api.opentofu.org, which
+  is the date of the tagged commit. HashiCorp tagged kubernetes provider
+  3.4.0 on 2026-10-16 and published it on 2026-10-19; the OpenTofu registry
+  added its build at 21:01 UTC that day, and #27 updated it the next
+  morning. A package rule therefore looks these providers up through the
+  custom datasource `opentofu-provider`, which reads the registry's
+  metadata in opentofu/registry (`providers/<n>/<namespace>/<name>.json`)
+  and takes the `discovered` field, the time the registry added the
+  version. Versions added before 2026-04-21 carry that date instead, which
+  is later than their release. `registryUrls: []` makes the custom
+  datasource use its own URL; the lock file update takes the hashes from
+  the registry named in `.terraform.lock.hcl`, as before.
+
+  `node-version` dates a release by day, at midnight UTC, so Node.js waits
+  four days.
+
+  - Test: `manual:` `renovate --platform=local --dry-run=lookup` with the
+    kubernetes provider set back to 3.3.0 in `main.tf` and the lock file.
+    On 2026-10-20 Renovate 44.171.1 dated 3.4.0 2026-10-19T21:01:52Z and
+    held it, and held rabbitmq 4.4.0 (Docker Hub), oras 1.3.5, uv 0.13.3
+    and cdk8s 2.70.112; with the previous configuration it dated 3.4.0
+    2026-10-16T16:43:56Z and proposed it (partial: the lookup does not
+    update the lock file; the next provider pull request does)
+  - Since: this change
+
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
 
@@ -645,7 +689,7 @@ selector would need the same change.
 | Path | Content |
 |---|---|
 | `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3) |
-| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins (EX-3), keep MySQL on 9.7 (EX-5b) and the Python image of `gvisor-ci/run` on 3.13 (EX-3a) |
+| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins (EX-3), keep MySQL on 9.7 (EX-5b) and the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
 | `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |
