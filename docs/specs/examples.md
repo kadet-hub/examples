@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `.github/workflows/examples.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `.github/workflows/examples.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -65,6 +65,22 @@ schedule instead of trusting the state on the publishing day.
   requests and pushes to `main`.
 
   - Test: `examples` workflow, `schedule` trigger
+  - Since: tbd
+
+- EX-12: The podinfo Deployment that `first-platform` and
+  `helm-vs-terraform` compile MUST become available in a namespace that
+  enforces restricted Pod Security.
+
+  Both checks only compile and validate, and kubeconform accepts manifests
+  the kubelet cannot run. podinfo listens on 9898 unless `--port` is set,
+  so both classes pass `--port=8080`, the container port that the
+  readiness probe and, in `first-platform`, the CiliumNetworkPolicy use.
+  The image names its user `app`, which the kubelet cannot check against
+  the profile's `runAsNonRoot`, so both set `runAsUser: 65534`.
+
+  - Test: `manual:` on kind, apply the compiled Namespace, label it
+    `pod-security.kubernetes.io/enforce=restricted`, apply the Deployment
+    and Service, then `kubectl -n shop rollout status deploy/web`
   - Since: tbd
 
 ## Supply chain
