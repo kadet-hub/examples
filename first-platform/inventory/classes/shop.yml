@@ -28,7 +28,7 @@ parameters:
               - ${hostname}
   components:
     web:
-      image: ghcr.io/stefanprodan/podinfo:6.9.2
+      image: ghcr.io/stefanprodan/podinfo:6.9.2@sha256:cab90e04829cdae73199a8402882a4e3ccaf251b8a0d50bdefede0ab3f6371e7
       replicas: ${replicas}
       ports:
         http: {container_port: 8080, service_port: 80}

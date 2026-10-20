@@ -17,7 +17,7 @@ parameters:
     valkey:
       namespace: valkey
       type: statefulset
-      image: docker.io/valkey/valkey:9.1.2
+      image: docker.io/valkey/valkey:9.1.2@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
       security_profile: restricted
       workload_security_context:
         runAsUser: 999

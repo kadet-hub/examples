@@ -177,6 +177,36 @@ schedule instead of trusting the state on the publishing day.
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
     every pin by Renovate: #23; `cert-manager-mutate`: #28
 
+- EX-3a: Every image that an inventory, a Chainsaw test, a check script or
+  a workflow names MUST be pinned as `tag@sha256:digest`.
+
+  The tag tells the reader which release runs, the digest makes every run
+  pull the image CI checked. Renovate updates tag and digest in one pull
+  request, and opens a digest-only one when the publisher rebuilds a tag,
+  as CloudNativePG does with `postgresql:18.6-system-trixie`. Where the tag
+  points to a multi-arch index, the digest is the index's, which
+  `crane digest` and Renovate's docker datasource both return.
+
+  Oracle publishes no index for MySQL: `community-server:9.7.3` is a
+  linux/amd64 image and the arm64 build has its own tag, `9.7.3-aarch64`.
+  The recipe pins the digest of the amd64 image, the one the tag alone
+  pulled before.
+
+  Three kinds of reference carry no digest. The `ghcr.io/example/*` images
+  in `same-app` and `config-tools` are placeholders that no registry holds;
+  Renovate skips them. The documents in `apiserver-dry-run/manifests/` only
+  reach kubeconform and an API server without a kubelet, so nothing pulls
+  their images. Images that a chart or a release
+  manifest names itself keep the publisher's reference: Strimzi's chart
+  maps each Kafka version to a tag in `STRIMZI_KAFKA_IMAGES`. The chart
+  digest or the manifest's sha256 fixes such a reference, not the image
+  behind it.
+
+  - Test: `manual:` `git grep -nE 'image(_name)?: [a-z0-9.-]+\.[a-z]+/' -- '**/inventory/**' '*/tests/**' | grep -v @sha256:`
+    lists the placeholders only; `renovate --platform=local --dry-run=lookup`
+    reports every image with its current digest
+  - Since: #32
+
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
 
@@ -208,8 +238,8 @@ under Inventory names.
   `recipes/inventory/classes/generators.yml`, and use no Bitnami image or
   chart.
 
-  Images come from the project that builds the software, pinned by tag in
-  the class, which Renovate updates (EX-3). Secrets a recipe generates, such as the Valkey password, are
+  Images come from the project that builds the software, pinned by tag and
+  digest in the class (EX-3a). Secrets a recipe generates, such as the Valkey password, are
   Kapitan refs created on the first compile; the recipes use the base64
   backend so they run anywhere, which encrypts nothing. Valkey stands in for Redis: Redis 8 and later are licensed
   RSALv2, SSPLv1 or AGPLv3, Valkey stays BSD-3-Clause and speaks the same
@@ -228,7 +258,7 @@ under Inventory names.
 
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
-  - Since: #8, #20
+  - Since: #8, #20; images by tag and digest: #32
 
 - EX-5a: A recipe whose resources need an operator MUST install it from
   the project's Helm chart through an operator class
@@ -259,8 +289,9 @@ under Inventory names.
   `default`.
   The cert-manager class sets `crds.enabled` and leaves out
   `startupapicheck`, a Helm hook that waits for the webhook during `helm
-  install`. The images the operators start for the software, PostgreSQL,
-  Kafka and Keycloak, stay pinned by tag in the recipe classes (EX-5).
+  install`. The recipe classes pin the PostgreSQL and Keycloak images that
+  the operators start by tag and digest (EX-3a); Strimzi starts the Kafka
+  image its chart maps to the recipe's Kafka `version`.
 
   The Keycloak Operator's chart, `oci://quay.io/keycloak/keycloak-operator-helm`,
   is marked experimental by the project and defaults to watching every
@@ -294,6 +325,21 @@ under Inventory names.
     `postgresql`, `keycloak`, `kafka` and `rabbitmq` (fails when helm rejects a chart's
     digest, a mutation matches nothing, or the operator does not come up)
   - Since: #21; OQ-4 decided: #22
+
+- EX-5b: The `mysql` recipe MUST stay on MySQL's 9.7 LTS release line.
+
+  From 26.7 on, Oracle numbers the MySQL Innovation releases by calendar,
+  YY.M.P; 9.7 is the LTS release. Readers copy a recipe into their own
+  projects, so it follows the LTS line, which takes bug and security fixes,
+  rather than the Innovation releases, which add features. A package rule
+  allows only versions below 10 for
+  `container-registry.oracle.com/mysql/community-server`: Renovate proposes
+  9.7 patch releases and new digests, no 26.x. Moving the recipe to the
+  next LTS line changes this requirement and the rule together.
+
+  - Test: `renovate --platform=local --dry-run=lookup` with the pin one
+    patch release back proposes the next 9.7 release, not 26.x
+  - Since: #32
 
 PowerDNS keeps its zones in SQLite on a volume rather than in PostgreSQL:
 the image ships the SQLite schema, while the PostgreSQL backend would need
@@ -589,7 +635,7 @@ selector would need the same change.
 | Path | Content |
 |---|---|
 | `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3) |
-| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins (EX-3) |
+| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins (EX-3) and keep MySQL on 9.7 (EX-5b) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
 | `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |
