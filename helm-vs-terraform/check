@@ -8,14 +8,22 @@
 # - terraform-only/ plans its kubernetes_config_map_v1 and helm_release
 #   without a cluster, with the bucket in the ConfigMap data and the Helm
 #   values but no rendered Helm manifest, while kubernetes_manifest and the
-#   helm provider's manifest experiment fail to plan without a cluster.
-# Needs gh (authenticated), jq, oras, uv, kubeconform and tofu.
+#   helm provider's manifest experiment fail to plan without a cluster,
+# - the app of the first compile becomes available on a new kind cluster
+#   (EX-12). Set KEEP=1 to keep the cluster.
+# Needs gh (authenticated), jq, oras, uv, kubeconform, tofu, kind, kubectl, docker.
 set -euo pipefail
 cd "$(dirname "$0")"
 id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
 min_serial=47
 tmp=$(mktemp -d)
-trap 'rm -rf -- "$tmp"' EXIT
+cluster=helm-vs-terraform
+cleanup() {
+  kill "${watcher:-}" 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
 rm -rf lib
 py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
 # No kubeconfig: every Kubernetes API call fails. Providers are downloaded
@@ -138,3 +146,65 @@ if plan "$t" -exclude=kubernetes_manifest.web -var helm_manifest=true; then
 fi
 grep -q 'Kubernetes cluster unreachable' "$t/plan.log" || { cat "$t/plan.log"; exit 1; }
 echo "terraform-only: helm_release with experiments.manifest needs a cluster to plan"
+
+# EX-6: what a broken or not ready pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop the rollout status as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    # EX-6: broken on two polls in a row; Argo CD's server briefly waits for a Secret.
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$  # check's children: the command it waits for and this watch
+    return
+  done
+}
+# EX-6: a kubectl rollout status or wait that prints the namespace on a timeout.
+install_wait() { # namespace kubectl-arguments
+  local ns=$1 s
+  shift
+  kubectl -n "$ns" "$@" && return
+  s=$?
+  kubectl -n "$ns" get events --sort-by=.lastTimestamp >&2 || true
+  kubectl -n "$ns" get pods -o wide >&2 || true
+  # shellcheck disable=SC2046 # one pod name per word
+  describe_pods "$ns" $(kubectl -n "$ns" get pods -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded" and (any(.status.conditions[]?;
+        .type == "Ready" and .status == "True") | not)) | .metadata.name')
+  return "$s"
+}
+
+# EX-12: the app of the first compile on kind, in a namespace that enforces
+# restricted Pod Security.
+export KUBECONFIG=$tmp/kubeconfig  # for kind; the plans above ran without one
+# The node image of the workflow's kind release; Renovate updates both together.
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
+watch_pods &
+watcher=$!
+kubectl create namespace shop >/dev/null
+kubectl label namespace shop pod-security.kubernetes.io/enforce=restricted >/dev/null
+kubectl apply -R -f "$tmp/a/compiled/prod/manifests"
+install_wait shop rollout status deploy/web --timeout=120s
+echo "helm-vs-terraform: the app deployed, deploy/web available"
