@@ -116,7 +116,7 @@ schedule instead of trusting the state on the publishing day.
     EX-11; `manual:` `docker run --rm nginx:1.29 grep listen
     /etc/nginx/conf.d/default.conf` prints the port of
     `apiserver-dry-run/manifests/web.yaml`
-  - Since: #34; `apiserver-dry-run` port: this change
+  - Since: #34; `apiserver-dry-run` port: #36
 
 ## Supply chain
 
