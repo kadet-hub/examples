@@ -148,7 +148,7 @@ FLUX_SHA256=9c1fda7e401429531ed1478f67ba06b3edff6513b75da7ee47bde9f1c4d4251c
 # from the mirror, pinned by digest. The tag is the one Argo CD's manifest names.
 # renovate: datasource=docker depName=mirror.gcr.io/library/redis
 REDIS_IMAGE=mirror.gcr.io/library/redis:8.2.3-alpine@sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba
-manifest() { # url namespace [sha256]
+manifest() { # url namespace [sha256 [kubectl-apply-arguments...]]
   local redis=${REDIS_IMAGE%@*}
   curl -fsSL -o "$tmp/m.yaml" "$1"
   [[ -z ${3:-} ]] || echo "$3  $tmp/m.yaml" | sha256sum -c --quiet
@@ -157,14 +157,18 @@ manifest() { # url namespace [sha256]
     echo "EX-7: the manifest's redis tag is not the one of REDIS_IMAGE" >&2
     exit 1
   fi
-  kubectl apply -n "$2" --server-side --force-conflicts -f "$tmp/m.yaml" >/dev/null
+  kubectl apply -n "$2" --server-side --force-conflicts -f "$tmp/m.yaml" "${@:4}" >/dev/null
 }
 installed=$SECONDS
 case $tool in
   argocd)
     ns=argocd
     kubectl create namespace argocd >/dev/null
-    manifest "https://raw.githubusercontent.com/argoproj/argo-cd/$ARGOCD_COMMIT/manifests/install.yaml" argocd
+    # EX-7: redis first, until its secret-init has created the Secret that
+    # Argo CD's server, repo server and application controller need to start.
+    manifest "https://raw.githubusercontent.com/argoproj/argo-cd/$ARGOCD_COMMIT/manifests/install.yaml" argocd '' -l app.kubernetes.io/name=argocd-redis
+    install_wait argocd wait --for=create secret/argocd-redis --timeout=300s
+    kubectl apply -n argocd --server-side --force-conflicts -f "$tmp/m.yaml" >/dev/null
     install_wait argocd rollout status statefulset/argocd-application-controller --timeout=300s
     ;;
   flux)
