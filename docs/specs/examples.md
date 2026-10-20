@@ -575,7 +575,7 @@ to report exactly that commit. The Gitea image is pinned by digest in
   - Test: `examples` workflow, job `argocd-vs-flux` per tool; the install
     order by hand, with `secret-init` delayed by 60 seconds (passes) or
     exiting non-zero (stops the check on the redis pod)
-  - Since: #14, #16; redis first: this change
+  - Since: #14, #16; redis first: #37
 
 - EX-8: The check MUST scale the app's Deployment to one replica with
   `kubectl scale` and fail unless Argo CD restores two replicas within a
