@@ -463,7 +463,9 @@ part in a recipe whose subject is external-dns.
   than three times, on two polls in a row. One poll is not enough:
   Argo CD's server waits with `CreateContainerConfigError` for the
   `argocd-redis` Secret until the redis pod's init container has created
-  it, and the watcher stopped a healthy install on that in CI. `recipes/check` polls the pods of all namespaces every
+  it, and the watcher stopped a healthy install on that in CI. Two polls
+  did not always cover that wait; EX-7 therefore starts those pods only
+  once the Secret exists. `recipes/check` polls the pods of all namespaces every
   10 seconds from the creation of the kind cluster until Chainsaw ends, so
   a broken pod also stops the operator installs. On the first broken pod
   it prints the pod's description and its containers' logs and stops the
@@ -537,8 +539,25 @@ to report exactly that commit. The Gitea image is pinned by digest in
 
   The generators are verified and fetched as in EX-4. Broken pods stop the
   check and a timed-out install wait prints its namespace as in EX-6, for
-  the Git server and the tool as for an operator. `check` replaces the
-  redis image of Argo CD's manifest, `public.ecr.aws/docker/library/redis`,
+  the Git server and the tool as for an operator.
+
+  `check` applies Argo CD's manifest in two steps: the objects labelled
+  `app.kubernetes.io/name=argocd-redis` first, the whole manifest once the
+  Secret `argocd-redis` exists. The redis pod's init container
+  `secret-init` creates that Secret; Argo CD's server, repo server and
+  application controller cannot start without it. Applied in one step,
+  every Argo CD pod pulls the Argo CD image at once, `secret-init` waits
+  behind the others, and the three wait with `CreateContainerConfigError`,
+  which EX-6 counts as broken. That stopped a healthy install in the first
+  attempt of the `examples` run on main after #35, and in both local runs
+  with `secret-init` delayed by 20 and 60 seconds. Exempting that wait
+  from the watcher was tried and is not enough: the server then starts
+  late, and dex exits with `server.secretkey is missing` until it runs,
+  which the watcher counts as broken as well. A `secret-init` that fails
+  or cannot pull its image still makes the redis pod broken. The install
+  seconds the guide quotes count from the first step.
+
+  `check` replaces the redis image of Argo CD's manifest, `public.ecr.aws/docker/library/redis`,
   with `REDIS_IMAGE`, the same tag on `mirror.gcr.io/library/redis` pinned
   by digest (for 8.2.3-alpine identical on ECR Public, Docker Hub and the
   mirror, checked 2026-10-19), and fails when the manifest names another
@@ -553,8 +572,10 @@ to report exactly that commit. The Gitea image is pinned by digest in
   Deployment is available, and the memory working set of the tool's pods
   after the check, read from the kubelet summary API.
 
-  - Test: `examples` workflow, job `argocd-vs-flux` per tool
-  - Since: #14, #16
+  - Test: `examples` workflow, job `argocd-vs-flux` per tool; the install
+    order by hand, with `secret-init` delayed by 60 seconds (passes) or
+    exiting non-zero (stops the check on the redis pod)
+  - Since: #14, #16; redis first: this change
 
 - EX-8: The check MUST scale the app's Deployment to one replica with
   `kubectl scale` and fail unless Argo CD restores two replicas within a
@@ -643,8 +664,8 @@ mutation matches them by kind and label, not by name.
   namespace admits podinfo's Pods only with the `harden` mutation, because
   the chart's defaults set no `securityContext`; the image's user is the
   name `app`, so `harden` sets a numeric `runAsUser` for `runAsNonRoot`.
-  Install pins, the redis image rewrite and the failure output are those
-  of EX-6 and EX-7.
+  Install pins, the install order, the redis image rewrite and the failure
+  output are those of EX-6 and EX-7.
 
   - Test: `helm-mutate/tests/<tool>/chainsaw-test.yaml`; `examples`
     workflow, job `helm-mutate` per tool
