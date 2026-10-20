@@ -205,7 +205,7 @@ schedule instead of trusting the state on the publishing day.
   - Test: `manual:` `git grep -nE 'image(_name)?: [a-z0-9.-]+\.[a-z]+/' -- '**/inventory/**' '*/tests/**' | grep -v @sha256:`
     lists the placeholders only; `renovate --platform=local --dry-run=lookup`
     reports every image with its current digest
-  - Since: this change
+  - Since: #32
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
@@ -258,7 +258,7 @@ under Inventory names.
 
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
-  - Since: #8, #20
+  - Since: #8, #20; images by tag and digest: #32
 
 - EX-5a: A recipe whose resources need an operator MUST install it from
   the project's Helm chart through an operator class
@@ -339,7 +339,7 @@ under Inventory names.
 
   - Test: `renovate --platform=local --dry-run=lookup` with the pin one
     patch release back proposes the next 9.7 release, not 26.x
-  - Since: this change
+  - Since: #32
 
 PowerDNS keeps its zones in SQLite on a volume rather than in PostgreSQL:
 the image ships the SQLite schema, while the PostgreSQL backend would need
