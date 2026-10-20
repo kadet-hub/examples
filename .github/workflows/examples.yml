@@ -139,6 +139,7 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - run: apiserver-dry-run/check
 
+  # EX-12: prod's apps deployed to kind.
   first-platform:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -149,20 +150,24 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install oras, kubeconform and uv
+      - name: Install oras, kubeconform, uv, kubectl and kind
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
           curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
           curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
+          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $KUBECONFORM_SHA256  kubeconform.tgz
           $UV_SHA256  uv.tgz
+          $KIND_SHA256  kind
           EOF
           tar -xzf oras.tgz oras
           tar -xzf kubeconform.tgz kubeconform
           tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          chmod +x kubectl kind
           rm ./*.tgz
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: first-platform/check
@@ -316,6 +321,7 @@ jobs:
         run: talos-machine-config/check
 
 
+  # EX-12: the app deployed to kind.
   helm-vs-terraform:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -326,23 +332,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install oras, kubeconform, uv and tofu
+      - name: Install oras, kubeconform, uv, tofu, kubectl and kind
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
           curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
           curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
           curl -fsSLo tofu.tgz "https://github.com/opentofu/opentofu/releases/download/$TOFU_VERSION/tofu_${TOFU_VERSION#v}_linux_amd64.tar.gz"
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
+          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $KUBECONFORM_SHA256  kubeconform.tgz
           $UV_SHA256  uv.tgz
           $TOFU_SHA256  tofu.tgz
+          $KIND_SHA256  kind
           EOF
           tar -xzf oras.tgz oras
           tar -xzf kubeconform.tgz kubeconform
           tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
           tar -xzf tofu.tgz tofu
+          chmod +x kubectl kind
           rm ./*.tgz
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: helm-vs-terraform/check
