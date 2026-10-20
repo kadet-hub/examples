@@ -1,0 +1,9 @@
+# Both charts as Helm renders them, for the diff in check.
+classes:
+  - cert-manager
+  - trust-manager
+
+parameters:
+  kapitan:
+    vars:
+      target: helm

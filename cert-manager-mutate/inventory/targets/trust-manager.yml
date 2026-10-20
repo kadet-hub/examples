@@ -1,0 +1,30 @@
+# cert-manager/trust-manager#778: the chart always renders a selfSigned
+# Issuer for its webhook Certificate. The second compile entry rewrites the
+# files the helm entry wrote to the same output_path.
+classes:
+  - generators
+  - trust-manager
+
+parameters:
+  kapitan:
+    vars:
+      target: trust-manager
+    compile:
+      - input_type: kadet
+        input_paths: [lib/mutate]
+        output_path: trust-manager
+        output_type: plain
+        input_params:
+          mutations: ${mutations}
+  mutations:
+    no-selfsigned-issuer:
+      match: {apiVersion: cert-manager.io/v1, kind: Issuer, name: trust-manager}
+      delete: true
+    # The ClusterIssuer from internal-ca.yaml signs the webhook certificate.
+    webhook-issuer:
+      match: {apiVersion: cert-manager.io/v1, kind: Certificate, name: trust-manager}
+      merge:
+        spec:
+          issuerRef:
+            name: internal-ca
+            kind: ClusterIssuer

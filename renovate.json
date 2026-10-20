@@ -42,7 +42,7 @@
       "matchStrings": [
         "source: oci://(?<depName>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})\\n\\s*chart_name: \\S+\\n\\s*version: (?<currentValue>\\S+)",
         "image(?:_name)?: (?<depName>[a-z0-9.-]+\\.[a-z]+/[^:@\\s]+):(?<currentValue>[^@\\s]+)(?:@(?<currentDigest>sha256:[0-9a-f]{64}))?",
-        "repository: (?<depName>\\S+)\\n\\s*tag: (?<currentValue>\\S+)\\n\\s*digest: (?<currentDigest>sha256:[0-9a-f]{64})",
+        "repository: (?<depName>\\S+)\\n\\s*tag: \"?(?<currentValue>[^\"\\s]+)\"?\\n\\s*digest: (?<currentDigest>sha256:[0-9a-f]{64})",
         "\\n\\s+(?<depName>[a-z0-9.-]+\\.[a-z]+/[^:@\\s]+):\\n\\s+tag: (?<currentValue>\\S+)\\n\\s+digest: (?<currentDigest>sha256:[0-9a-f]{64})"
       ],
       "datasourceTemplate": "docker"
@@ -61,9 +61,11 @@
   ],
   "packageRules": [
     {
-      "description": "EX-3: an operator's chart and images in one pull request, so that the chart's CRDs run with the operator version they belong to",
+      "description": "EX-3: an operator's chart and images in one pull request, so that the chart's CRDs run with the operator version they belong to; cert-manager in the recipes and in cert-manager-mutate together",
       "matchFileNames": [
-        "recipes/inventory/classes/recipes/operators/*.yml"
+        "recipes/inventory/classes/recipes/operators/*.yml",
+        "cert-manager-mutate/inventory/classes/cert-manager.yml",
+        "cert-manager-mutate/inventory/classes/trust-manager.yml"
       ],
       "groupName": "{{replace '^.+/([^/]+)\\.yml$' '$1' packageFile}} operator"
     },

@@ -1,0 +1,87 @@
+# EX-11: the controller pod is Ready after its init container exited 0, the
+# webhook certificate of trust-manager comes from internal-ca, no Issuer
+# trust-manager exists and the Bundle is synced.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cert-manager-mutate
+spec:
+  timeouts:
+    assert: 3m
+  steps:
+    - try:
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                namespace: cert-manager
+                labels:
+                  app.kubernetes.io/name: cert-manager
+                  app.kubernetes.io/component: controller
+              status:
+                (initContainerStatuses[?name == 'init']):
+                  - state:
+                      terminated:
+                        reason: Completed
+                        exitCode: 0
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - assert:
+            resource:
+              apiVersion: cert-manager.io/v1
+              kind: Certificate
+              metadata: {name: trust-manager, namespace: cert-manager}
+              spec:
+                issuerRef: {name: internal-ca, kind: ClusterIssuer}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - error:
+            resource:
+              apiVersion: cert-manager.io/v1
+              kind: Issuer
+              metadata: {name: trust-manager, namespace: cert-manager}
+        - assert:
+            resource:
+              apiVersion: trust.cert-manager.io/v1alpha1
+              kind: Bundle
+              metadata: {name: internal-ca}
+              status:
+                (conditions[?type == 'Synced']):
+                  - status: "True"
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata: {name: internal-ca, namespace: default}
+        # The certificate internal-ca issued as trust-manager's webhook
+        # certificate, its CA in the Secret, in the webhook's caBundle and in
+        # the Bundle's ConfigMap.
+        - script:
+            content: |
+              set -eu
+              d=$(mktemp -d)
+              kubectl -n cert-manager logs deploy/cert-manager -c init
+              kubectl -n cert-manager get secret internal-ca -o jsonpath='{.data.tls\.crt}' | base64 -d >"$d/ca.crt"
+              kubectl -n cert-manager get secret trust-manager-tls -o jsonpath='{.data.tls\.crt}' | base64 -d >"$d/tls.crt"
+              openssl verify -CAfile "$d/ca.crt" "$d/tls.crt"
+              openssl x509 -in "$d/tls.crt" -noout -subject -issuer
+              ca=$(openssl x509 -in "$d/ca.crt" -noout -fingerprint -sha256)
+              echo "internal-ca: $ca"
+              same() { # name, a PEM certificate on stdin
+                got=$(openssl x509 -noout -fingerprint -sha256)
+                echo "$1: $got"
+                [ "$got" = "$ca" ] || { echo "$1 is not the certificate of internal-ca" >&2; exit 1; }
+              }
+              kubectl -n cert-manager get secret trust-manager-tls -o jsonpath='{.data.ca\.crt}' | base64 -d |
+                same "Secret trust-manager-tls ca.crt"
+              kubectl get validatingwebhookconfiguration trust-manager -o jsonpath='{.webhooks[0].clientConfig.caBundle}' |
+                base64 -d | same "ValidatingWebhookConfiguration trust-manager caBundle"
+              kubectl -n default get configmap internal-ca -o jsonpath='{.data.ca\.crt}' | same "ConfigMap default/internal-ca"
+              rm -rf "$d"
+            check:
+              ($error): ~
+      catch:
+        - events: {namespace: cert-manager}
+        - podLogs: {namespace: cert-manager}
