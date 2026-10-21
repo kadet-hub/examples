@@ -249,6 +249,13 @@ jobs:
       # rootless runsc needs (fork/exec /proc/self/exe: permission denied).
       - name: Allow unprivileged user namespaces
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      # EX-1a: the Docker comparison in gvisor-ci/check needs runsc as a
+      # Docker runtime, which takes root and a daemon restart, as the gate's
+      # trace runtime does.
+      - name: Register runsc as a Docker runtime
+        run: |
+          sudo "$(command -v runsc)" install
+          sudo systemctl restart docker
       - run: gvisor-ci/check
 
   config-tools:
