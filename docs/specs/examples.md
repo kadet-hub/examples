@@ -87,7 +87,7 @@ schedule instead of trusting the state on the publishing day.
   `runsc ... do` form does not use it.
 
   - Test: `examples` workflow, job `gvisor-ci`; `gvisor-ci/check`
-  - Since: tbd
+  - Since: #39
 
 - EX-2: CI MUST run every example's script weekly, in addition to pull
   requests and pushes to `main`.
