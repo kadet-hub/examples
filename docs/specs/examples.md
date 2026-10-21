@@ -22,7 +22,8 @@ schedule instead of trusting the state on the publishing day.
   Kapitan's, `config-tools` diffs its three renderings,
   `apiserver-dry-run` expects exactly the five broken documents to be
   rejected and the four valid ones to be created, `gvisor-ci` compares the
-  escape scripts' output inside and outside the sandbox, `verify-oci` fails
+  escape scripts' output inside and outside the sandbox and across Docker
+  runtimes (EX-1a), `verify-oci` fails
   on an index or attestation mismatch, and `first-platform` and `bitnami`
   fail on such a mismatch and on any kubeconform finding.
   `talos-machine-config` fails on such a mismatch, on a node config that
@@ -61,6 +62,32 @@ schedule instead of trusting the state on the publishing day.
 
   - Test: `examples` workflow, one job per folder
   - Since: tbd
+
+- EX-1a: `gvisor-ci/check` MUST also run the three escape scripts under
+  `docker run` with the default runtime and under `docker run
+  --runtime=runsc`, every other option equal, and MUST fail unless both
+  runtimes run the `fork_exec` child and both read the image's own
+  `/etc/passwd`, and the two runtimes report a different kernel from
+  `uname`.
+
+  The post contrasts gVisor with a plain container, but the three defences
+  run unconfined and under rootless `runsc`, never under Docker. Running
+  the same scripts under Docker shows that swapping runc for runsc, with no
+  other change, leaves what the scripts do unchanged: the child still runs
+  and the read still returns the image's `/etc/passwd` under both. What
+  differs is the kernel the process talks to, which `uname` reports as the
+  host kernel under runc and as gVisor's own under runsc; the network and
+  the spawn are bounded by `--network=none` and the trace, not by the
+  runtime swap. `check` does not assert the cost figures or the raw-IP
+  result, which vary by runner; the post quotes them from the run it cites.
+
+  The comparison needs the `runsc` runtime registered in the Docker daemon,
+  which the workflow does with `runsc install` and a daemon restart. That
+  takes root, as the gate's trace runtime does, so the post's rootless
+  `runsc ... do` form does not use it.
+
+  - Test: `examples` workflow, job `gvisor-ci`; `gvisor-ci/check`
+  - Since: #39
 
 - EX-2: CI MUST run every example's script weekly, in addition to pull
   requests and pushes to `main`.

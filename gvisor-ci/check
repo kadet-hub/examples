@@ -5,10 +5,11 @@
 # fork_exec bypass still runs. Needs what ./run needs.
 set -euo pipefail
 cd "$(dirname "$0")"
-out=$(./run 2>&1)
+out=$(./run 2>&1) && rc=0 || rc=$?
 printf '%s\n' "$out"
+[ "$rc" = 0 ] || { echo "run exited $rc" >&2; exit "$rc"; }
 host=$(sed -n '/^## Unconfined/,/^## Build/p' <<<"$out")
-sandbox=$(sed -n '/^## Inside gVisor/,$p' <<<"$out")
+sandbox=$(sed -n '/^## Inside gVisor/,/^## Docker:/p' <<<"$out")
 
 expect() { # section name, section text, expected line
   grep -qF -- "$3" <<<"$2" || { echo "$1: missing: $3" >&2; exit 1; }
@@ -27,3 +28,23 @@ expect gvisor "$sandbox" "raw-IP connect reached network, result: OSError [Errno
 expect gvisor "$sandbox" "HOME = /root"
 expect gvisor "$sandbox" "RLIMIT_NOFILE = (1024, 1024)"
 expect gvisor "$sandbox" "read /etc/passwd -> root:x:0:0:root:/root:/bin/bash"
+
+# Docker comparison: swapping runc for runsc leaves what the scripts do
+# unchanged. The child still runs and the read still returns the image's
+# own /etc/passwd under both; only the kernel the process talks to differs.
+docker=$(sed -n '/^## Docker:/,/^## Cost:/p' <<<"$out")
+runc=$(sed -n '/^### runc /,/^### runsc /p' <<<"$docker")
+runsc=$(sed -n '/^### runsc /,$p' <<<"$docker")
+for rt_text in "runc:$runc" "runsc:$runsc"; do
+  rt=${rt_text%%:*}; text=${rt_text#*:}
+  expect "docker $rt" "$text" "via fork_exec"
+  expect "docker $rt" "$text" "read /etc/passwd -> root:x:0:0:root:/root:/bin/bash"
+done
+kr=$(sed -n 's/^kernel runc //p' <<<"$docker")
+ks=$(sed -n 's/^kernel runsc //p' <<<"$docker")
+if [ -z "$kr" ] || [ -z "$ks" ]; then
+  echo "docker: missing a kernel line (runc='$kr' runsc='$ks')" >&2; exit 1
+fi
+if [ "$kr" = "$ks" ]; then
+  echo "docker: runc and runsc report the same kernel ($kr); runc should show the host kernel" >&2; exit 1
+fi

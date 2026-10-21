@@ -43,3 +43,29 @@ echo "## Inside gVisor (--network=none, read-only rootfs, no host mounts)"
 for s in audit_hook_bypass dns_vs_rawip home_escape; do
   echo "### $s"; run_in_gvisor "$s" || true
 done
+
+# The same scripts under Docker: default runtime (runc) against the gVisor
+# runtime (runsc), every other option equal, so only the runtime differs.
+# runsc must be registered as a Docker runtime (runsc install, daemon
+# restart); that needs root, which is why the post's rootless form does not
+# use it. The script is piped on stdin, so nothing is mounted in.
+echo "## Docker: default runtime (runc) vs --runtime=runsc, same scripts"
+for rt in runc runsc; do
+  opt=(); [ "$rt" = runsc ] && opt=(--runtime=runsc)
+  echo "kernel $rt $(docker run --rm "${opt[@]}" "$PYTHON_IMAGE" uname -sr)"
+  for s in audit_hook_bypass dns_vs_rawip home_escape; do
+    echo "### $rt $s"
+    docker run --rm -i "${opt[@]}" "$PYTHON_IMAGE" python3 -I - <"$here/$s.py" || true
+  done
+done
+
+echo "## Cost: docker run python -c pass, 5 runs each (seconds)"
+for rt in runc runsc; do
+  opt=(); [ "$rt" = runsc ] && opt=(--runtime=runsc)
+  for _ in 1 2 3 4 5; do
+    t0=$(date +%s.%N)
+    docker run --rm "${opt[@]}" "$PYTHON_IMAGE" python3 -c pass
+    t1=$(date +%s.%N)
+    awk "BEGIN{printf \"cost $rt %.3f\n\", $t1 - $t0}"
+  done
+done
