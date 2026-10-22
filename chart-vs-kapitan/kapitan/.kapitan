@@ -1,3 +1,6 @@
 version: 0.36.3
 global:
   inventory-backend: omegaconf
+compile:
+  search-paths: [., lib, vendor]
+  use-go-jsonnet: true

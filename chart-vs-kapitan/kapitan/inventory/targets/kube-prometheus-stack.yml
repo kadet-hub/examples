@@ -1,0 +1,416 @@
+# kube-prometheus-stack as its chart renders it with the values in
+# ../../../values/: no admission webhooks (Helm hooks), so no operator TLS, and
+# no Grafana test pod. Equal to the chart by what it does, not object by
+# object: ../../../check compares scrape targets, rules, Alertmanager and
+# Grafana on kind. The class kube-prometheus-stack adds the rules and dashboards.
+classes: [common, kube-prometheus-stack]
+parameters:
+  namespace: monitoring
+  # The chart's release name: the scrape jobs of the operator, Prometheus,
+  # Alertmanager and Grafana are named after it, the rules select them by it,
+  # and Prometheus selects monitors and rules by the label release.
+  release: kube-prometheus-stack
+  # The pod security context of Prometheus and Alertmanager, which the operator leaves empty.
+  operated_security_context: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 2000, fsGroup: 2000, seccompProfile: {type: RuntimeDefault}}
+  # Bearer token of Prometheus' ServiceAccount for the kubelet and control-plane endpoints.
+  prometheus_token:
+    type: Bearer
+    credentials: {name: prometheus-token, key: token}
+  generators:
+    manifest:
+      default_config:
+        security_profile: restricted
+        read_only_root_filesystem: true
+        workload_security_context: {runAsNonRoot: true, runAsUser: 65534, runAsGroup: 65534, fsGroup: 65534}
+        service_account: {create: true, automount_service_account_token: true}
+        automount_service_account_token: true
+    kubernetes:
+      secrets:
+        grafana-admin:
+          string_data:
+            admin-user: {value: admin}
+            # created in the refs path by the first compile; check reveals it with a second one
+            admin-password: {value: "?{base64:grafana/admin-password||random:str:40}"}
+        alertmanager-main:  # the operator's default configuration Secret of Alertmanager main
+          string_data:
+            alertmanager.yaml:
+              value: |
+                route:
+                  receiver: "null"
+                  group_by: [namespace]
+                  repeat_interval: 12h
+                  routes:
+                    - {receiver: "null", matchers: ['alertname = "Watchdog"']}
+                receivers: [{name: "null"}]
+                inhibit_rules:
+                  - {equal: [namespace, alertname], source_matchers: [severity = critical], target_matchers: [severity =~ warning|info]}
+                  - {equal: [namespace, alertname], source_matchers: [severity = warning], target_matchers: [severity = info]}
+                  - {equal: [namespace], source_matchers: [alertname = InfoInhibitor], target_matchers: [severity = info]}
+                  - {target_matchers: [alertname = InfoInhibitor]}
+        prometheus-token:
+          type: kubernetes.io/service-account-token
+          annotations:
+            kubernetes.io/service-account.name: ${generators.prometheus_operator.prometheuses.main.service_account_name}
+      configs:
+        grafana-datasources:
+          labels: {grafana_datasource: "1"}
+          data:
+            datasource.yaml:
+              value: |
+                apiVersion: 1
+                datasources:
+                  - name: Prometheus
+                    type: prometheus
+                    uid: prometheus
+                    url: http://${release}-prometheus.${namespace}:9090/
+                    access: proxy
+                    isDefault: true
+                    jsonData: {httpMethod: POST, timeInterval: 30s}
+                  - name: Alertmanager
+                    type: alertmanager
+                    uid: alertmanager
+                    url: http://${release}-alertmanager.${namespace}:9093/
+                    access: proxy
+                    jsonData: {handleGrafanaManagedAlerts: false, implementation: prometheus}
+      # The kubernetes generator renders Services only for its components'
+      # workloads; these select pods the operator or the cluster runs.
+      manifests:
+        prometheus:
+          name: ${release}-prometheus
+          api_version: v1
+          kind: Service
+          namespace: ${namespace}
+          body:
+            spec:
+              selector: {app.kubernetes.io/name: prometheus, operator.prometheus.io/name: main}
+              ports: [{name: http-web, port: 9090}, {name: reloader-web, port: 8080, targetPort: reloader-web}]
+        alertmanager:
+          name: ${release}-alertmanager
+          api_version: v1
+          kind: Service
+          namespace: ${namespace}
+          body:
+            spec:
+              selector: {app.kubernetes.io/name: alertmanager, alertmanager: main}
+              ports: [{name: http-web, port: 9093}, {name: reloader-web, port: 8080, targetPort: reloader-web}]
+        coredns:
+          api_version: v1
+          kind: Service
+          namespace: kube-system
+          body: {spec: {clusterIP: None, selector: {k8s-app: kube-dns}, ports: [{name: http-metrics, port: 9153}]}}
+        kube-controller-manager:
+          api_version: v1
+          kind: Service
+          namespace: kube-system
+          body: {spec: {clusterIP: None, selector: {component: kube-controller-manager}, ports: [{name: http-metrics, port: 10257}]}}
+        kube-etcd:
+          api_version: v1
+          kind: Service
+          namespace: kube-system
+          body: {spec: {clusterIP: None, selector: {component: etcd}, ports: [{name: http-metrics, port: 2381}]}}
+        kube-proxy:
+          api_version: v1
+          kind: Service
+          namespace: kube-system
+          body: {spec: {clusterIP: None, selector: {k8s-app: kube-proxy}, ports: [{name: http-metrics, port: 10249}]}}
+        kube-scheduler:
+          api_version: v1
+          kind: Service
+          namespace: kube-system
+          body: {spec: {clusterIP: None, selector: {component: kube-scheduler}, ports: [{name: http-metrics, port: 10259}]}}
+    prometheus_operator:
+      release_label: ${release}
+      prometheuses:
+        main:
+          rbac: true
+          service_account_name: prometheus
+          image: quay.io/prometheus/prometheus:v3.15.0-distroless@sha256:b2a413d5a03ea6a76782a508d1c7947440bba3b973931a25676e278431891b01
+          version: v3.15.0
+          retention: 10d
+          service_monitor_selector: {release: "${release}"}
+          service_monitor_namespace_selector: {}
+          pod_monitor_selector: {release: "${release}"}
+          pod_monitor_namespace_selector: {}
+          probe_selector: {release: "${release}"}
+          probe_namespace_selector: {}
+          scrape_config_selector: {release: "${release}"}
+          scrape_config_namespace_selector: {}
+          rule_selector: {release: "${release}"}
+          rule_namespace_selector: {}
+          alerting:
+            alertmanagers: [{namespace: "${namespace}", name: "${release}-alertmanager", port: http-web, apiVersion: v2}]
+          spec:
+            externalUrl: http://${release}-prometheus.${namespace}:9090
+            securityContext: ${operated_security_context}
+      alertmanagers:
+        main:
+          alertmanager_config_selector: {}
+          alertmanager_config_namespace_selector: {}
+          spec:
+            image: quay.io/prometheus/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
+            version: v0.34.1
+            externalUrl: http://${release}-alertmanager.${namespace}:9093
+            securityContext: ${operated_security_context}
+      service_monitors:
+        prometheus-operator:
+          selector: {name: "${release}-operator"}
+          endpoints: [{port: http, honorLabels: true}]
+        prometheus:
+          selector: {name: "${release}-prometheus"}
+          endpoints: [http-web, reloader-web]
+        alertmanager:
+          selector: {name: "${release}-alertmanager"}
+          endpoints: [{port: http-web, enableHttp2: true}, reloader-web]
+        grafana:
+          selector: {name: "${release}-grafana"}
+          endpoints: [{port: http-web, honorLabels: true}]
+        kube-state-metrics:
+          selector: {name: kube-state-metrics}
+          endpoints: [{port: http, honorLabels: true}]
+        node-exporter:
+          selector: {name: node-exporter}
+          endpoints: http-metrics
+        apiserver:
+          selector: {component: apiserver, provider: kubernetes}
+          namespace_selector: [default]
+          job_label: component
+          endpoints:
+            - port: https
+              scheme: https
+              authorization: ${prometheus_token}
+              tlsConfig: {ca: {configMap: {name: kube-root-ca.crt, key: ca.crt}}, serverName: kubernetes}
+              metricRelabelings:
+                - action: drop
+                  sourceLabels: [__name__, le]
+                  regex: (etcd_request|apiserver_request_slo|apiserver_request_sli|apiserver_request)_duration_seconds_bucket;(0\.15|0\.2|0\.3|0\.35|0\.4|0\.45|0\.6|0\.7|0\.8|0\.9|1\.25|1\.5|1\.75|2|3|3\.5|4|4\.5|6|7|8|9|15|20|40|45|50)(\.0)?
+        kubelet:
+          selector: {k8s-app: kubelet}
+          namespace_selector: [kube-system]
+          job_label: k8s-app
+          endpoints:
+            - port: https-metrics
+              scheme: https
+              tlsConfig: {insecureSkipVerify: true}
+              authorization: ${prometheus_token}
+              honorLabels: true
+              relabelings: [{sourceLabels: [__metrics_path__], targetLabel: metrics_path}]
+              metricRelabelings:
+                - {action: drop, sourceLabels: [__name__, le], regex: '(csi_operations|storage_operation_duration)_seconds_bucket;(0.25|2.5|15|25|120|600)(\.0)?'}
+            - port: https-metrics
+              scheme: https
+              path: /metrics/cadvisor
+              interval: 10s
+              trackTimestampsStaleness: true
+              tlsConfig: {insecureSkipVerify: true}
+              authorization: ${prometheus_token}
+              honorLabels: true
+              relabelings: [{sourceLabels: [__metrics_path__], targetLabel: metrics_path}]
+              metricRelabelings:
+                - {action: drop, sourceLabels: [__name__], regex: 'container_cpu_(cfs_throttled_seconds_total|load_average_10s|system_seconds_total|user_seconds_total)'}
+                - {action: drop, sourceLabels: [__name__], regex: 'container_fs_(io_current|io_time_seconds_total|io_time_weighted_seconds_total|reads_merged_total|sector_reads_total|sector_writes_total|writes_merged_total)'}
+                - {action: drop, sourceLabels: [__name__], regex: 'container_memory_(mapped_file|swap)'}
+                - {action: drop, sourceLabels: [__name__], regex: 'container_(file_descriptors|tasks_state|threads_max)'}
+                - {action: drop, sourceLabels: [__name__, scope], regex: 'container_memory_failures_total;hierarchy'}
+                - {action: drop, sourceLabels: [__name__, interface], regex: 'container_network_.*;(cali|cilium|cni|lxc|nodelocaldns|tunl).*'}
+                - {action: drop, sourceLabels: [__name__], regex: 'container_spec.*'}
+                - {action: drop, sourceLabels: [id, pod], regex: '.+;'}
+            - port: https-metrics
+              scheme: https
+              path: /metrics/probes
+              tlsConfig: {insecureSkipVerify: true}
+              authorization: ${prometheus_token}
+              honorLabels: true
+              relabelings: [{sourceLabels: [__metrics_path__], targetLabel: metrics_path}]
+        coredns:
+          selector: {name: coredns}
+          namespace_selector: [kube-system]
+          endpoints: [{port: http-metrics, authorization: "${prometheus_token}"}]
+        kube-controller-manager:
+          selector: {name: kube-controller-manager}
+          namespace_selector: [kube-system]
+          endpoints: [{port: http-metrics, scheme: https, tlsConfig: {insecureSkipVerify: true}, authorization: "${prometheus_token}"}]
+        kube-etcd:
+          selector: {name: kube-etcd}
+          namespace_selector: [kube-system]
+          endpoints: [{port: http-metrics, authorization: "${prometheus_token}"}]
+        kube-proxy:
+          selector: {name: kube-proxy}
+          namespace_selector: [kube-system]
+          endpoints: [{port: http-metrics, authorization: "${prometheus_token}"}]
+        kube-scheduler:
+          selector: {name: kube-scheduler}
+          namespace_selector: [kube-system]
+          endpoints: [{port: http-metrics, scheme: https, tlsConfig: {insecureSkipVerify: true}, authorization: "${prometheus_token}"}]
+  components:
+    prometheus-operator:
+      image: quay.io/prometheus-operator/prometheus-operator:v0.94.1@sha256:7c88d4e7bae63bd8d0f8da986054337c23b4472fa8d3c6817f5bc4b8407a2d6a
+      args:
+        - --kubelet-service=kube-system/${release}-kubelet
+        - --localhost=127.0.0.1
+        - --secret-field-selector=type!=kubernetes.io/dockercfg,type!=helm.sh/release.v1
+        # no requests and limits on the config reloaders
+        - --config-reloader-cpu-request=0
+        - --config-reloader-cpu-limit=0
+        - --config-reloader-memory-request=0
+        - --config-reloader-memory-limit=0
+      env: {GOGC: "30"}
+      node_selector: {kubernetes.io/os: linux}
+      ports:
+        http: {service_port: 8080}
+      healthcheck:
+        liveness: {type: http, port: http, path: /healthz, timeout_seconds: 1}
+        readiness: {type: http, port: http, path: /healthz, timeout_seconds: 1}
+      service: {type: ClusterIP, service_name: "${release}-operator"}
+      cluster_role:
+        rules:
+          - {apiGroups: [monitoring.coreos.com], resources: [alertmanagers, prometheusagents, prometheuses, thanosrulers], verbs: [patch]}
+          - {apiGroups: [monitoring.coreos.com], resources: [alertmanagers/status, podmonitors/status, probes/status, prometheuses/status, prometheusagents/status, prometheusrules/status, scrapeconfigs/status, servicemonitors/status, thanosrulers/status], verbs: [create, update, patch, delete]}
+          - {apiGroups: [monitoring.coreos.com], resources: [alertmanagers/finalizers, prometheusagents/finalizers, prometheuses/finalizers, thanosrulers/finalizers], verbs: [update]}
+          - {apiGroups: [monitoring.coreos.com], resources: [alertmanagers, alertmanagerconfigs, podmonitors, probes, prometheusagents, prometheuses, prometheusrules, servicemonitors, scrapeconfigs, thanosrulers], verbs: [get, list, watch]}
+          - {apiGroups: [apps], resources: [statefulsets], verbs: [get, list, watch, create, update, patch, delete]}
+          - {apiGroups: [''], resources: [configmaps, secrets], verbs: [get, list, watch, create, update, delete]}
+          - {apiGroups: [''], resources: [pods], verbs: [list, delete]}
+          - {apiGroups: [''], resources: [services, services/finalizers, endpoints], verbs: [get, create, update, delete]}
+          - {apiGroups: [''], resources: [nodes], verbs: [list, watch]}
+          - {apiGroups: [''], resources: [namespaces], verbs: [get, list, watch]}
+          - {apiGroups: ['', events.k8s.io], resources: [events], verbs: [patch, create]}
+          - {apiGroups: [networking.k8s.io], resources: [ingresses], verbs: [get, list, watch]}
+          - {apiGroups: [storage.k8s.io], resources: [storageclasses], verbs: [get]}
+          - {apiGroups: [discovery.k8s.io], resources: [endpointslices], verbs: [get, create, list, watch, update, delete]}
+    kube-state-metrics:
+      image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+      # the defaults without the admission policies, which the ClusterRole below does not grant
+      args:
+        - --resources=certificatesigningrequests,configmaps,cronjobs,daemonsets,deployments,endpointslices,horizontalpodautoscalers,ingresses,jobs,leases,limitranges,mutatingwebhookconfigurations,namespaces,networkpolicies,nodes,persistentvolumeclaims,persistentvolumes,poddisruptionbudgets,pods,replicasets,replicationcontrollers,resourcequotas,secrets,services,statefulsets,storageclasses,validatingwebhookconfigurations,volumeattachments
+      ports:
+        http: {service_port: 8080}
+        metrics: {container_port: 8081}
+      healthcheck:
+        liveness: {type: http, port: http, path: /livez, initial_delay_seconds: 5}
+        readiness: {type: http, port: metrics, path: /readyz, initial_delay_seconds: 5}
+      service: {type: ClusterIP}
+      cluster_role:
+        rules:
+          - {apiGroups: [''], resources: [configmaps, limitranges, namespaces, nodes, persistentvolumeclaims, persistentvolumes, pods, replicationcontrollers, resourcequotas, secrets, services], verbs: [list, watch]}
+          - {apiGroups: [apps], resources: [daemonsets, deployments, replicasets, statefulsets], verbs: [list, watch]}
+          - {apiGroups: [batch], resources: [cronjobs, jobs], verbs: [list, watch]}
+          - {apiGroups: [autoscaling], resources: [horizontalpodautoscalers], verbs: [list, watch]}
+          - {apiGroups: [networking.k8s.io], resources: [ingresses, networkpolicies], verbs: [list, watch]}
+          - {apiGroups: [coordination.k8s.io], resources: [leases], verbs: [list, watch]}
+          - {apiGroups: [admissionregistration.k8s.io], resources: [mutatingwebhookconfigurations, validatingwebhookconfigurations], verbs: [list, watch]}
+          - {apiGroups: [certificates.k8s.io], resources: [certificatesigningrequests], verbs: [list, watch]}
+          - {apiGroups: [discovery.k8s.io], resources: [endpointslices], verbs: [list, watch]}
+          - {apiGroups: [policy], resources: [poddisruptionbudgets], verbs: [list, watch]}
+          - {apiGroups: [storage.k8s.io], resources: [storageclasses, volumeattachments], verbs: [list, watch]}
+    node-exporter:
+      type: daemonset
+      image: quay.io/prometheus/node-exporter:v1.12.1-distroless@sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106
+      security_profile: ""  # host network, host PID and hostPath, which no Pod Security profile admits
+      automount_service_account_token: false
+      service_account: {automount_service_account_token: false}
+      host_network: true
+      host_pid: true
+      node_selector: {kubernetes.io/os: linux}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - {key: eks.amazonaws.com/compute-type, operator: NotIn, values: [fargate]}
+                  - {key: type, operator: NotIn, values: [virtual-kubelet]}
+      tolerations: [{effect: NoSchedule, operator: Exists}]
+      args:
+        - --path.procfs=/host/proc
+        - --path.sysfs=/host/sys
+        - --path.rootfs=/host/root
+        - --path.udev.data=/host/root/run/udev/data
+        - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/containerd/.+|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+        - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|erofs)$
+      ports:
+        http-metrics: {service_port: 9100}
+      healthcheck:
+        liveness: {type: http, port: http-metrics, path: /, timeout_seconds: 1}
+        readiness: {type: http, port: http-metrics, path: /, timeout_seconds: 1}
+      volume_mounts:
+        proc: {mount_path: /host/proc, read_only: true}
+        sys: {mount_path: /host/sys, read_only: true}
+        root: {mount_path: /host/root, read_only: true, mount_propagation: HostToContainer}
+      volumes:
+        proc: {hostPath: {path: /proc}}
+        sys: {hostPath: {path: /sys}}
+        root: {hostPath: {path: /}}
+      service: {type: ClusterIP}
+    grafana:
+      image: docker.io/grafana/grafana:13.2.4-distroless@sha256:ae3d3add290adbe6a88412229f5d76fd7bb82743050881698642d3d62f277e35
+      workload_security_context: {runAsUser: 472, runAsGroup: 472, fsGroup: 472}
+      ports:
+        http-web: {container_port: 3000, service_port: 80}
+      healthcheck:
+        liveness: {type: http, port: http-web, path: /api/health, initial_delay_seconds: 60, timeout_seconds: 30, failure_threshold: 10}
+        readiness: {type: http, port: http-web, path: /api/health, timeout_seconds: 1}
+      env:
+        GF_SECURITY_ADMIN_USER: {secretKeyRef: {name: grafana-admin, key: admin-user}}
+        GF_SECURITY_ADMIN_PASSWORD: {secretKeyRef: {name: grafana-admin, key: admin-password}}
+      config_maps:
+        config:
+          mount: /etc/grafana/grafana.ini
+          subPath: grafana.ini
+          data:
+            grafana.ini:
+              value: |
+                [plugins]
+                preinstall_auto_update = false
+                [server]
+                domain = ''
+        dashboard-provider:
+          mount: /etc/grafana/provisioning/dashboards/sidecar.yaml
+          subPath: sidecar.yaml
+          data:
+            sidecar.yaml:
+              value: |
+                apiVersion: 1
+                providers:
+                  - {name: sidecarProvider, type: file, updateIntervalSeconds: 30, options: {path: /tmp/dashboards}}
+      volume_mounts:
+        tmp: {mount_path: /tmp}
+        storage: {mount_path: /var/lib/grafana}
+        dashboards: {mount_path: /tmp/dashboards}
+        datasources: {mount_path: /etc/grafana/provisioning/datasources}
+      volumes:
+        tmp: {emptyDir: {}}
+        storage: {emptyDir: {}}
+        dashboards: {emptyDir: {}}
+        datasources: {emptyDir: {}}
+      # Copy the labelled dashboard and datasource ConfigMaps into Grafana and reload it.
+      additional_containers:
+        grafana-sc-dashboard:
+          image: quay.io/kiwigrid/k8s-sidecar:2.14.1@sha256:092dbe0c335fba9af414a27630ca68f34df6185784fa847d9954187e69dbfdd7
+          env:
+            LABEL: grafana_dashboard
+            LABEL_VALUE: "1"
+            FOLDER: /tmp/dashboards
+            NAMESPACE: ALL
+            RESOURCE: both
+            REQ_URL: http://localhost:3000/api/admin/provisioning/dashboards/reload
+            REQ_METHOD: POST
+            REQ_USERNAME: ${components.grafana.env.GF_SECURITY_ADMIN_USER}
+            REQ_PASSWORD: ${components.grafana.env.GF_SECURITY_ADMIN_PASSWORD}
+          volume_mounts:
+            dashboards: {mount_path: /tmp/dashboards}
+        grafana-sc-datasources:
+          image: ${components.grafana.additional_containers.grafana-sc-dashboard.image}
+          env:
+            LABEL: grafana_datasource
+            LABEL_VALUE: "1"
+            FOLDER: /etc/grafana/provisioning/datasources
+            RESOURCE: both
+            REQ_URL: http://localhost:3000/api/admin/provisioning/datasources/reload
+            REQ_METHOD: POST
+            REQ_USERNAME: ${components.grafana.env.GF_SECURITY_ADMIN_USER}
+            REQ_PASSWORD: ${components.grafana.env.GF_SECURITY_ADMIN_PASSWORD}
+          volume_mounts:
+            datasources: {mount_path: /etc/grafana/provisioning/datasources}
+      service: {type: ClusterIP, service_name: "${release}-grafana"}
+      cluster_role:
+        rules:
+          - {apiGroups: [''], resources: [configmaps, secrets], verbs: [get, watch, list]}

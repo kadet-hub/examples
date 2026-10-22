@@ -92,6 +92,21 @@
       "groupName": "strimzi operator"
     },
     {
+      "description": "EX-3: the images of the Kapitan rebuild of kube-prometheus-stack, together with the chart and the operator's CRDs of the next rule, so that both sides of EX-13a move in one pull request",
+      "matchFileNames": [
+        "chart-vs-kapitan/kapitan/inventory/targets/kube-prometheus-stack.yml"
+      ],
+      "groupName": "kube-prometheus-stack"
+    },
+    {
+      "description": "EX-3: kube-prometheus-stack's chart and the Prometheus Operator CRDs that chart-vs-kapitan/check pins, grouped with the rule before",
+      "matchPackageNames": [
+        "ghcr.io/prometheus-community/charts/kube-prometheus-stack",
+        "prometheus-operator/prometheus-operator"
+      ],
+      "groupName": "kube-prometheus-stack"
+    },
+    {
       "description": "EX-3: kind and the node image of its release",
       "matchDepNames": [
         "kubernetes-sigs/kind",

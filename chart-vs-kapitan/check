@@ -4,15 +4,20 @@
 #   - the API server defaults both to the same objects, RBAC aside,
 #   - the chart's and Kapitan's ServiceAccount hold the same permissions,
 #   - the Kapitan version works on kind.
+# kube-prometheus-stack is compared by what it does instead: both sides on
+# kind must report the same scrape targets, rules, Alertmanager and Grafana.
 # Prints the lines each side asks you to write and maintain.
-# Needs helm, kubectl, kind, uv, docker, and on first run gh and oras.
+# Needs helm, kubectl, kind, uv, docker, jq, jb for kube-prometheus-stack,
+# and on first run gh and oras.
 set -euo pipefail
 cd "$(dirname "$0")"
 chart=${1:?usage: check <chart>}
 out=$(mktemp -d)
 cluster=chart-vs-kapitan-$$
 trap 'kind delete cluster --name "$cluster" >/dev/null 2>&1 || true; rm -rf -- "$out"' EXIT
-py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4 --with gojsonnet==0.22.0)
+functional=
+generators="generator kubernetes"
 
 case $chart in
   metrics-server)
@@ -65,24 +70,96 @@ YAML
       kubectl -n default wait certificate/demo --for=condition=Ready --timeout=120s
     }
     ;;
+  kube-prometheus-stack)
+    # renovate: datasource=docker depName=ghcr.io/prometheus-community/charts/kube-prometheus-stack
+    CHART=ghcr.io/prometheus-community/charts/kube-prometheus-stack:92.11.0@sha256:5b9b0215085f00f61c0fb2aa01ec402609d91c0a6a91bc84ca85cce2ed69e635
+    # renovate: datasource=github-release-attachments depName=prometheus-operator/prometheus-operator
+    CRDS_VERSION=v0.94.1
+    CRDS_SHA256=e35c128e5ae8607e04fe92e7d6aae28c7fc9cf24262549a84904fa0042ac21ae
+    fetch() {
+      helm pull "oci://${CHART%%:*}@${CHART#*@}" -d "$out" >/dev/null 2>&1
+      mv "$out"/kube-prometheus-stack*.tgz "$out/chart.tgz"
+      # the sources of the rules and dashboards, at the commits of jsonnetfile.lock.json
+      (cd kapitan && jb install) >"$out/jb.log" 2>&1 || { cat "$out/jb.log"; return 1; }
+      curl -fsSLo kapitan/vendor/prometheus-operator-crds.yaml \
+        "https://github.com/prometheus-operator/prometheus-operator/releases/download/$CRDS_VERSION/stripped-down-crds.yaml"
+      echo "$CRDS_SHA256  kapitan/vendor/prometheus-operator-crds.yaml" | sha256sum -c --quiet
+    }
+    namespace=monitoring
+    functional=1
+    generators="generators kubernetes and prometheus-operator"
+    ready() {
+      kubectl -n monitoring wait deploy --all --for condition=Available --timeout=300s
+      kubectl -n monitoring wait prometheus,alertmanager --all --for condition=Available --timeout=300s
+      kubectl -n monitoring wait pod --all --for condition=Ready --timeout=300s
+    }
+    # (a) scrape jobs by health, (b) rule names, (c) Alertmanager ready and
+    # (d) Grafana's health, datasources and dashboard titles. Both sides name
+    # the Services these are read through alike.
+    observe() {
+      local svc=/api/v1/namespaces/monitoring/services
+      kubectl get --raw "$svc/kube-prometheus-stack-prometheus:http-web/proxy/api/v1/targets?state=active" 2>/dev/null |
+        jq -r '.data.activeTargets[] | "target \(.labels.job) \(.health)"' || echo "prometheus unavailable"
+      kubectl get --raw "$svc/kube-prometheus-stack-prometheus:http-web/proxy/api/v1/rules" 2>/dev/null |
+        jq -r '.data.groups[].rules[] | "rule \(.type) \(.name)"' || echo "prometheus unavailable"
+      echo "alertmanager $(kubectl get --raw "$svc/kube-prometheus-stack-alertmanager:http-web/proxy/-/ready" 2>/dev/null || echo unavailable)"
+      curl -fsS -u "admin:$pw" "$grafana/api/health" 2>/dev/null | jq -r '"grafana database \(.database)"' || echo "grafana unavailable"
+      curl -fsS -u "admin:$pw" "$grafana/api/datasources" 2>/dev/null |
+        jq -r '.[] | "datasource \(.name) \(.type) \(.url) default=\(.isDefault)"' || echo "grafana unavailable"
+      curl -fsS -u "admin:$pw" "$grafana/api/search?type=dash-db&limit=5000" 2>/dev/null |
+        jq -r '.[] | "dashboard \(.title)"' || echo "grafana unavailable"
+    }
+    # Settled once every target has been scraped and two rounds 30 seconds
+    # apart, longer than the scrape interval, agree.
+    works() {
+      local secret pw grafana pf prev='' cur i kind
+      secret=$(kubectl -n monitoring get deploy -o jsonpath='{..env[?(@.name=="GF_SECURITY_ADMIN_PASSWORD")].valueFrom.secretKeyRef.name}')
+      pw=$(kubectl -n monitoring get secret "$secret" -o jsonpath='{.data.admin-password}' | base64 -d)
+      kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana :80 >"$out/port-forward" 2>&1 &
+      pf=$!
+      for _ in $(seq 30); do grafana=$(grep -om1 '127\.0\.0\.1:[0-9]*' "$out/port-forward") && break; sleep 1; done
+      for i in $(seq 20); do
+        cur=$(observe | sort | uniq -c)
+        [[ $cur == "$prev" && $cur != *unknown* && $cur != *unavailable* ]] && break
+        prev=$cur
+        sleep 30
+      done
+      kill "$pf" 2>/dev/null || true
+      echo "$cur"
+      ((i < 20)) || { echo "$cur" >&2; echo "works: not settled" >&2; return 1; }
+      # an empty set cannot pass as equal
+      for kind in target rule datasource dashboard "alertmanager OK" "grafana database ok"; do
+        grep -q " $kind" <<<"$cur" || { echo "$cur" >&2; echo "works: no $kind" >&2; return 1; }
+      done
+    }
+    ;;
   *) echo "unknown chart: $chart" >&2; exit 2 ;;
 esac
 
-# The pinned kadet-hub generator: check its attestation, then pull by digest.
-if [[ ! -d kapitan/lib/kubernetes ]]; then
-  src=$(grep -o 'ghcr.io/kadet-hub/kubernetes:[^ ]*' kapitan/inventory/classes/common.yml)
+# The pinned kadet-hub generators: check each one's attestation, then pull by digest.
+mapfile -t sources < <(grep -ho 'ghcr.io/kadet-hub/[^ ]*' kapitan/inventory/classes/*.yml | sort -u)
+for src in "${sources[@]}"; do
+  name=${src#ghcr.io/kadet-hub/}
+  name=${name%%:*}
+  [[ -d kapitan/lib/$name ]] && continue
   ref=${src%%:*}@${src#*@}
   gh attestation verify "oci://$ref" --owner kadet-hub \
     --cert-identity https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main >/dev/null
   oras pull -o "$out/oci" "$ref" >/dev/null
-  mkdir -p kapitan/lib/kubernetes
-  tar -xf "$out/oci/kubernetes.tar" -C kapitan/lib/kubernetes
-fi
+  mkdir -p "kapitan/lib/$name"
+  tar -xf "$out/oci/$name.tar" -C "kapitan/lib/$name"
+done
 
 fetch
 helm template "$chart" "$out/chart.tgz" -n "$namespace" -f "values/$chart.yaml" >"$out/chart.yaml"
-(cd kapitan && "${py[@]}" kapitan compile -t "$chart" --output-path "$out/kapitan" >"$out/kapitan.log" 2>&1) \
-  || { cat "$out/kapitan.log"; exit 1; }
+# The first compile creates the Kapitan refs (Grafana's admin password of
+# kube-prometheus-stack) in the temporary directory, the second writes their values.
+compile() {
+  (cd kapitan && "${py[@]}" kapitan compile -t "$chart" --output-path "$out/kapitan" --refs-path "$out/refs" "$@" \
+    >"$out/kapitan.log" 2>&1) || { cat "$out/kapitan.log"; exit 1; }
+}
+compile
+compile --reveal
 find "$out/kapitan/compiled/$chart" -name '*.yaml' -exec sh -c 'cat "$1"; echo ---' _ {} \; >"$out/kapitan.yaml"
 
 # renovate: datasource=docker depName=kindest/node
@@ -156,11 +233,27 @@ print(len(items), file=sys.stderr)
 sys.stdout.write(yaml.safe_dump_all(items, sort_keys=True))
 '
 }
-for side in chart kapitan; do
-  kubectl apply --dry-run=server -o yaml -f "$out/$side.yaml" | normalize >"$out/$side.objects" 2>"$out/$side.count"
-done
-diff -u "$out/chart.objects" "$out/kapitan.objects"
-echo "objects: chart = kapitan ($(<"$out/chart.count") outside RBAC)"
+if [[ $functional ]]; then
+  # Names, the RBAC layout and the fields left to the operator's defaults
+  # differ by design: count the objects by kind instead.
+  "${py[@]}" python -I -c '
+import collections, sys, yaml
+# an enum value "=" in the CRDs, which YAML 1.1 reads as the value tag
+yaml.SafeLoader.add_constructor("tag:yaml.org,2002:value", lambda loader, node: loader.construct_scalar(node))
+chart, kapitan = (collections.Counter(d["kind"] for d in yaml.safe_load_all(open(f)) if d) for f in sys.argv[1:])
+row = "%-32s %5s %7s"
+print(row % ("objects", "chart", "kapitan"))
+for kind in sorted(chart | kapitan):
+    print(row % (kind, chart[kind], kapitan[kind]))
+print(row % ("total", chart.total(), kapitan.total()))
+' "$out/chart.yaml" "$out/kapitan.yaml"
+else
+  for side in chart kapitan; do
+    kubectl apply --dry-run=server -o yaml -f "$out/$side.yaml" | normalize >"$out/$side.objects" 2>"$out/$side.count"
+  done
+  diff -u "$out/chart.objects" "$out/kapitan.objects"
+  echo "objects: chart = kapitan ($(<"$out/chart.count") outside RBAC)"
+fi
 
 # Permissions: install each side on its own cluster and list what its
 # ServiceAccounts may do and what a user with only the built-in view role may
@@ -177,19 +270,37 @@ can_i() {
   echo "--- viewer"
   kubectl auth can-i --list --as viewer | verbs
 }
-helm install "$chart" "$out/chart.tgz" -n "$namespace" -f "values/$chart.yaml" --wait >/dev/null
+helm install "$chart" "$out/chart.tgz" -n "$namespace" -f "values/$chart.yaml" --wait --timeout 10m >/dev/null
 ready >/dev/null
-can_i >"$out/chart.can-i"
+if [[ $functional ]]; then works >"$out/chart.works"; else can_i >"$out/chart.can-i"; fi
 new_cluster
-kubectl apply -f "$out/kapitan.yaml" >/dev/null
+# Custom resources apply once the API server serves their CRDs.
+for i in $(seq 30); do kubectl apply -f "$out/kapitan.yaml" >"$out/apply.log" 2>&1 && break; sleep 2; done
+((i < 30)) || { cat "$out/apply.log"; exit 1; }
 ready >/dev/null
-can_i >"$out/kapitan.can-i"
-diff -u "$out/chart.can-i" "$out/kapitan.can-i"
-echo "permissions: chart = kapitan ($(wc -l <"$out/kapitan.can-i") lines of can-i --list)"
-works
+if [[ $functional ]]; then
+  works >"$out/kapitan.works"
+  diff -u "$out/chart.works" "$out/kapitan.works"
+  grep ' target ' "$out/kapitan.works"
+  echo "works: chart = kapitan ($(awk '$2 == "target" {t += $1; if (!($3 in j)) {j[$3]; n++}}
+    $2 == "rule" {r += $1} $2 == "datasource" {d += $1} $2 == "dashboard" {b += $1}
+    END {printf "%d targets in %d jobs, %d rules, %d datasources, %d dashboards, Alertmanager ready", t, n, r, d, b}' \
+    "$out/kapitan.works"))"
+else
+  can_i >"$out/kapitan.can-i"
+  diff -u "$out/chart.can-i" "$out/kapitan.can-i"
+  echo "permissions: chart = kapitan ($(wc -l <"$out/kapitan.can-i") lines of can-i --list)"
+  works
+fi
 
 # What each side asks you to write and maintain.
 tar -xzf "$out/chart.tgz" -C "$out"
-echo "chart: $(find "$out/$chart/templates" -type f -exec cat {} + | wc -l) template lines maintained by the chart," \
-  "$(wc -l <"$out/$chart/values.yaml") lines of values.yaml, $(grep -cv '^\s*#\|^\s*$' "values/$chart.yaml") lines set here"
-echo "kapitan: $(grep -cv '^\s*#\|^\s*$' "kapitan/inventory/targets/$chart.yml") lines of inventory, generator kubernetes maintained by kadet-hub"
+lines() { cat "$@" | grep -Ecv '^\s*(#|//)|^\s*$'; }
+echo "chart: $(find "$out/$chart" -path '*/templates/*' -type f -exec cat {} + | wc -l) template lines maintained by the chart" \
+  "and its subcharts, $(find "$out/$chart" -name values.yaml -exec cat {} + | wc -l) lines of values.yaml," \
+  "$(lines "values/$chart.yaml") lines set here"
+echo "kapitan: $(lines "kapitan/inventory/targets/$chart.yml") lines of inventory, $generators maintained by kadet-hub"
+if [[ $functional ]]; then
+  echo "kapitan: $(lines "kapitan/inventory/classes/$chart.yml") lines of class," \
+    "$(lines "kapitan/components/$chart.jsonnet") lines of jsonnet for the rules and dashboards"
+fi
