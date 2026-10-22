@@ -58,7 +58,9 @@ schedule instead of trusting the state on the publishing day.
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
   default: the Pulumi provider omits zero-valued fields, Kapitan's
-  generator writes it.
+  generator writes it. `same-app` and `config-tools` also drop a Service
+  port's `appProtocol`: the kubernetes generator derives it from the port
+  name since 1.4.0, the other tools leave it unset.
 
   - Test: `examples` workflow, one job per folder
   - Since: tbd

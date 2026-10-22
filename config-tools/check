@@ -32,13 +32,16 @@ fi
 
 # One document per object, sorted by kind/namespace/name, keys sorted. The
 # app.kubernetes.io/managed-by label names the tool and only Kapitan sets it,
-# so it is dropped. Nothing else is ignored.
+# so it is dropped, and so is a Service port appProtocol, which the Kapitan
+# generator derives from the port name and the other tools leave unset.
+# Nothing else is ignored.
 normalize() {
   "${py[@]}" python -I -c '
 import sys, yaml
 def strip(o):
     if isinstance(o, dict):
         o.pop("app.kubernetes.io/managed-by", None)
+        o.pop("appProtocol", None)
         for v in o.values(): strip(v)
     elif isinstance(o, list):
         for v in o: strip(v)

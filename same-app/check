@@ -48,7 +48,9 @@ mkdir "$out/pulumi"
 
 # One document per object, sorted by kind/namespace/name, keys sorted. The
 # managed-by label names the tool (Helm vs kapitan) and is dropped. Pulumi
-# omits initialDelaySeconds: 0, the API default, so it is dropped as well.
+# omits initialDelaySeconds: 0, the API default, so it is dropped as well, and
+# so is a Service port appProtocol, which the Kapitan generator derives from
+# the port name and the other tools leave unset.
 normalize() {
   "${py[@]}" python -I -c '
 import sys, yaml
@@ -56,6 +58,7 @@ def strip(o):
     if isinstance(o, dict):
         o.pop("app.kubernetes.io/managed-by", None)
         if o.get("initialDelaySeconds") == 0: del o["initialDelaySeconds"]
+        o.pop("appProtocol", None)
         for v in o.values(): strip(v)
     elif isinstance(o, list):
         for v in o: strip(v)
