@@ -803,7 +803,7 @@ generator keeps a webhook out of its own namespace, the chart does not.
   the chart maintains and the inventory lines the Kapitan side needs.
 
   - Test: `examples` workflow, job `chart-vs-kapitan`
-  - Since: tbd
+  - Since: #44
 
 ## Open questions
 
