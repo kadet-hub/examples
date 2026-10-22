@@ -27,6 +27,9 @@ env:
   # renovate: datasource=github-releases depName=helm/helm
   HELM_VERSION: v4.3.1
   HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
+  # renovate: datasource=github-release-attachments depName=helmfile/helmfile
+  HELMFILE_VERSION: v1.8.2
+  HELMFILE_SHA256: f179485c5bb9f8e20fbd8ea16d8807915988aba4d60131ee864fb3232452716e
   # renovate: datasource=docker depName=registry.k8s.io/kustomize/kustomize
   KUSTOMIZE_IMAGE: registry.k8s.io/kustomize/kustomize:v5.8.3@sha256:429eda4a1c76a7de458d0c4ca3ded9b5d764899ff6bdaeccc1d98b1b6ee873e4
   # renovate: datasource=github-release-attachments depName=pulumi/pulumi
@@ -80,22 +83,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Install helm, kustomize, Pulumi, Node.js, oras and uv
+      - name: Install helm, Helmfile, kustomize, Pulumi, Node.js, oras and uv
         run: |
           mkdir -p "$RUNNER_TEMP/bin" "$RUNNER_TEMP/node" && cd "$RUNNER_TEMP/bin"
           curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
+          curl -fsSLo helmfile.tgz "https://github.com/helmfile/helmfile/releases/download/$HELMFILE_VERSION/helmfile_${HELMFILE_VERSION#v}_linux_amd64.tar.gz"
           curl -fsSLo pulumi.tgz "https://github.com/pulumi/pulumi/releases/download/$PULUMI_VERSION/pulumi-$PULUMI_VERSION-linux-x64.tar.gz"
           curl -fsSLo node.txz "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz"
           curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
           curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
           sha256sum -c <<EOF
           $HELM_SHA256  helm.tgz
+          $HELMFILE_SHA256  helmfile.tgz
           $PULUMI_SHA256  pulumi.tgz
           $NODE_SHA256  node.txz
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
           EOF
           tar -xzf helm.tgz --strip-components=1 linux-amd64/helm
+          tar -xzf helmfile.tgz helmfile
           c=$(docker create "$KUSTOMIZE_IMAGE") && docker cp -q "$c:/app/kustomize" . && docker rm "$c" >/dev/null
           tar -xzf pulumi.tgz --strip-components=1 pulumi/pulumi pulumi/pulumi-language-nodejs
           tar -xJf node.txz --strip-components=1 -C "$RUNNER_TEMP/node"
