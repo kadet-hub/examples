@@ -4,7 +4,7 @@ parameters:
       target: ${_kapitan_.name.short}
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/kubernetes:1.5.0@sha256:b249709007d93461946445bc1827a0f1a2596f3bb122d372e83f7ba76271e774
+        source: ghcr.io/kadet-hub/kubernetes:1.6.0@sha256:bdd38ce351fc448440a52991e775b723265e3aa52c1ba9deb8fe5e086d35125d
         output_path: lib/kubernetes
     compile:
       - input_type: kadet

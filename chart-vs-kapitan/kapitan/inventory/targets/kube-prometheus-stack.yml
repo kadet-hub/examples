@@ -72,52 +72,41 @@ parameters:
                     url: http://${release}-alertmanager.${namespace}:9093/
                     access: proxy
                     jsonData: {handleGrafanaManagedAlerts: false, implementation: prometheus}
-      # The kubernetes generator renders Services only for its components'
-      # workloads; these select pods the operator or the cluster runs.
-      manifests:
+      # Services of pods the operator or the cluster runs.
+      services:
         prometheus:
           name: ${release}-prometheus
-          api_version: v1
-          kind: Service
-          namespace: ${namespace}
-          body:
-            spec:
-              selector: {app.kubernetes.io/name: prometheus, operator.prometheus.io/name: main}
-              ports: [{name: http-web, port: 9090}, {name: reloader-web, port: 8080, targetPort: reloader-web}]
+          selector: {app.kubernetes.io/name: prometheus, operator.prometheus.io/name: main}
+          ports: {http-web: {service_port: 9090}, reloader-web: {service_port: 8080, container_port: reloader-web}}
         alertmanager:
           name: ${release}-alertmanager
-          api_version: v1
-          kind: Service
-          namespace: ${namespace}
-          body:
-            spec:
-              selector: {app.kubernetes.io/name: alertmanager, alertmanager: main}
-              ports: [{name: http-web, port: 9093}, {name: reloader-web, port: 8080, targetPort: reloader-web}]
+          selector: {app.kubernetes.io/name: alertmanager, alertmanager: main}
+          ports: {http-web: {service_port: 9093}, reloader-web: {service_port: 8080, container_port: reloader-web}}
         coredns:
-          api_version: v1
-          kind: Service
           namespace: kube-system
-          body: {spec: {clusterIP: None, selector: {k8s-app: kube-dns}, ports: [{name: http-metrics, port: 9153}]}}
+          headless: true
+          selector: {k8s-app: kube-dns}
+          ports: {http-metrics: {service_port: 9153}}
         kube-controller-manager:
-          api_version: v1
-          kind: Service
           namespace: kube-system
-          body: {spec: {clusterIP: None, selector: {component: kube-controller-manager}, ports: [{name: http-metrics, port: 10257}]}}
+          headless: true
+          selector: {component: kube-controller-manager}
+          ports: {http-metrics: {service_port: 10257}}
         kube-etcd:
-          api_version: v1
-          kind: Service
           namespace: kube-system
-          body: {spec: {clusterIP: None, selector: {component: etcd}, ports: [{name: http-metrics, port: 2381}]}}
+          headless: true
+          selector: {component: etcd}
+          ports: {http-metrics: {service_port: 2381}}
         kube-proxy:
-          api_version: v1
-          kind: Service
           namespace: kube-system
-          body: {spec: {clusterIP: None, selector: {k8s-app: kube-proxy}, ports: [{name: http-metrics, port: 10249}]}}
+          headless: true
+          selector: {k8s-app: kube-proxy}
+          ports: {http-metrics: {service_port: 10249}}
         kube-scheduler:
-          api_version: v1
-          kind: Service
           namespace: kube-system
-          body: {spec: {clusterIP: None, selector: {component: kube-scheduler}, ports: [{name: http-metrics, port: 10259}]}}
+          headless: true
+          selector: {component: kube-scheduler}
+          ports: {http-metrics: {service_port: 10259}}
     prometheus_operator:
       release_label: ${release}
       prometheuses:
