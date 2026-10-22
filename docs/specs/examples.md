@@ -769,6 +769,42 @@ selector would need the same change.
     workflow, job `cert-manager-mutate`
   - Since: #28
 
+## Charts rebuilt as Kapitan inventories
+
+`chart-vs-kapitan` rebuilds widely used Helm charts as Kapitan inventories
+on the omegaconf backend, rendered by the `kubernetes` generator, to show
+what a chart author would maintain instead of templates. The chart side is
+`helm template` with the values in `values/<chart>.yaml`; the Kapitan side
+is `kapitan/inventory/targets/<chart>.yml`. Parts that are Helm hooks
+(cert-manager's startupapicheck) are switched off on the chart side,
+because Kapitan has no hooks.
+
+Names, list order and RBAC layout differ by design: the generator names
+objects by its own convention, puts one ClusterRole on each component and
+cannot use colons in names, which double as label values. The check
+therefore compares objects after the API server has defaulted them, with
+names, labels, selectors and port order normalized, and compares RBAC by
+what it grants. One behavioural difference is normalized and named: the
+generator keeps a webhook out of its own namespace, the chart does not.
+
+- EX-13: `chart-vs-kapitan/check <chart>` MUST fail unless, for that chart,
+  the objects of both sides outside RBAC are equal after a server-side dry
+  run and the normalization above, `kubectl auth can-i --list` is equal for
+  every ServiceAccount of the chart and for a user bound only to the
+  built-in `view` ClusterRole, and the Kapitan side, installed on its own
+  kind cluster, does what the chart does: `kubectl top nodes` answers for
+  metrics-server, a self-signed ClusterIssuer issues a Certificate for
+  cert-manager.
+
+  Each side is installed on a fresh cluster, so neither sees runtime state
+  the other left behind, such as cert-manager's webhook CA Secret. An
+  empty normalized object list fails the check, so a broken normalization
+  cannot pass as equality. The check prints the template and values lines
+  the chart maintains and the inventory lines the Kapitan side needs.
+
+  - Test: `examples` workflow, job `chart-vs-kapitan`
+  - Since: #44
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -797,6 +833,7 @@ selector would need the same change.
 | `recipes/inventory/targets/charts.yml` | Every operator class and no generator, for `check` to fetch the charts (EX-4, EX-5a) |
 | `argocd-vs-flux/` | One Kapitan project (targets `web`, `argocd`, `flux`), the Gitea manifest and a Chainsaw test per tool; `check <argocd\|flux>` |
 | `helm-mutate/` | One Kapitan project (targets `helm`, `podinfo`, `argocd`, `flux`), the podinfo chart pinned in `inventory/classes/podinfo.yml`, the mutations in `inventory/targets/podinfo.yml`, a Chainsaw test per tool; `check <kubectl\|argocd\|flux>` |
+| `chart-vs-kapitan/` | One Kapitan project on the omegaconf backend, one target per chart, chart values in `values/`, CRDs fetched by `check` into `kapitan/vendor/`; `check <chart>` (EX-13) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
 
 Recipes and their checks:

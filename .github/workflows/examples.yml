@@ -512,6 +512,47 @@ jobs:
           TOOL: ${{ matrix.tool }}
         run: helm-mutate/check "$TOOL"
 
+  # EX-13: widely used charts rebuilt as Kapitan inventories, compared on kind.
+  chart-vs-kapitan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        chart: [metrics-server, cert-manager]
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install helm, oras, uv, kubectl and kind
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
+          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          sha256sum -c <<EOF
+          $HELM_SHA256  helm.tgz
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          $KIND_SHA256  kind
+          EOF
+          tar -xzf helm.tgz --strip-components=1 linux-amd64/helm
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          chmod +x kubectl kind
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: chart-vs-kapitan/check ${{ matrix.chart }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHART: ${{ matrix.chart }}
+        run: chart-vs-kapitan/check "$CHART"
+
   # EX-11: the cert-manager and trust-manager charts patched by mutate, on kind.
   cert-manager-mutate:
     runs-on: ubuntu-24.04
