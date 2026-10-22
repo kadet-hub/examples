@@ -157,7 +157,8 @@ schedule instead of trusting the state on the publishing day.
   - Release asset: uv, oras, kubeconform, Helmfile, Pulumi and its
     Kubernetes plugin, etcd, tk, jb, kind, chainsaw, talosctl, tofu and
     gVisor are GitHub release assets, and so are the install manifests of
-    Flux and of the RabbitMQ Cluster Operator. Their `# renovate:` comment names
+    Flux and of the RabbitMQ Cluster Operator and the CRDs of cert-manager
+    and Prometheus Operator in `chart-vs-kapitan`. Their `# renovate:` comment names
     `datasource=github-release-attachments`, which hashes the matching
     asset of the new release. The pinned value MUST be the exact release
     tag, because the datasource looks the release up by it; URLs that need
@@ -210,13 +211,15 @@ schedule instead of trusting the state on the publishing day.
   for the cert-manager and trust-manager classes of `cert-manager-mutate`,
   so that one pull request moves both cert-manager pins; kind and its
   node image; podinfo's chart and image; `@pulumi/kubernetes` and its
-  plugin.
+  plugin; kube-prometheus-stack's chart, the Prometheus Operator CRDs and
+  the images of its Kapitan rebuild (EX-13a).
 
-  Two values follow another pin, and the pull request that changes that
+  Three values follow another pin, and the pull request that changes that
   pin has to change them: the redis tag follows Argo CD's manifest (EX-7),
-  so Renovate updates only the digest of the pinned tag, and the Kafka
-  version of the `kafka` recipe follows the versions Strimzi supports. CI
-  fails when either no longer fits.
+  so Renovate updates only the digest of the pinned tag, the Kafka
+  version of the `kafka` recipe follows the versions Strimzi supports, and
+  the jsonnet sources of kube-prometheus-stack in `chart-vs-kapitan` follow
+  the chart (EX-13a). CI fails when one no longer fits.
 
   Kapitan and Python packages are pinned by version through uv or with
   `==` in the scripts' `uv run --with` and `uvx`, which a regex manager
@@ -772,7 +775,7 @@ selector would need the same change.
 ## Charts rebuilt as Kapitan inventories
 
 `chart-vs-kapitan` rebuilds widely used Helm charts as Kapitan inventories
-on the omegaconf backend, rendered by the `kubernetes` generator, to show
+on the omegaconf backend, rendered by kadet-hub generators, to show
 what a chart author would maintain instead of templates. The chart side is
 `helm template` with the values in `values/<chart>.yaml`; the Kapitan side
 is `kapitan/inventory/targets/<chart>.yml`. Parts that are Helm hooks
@@ -787,7 +790,8 @@ names, labels, selectors and port order normalized, and compares RBAC by
 what it grants. One behavioural difference is normalized and named: the
 generator keeps a webhook out of its own namespace, the chart does not.
 
-- EX-13: `chart-vs-kapitan/check <chart>` MUST fail unless, for that chart,
+- EX-13: `chart-vs-kapitan/check <chart>` MUST fail unless, for
+  metrics-server and cert-manager,
   the objects of both sides outside RBAC are equal after a server-side dry
   run and the normalization above, `kubectl auth can-i --list` is equal for
   every ServiceAccount of the chart and for a user bound only to the
@@ -804,6 +808,119 @@ generator keeps a webhook out of its own namespace, the chart does not.
 
   - Test: `examples` workflow, job `chart-vs-kapitan`
   - Since: #44
+
+kube-prometheus-stack 92.11.0 cannot be compared object by object. Its
+Kapitan side renders the operator, kube-state-metrics, node-exporter and
+Grafana with the `kubernetes` generator and Prometheus, Alertmanager and
+the 13 ServiceMonitors with the `prometheus-operator` generator, under the
+generators' names wherever nothing selects an object by its name. `rbac:
+true` on Prometheus grants the generator's fixed rule set, which adds `get`
+on ConfigMaps and leaves out `/metrics/cadvisor`. For this chart `check`
+prints the objects of both sides by kind and compares what they do.
+
+The Kapitan side carries over every setting of the chart that changes what
+runs, except these:
+
+- Alertmanager runs under the namespace's `default` ServiceAccount; the
+  chart creates one for it, which it does not use to call the API.
+- Prometheus and Alertmanager have no preferred pod anti-affinity, which
+  spreads replicas the chart does not run (it runs one of each).
+- Grafana declares no container ports for gossip and profiling and no
+  `POD_IP`, which Grafana uses only with a high-availability setup the
+  chart does not configure, and keeps its search index in its data
+  directory, where the chart mounts another emptyDir.
+
+The rest of what it leaves out equals the defaults of the operator,
+kube-state-metrics, node-exporter, Grafana's image and the sidecar, such
+as the operator's `--kubelet-endpoints` and `--web.listen-address`, and
+Grafana's `GF_PATHS_*` and log mode.
+
+- EX-13a: `chart-vs-kapitan/check kube-prometheus-stack` MUST fail unless
+  both sides, each installed on its own kind cluster, report the same
+  scrape jobs with the same health, the same alerting and recording rule
+  names, Alertmanager ready, and Grafana healthy with the same datasources
+  and dashboard titles.
+
+  `check` reads Prometheus' `/api/v1/targets` and `/api/v1/rules` and
+  Alertmanager's `/-/ready` through the API server's service proxy, and
+  Grafana's `/api/health`, `/api/datasources` and `/api/search` through a
+  port-forward, with the admin password from the Secret that Grafana's
+  Deployment names. A target reports health `unknown` until its first
+  scrape. `check` polls every 30 seconds, longer than the scrape interval,
+  until no target is `unknown` and two rounds agree, and fails after ten
+  minutes. An empty set of targets, rules, datasources or dashboards fails
+  the check.
+
+  Health is compared, not required to be `up`: kind binds the metrics of
+  kube-controller-manager, kube-scheduler, etcd and kube-proxy to
+  localhost, so these targets are down on both sides. No other difference
+  needs an allowlist.
+
+  - Test: `examples` workflow, job `chart-vs-kapitan`
+    (`kube-prometheus-stack`); `manual:` with one ServiceMonitor and one
+    rule group dropped from the Kapitan side, the check fails on the
+    missing job and rules
+  - Since: this change
+
+Prometheus names a scrape job after the Service it scrapes, unless the
+ServiceMonitor's `jobLabel` names a label of that Service. The chart's
+rules select the jobs by these names, `job="kube-prometheus-stack-operator"`
+for example, so the Kapitan side names the scraped Services like the chart,
+from the parameter `release`. Prometheus and Alertmanager run in pods the
+operator creates, and the control-plane Services select pods kind runs.
+The `kubernetes` generator renders Services only for its own components,
+so these seven Services are `manifests` entries.
+
+The rules and dashboards are not copied from the chart.
+`kapitan/components/kube-prometheus-stack.jsonnet` builds them with
+Kapitan's `jsonnet` input from the sources that the chart's
+`hack/sync_prometheus_rules.py` and `hack/sync_grafana_dashboards.py` read
+at the tag `kube-prometheus-stack-92.11.0`: kube-prometheus at
+`f81c076ab8f542c457840cd4c62656b8d6b4f43a`, the etcd mixin at
+`479c194f3f5754f039a74c396f3e70f6419edf8e` and the chart's own
+`files/dashboards/k8s-coredns.json`. The kubernetes-mixin commit the
+scripts name is used for the Windows rules and dashboards only, which the
+chart leaves out at its default values. The jsonnet applies the settings
+and text edits of the two scripts at the chart's default values: job
+names, a space between `by` or `on` and the parenthesis, trailing
+whitespace, the etcd runbook URLs, and the dashboards' timezone, editable
+flag, interval and `cluster` variable.
+
+Rendered side by side, 34 of the chart's 35 rule groups and all 29
+dashboards are equal. The chart's group `k8s.rules.container_resource`
+comes from a template that the sync at these commits no longer writes. The
+sources split it into `k8s.rules.container_cpu_limits`,
+`k8s.rules.container_cpu_requests`, `k8s.rules.container_memory_limits` and
+`k8s.rules.container_memory_requests`. The chart ships these four as well
+but switches them off, because its values lack the keys that enable them.
+Both hold the same eight recording rules, with expressions that differ in
+whitespace only, so the rule names are equal and the Kapitan side has 38
+PrometheusRules to the chart's 35.
+
+`kapitan/jsonnetfile.json` pins the three sources by commit, and pins the
+libraries that kube-prometheus pulls at a branch, such as grafonnet,
+mixin-utils and the Perses mixins, at the commits of kube-prometheus' own
+lock file, which the chart's sync installs from. Lock file maintenance,
+`jb update`, therefore leaves `jsonnetfile.lock.json` as it is. The pull
+request that moves the chart to a new version has to move the sources to
+the commits its sync scripts name. `check` vendors them with `jb install`
+into `kapitan/vendor/` and compiles with go-jsonnet, which takes seconds
+where the C++ implementation takes over a minute.
+
+The chart side sets `prometheusOperator.admissionWebhooks.enabled=false`
+and `grafana.testFramework.enabled=false`, which are Helm hooks, and
+`prometheusOperator.tls.enabled=false`. Without the webhooks' certificate
+Job nothing creates the Secret `kube-prometheus-stack-admission`, which the
+operator mounts while TLS is on. Its pod then stays in `ContainerCreating`
+with `MountVolume.SetUp failed for volume "tls-secret"`, seen on kind with
+chart 92.11.0.
+
+The chart generates Grafana's admin password into a Secret. The Kapitan
+side commits none: `admin-password` is the Kapitan ref
+`?{base64:grafana/admin-password||random:str:40}`, which the first compile
+creates in `check`'s temporary refs path and the second, with `--reveal`,
+writes into the Secret. The base64 backend encrypts nothing, as in the
+recipes (EX-5).
 
 ## Open questions
 
@@ -833,7 +950,8 @@ generator keeps a webhook out of its own namespace, the chart does not.
 | `recipes/inventory/targets/charts.yml` | Every operator class and no generator, for `check` to fetch the charts (EX-4, EX-5a) |
 | `argocd-vs-flux/` | One Kapitan project (targets `web`, `argocd`, `flux`), the Gitea manifest and a Chainsaw test per tool; `check <argocd\|flux>` |
 | `helm-mutate/` | One Kapitan project (targets `helm`, `podinfo`, `argocd`, `flux`), the podinfo chart pinned in `inventory/classes/podinfo.yml`, the mutations in `inventory/targets/podinfo.yml`, a Chainsaw test per tool; `check <kubectl\|argocd\|flux>` |
-| `chart-vs-kapitan/` | One Kapitan project on the omegaconf backend, one target per chart, chart values in `values/`, CRDs fetched by `check` into `kapitan/vendor/`; `check <chart>` (EX-13) |
+| `chart-vs-kapitan/` | One Kapitan project on the omegaconf backend, one target per chart, chart values in `values/`, CRDs and jsonnet libraries fetched by `check` into `kapitan/vendor/`; `check <chart>` (EX-13, EX-13a) |
+| `chart-vs-kapitan/kapitan/components/kube-prometheus-stack.jsonnet`, `chart-vs-kapitan/kapitan/jsonnetfile.json`, `chart-vs-kapitan/kapitan/jsonnetfile.lock.json` | Rules and dashboards of kube-prometheus-stack and the pins of their sources (EX-13a) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
 
 Recipes and their checks:
