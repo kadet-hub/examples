@@ -860,7 +860,7 @@ Grafana's `GF_PATHS_*` and log mode.
     (`kube-prometheus-stack`); `manual:` with one ServiceMonitor and one
     rule group dropped from the Kapitan side, the check fails on the
     missing job and rules
-  - Since: this change
+  - Since: #47
 
 Prometheus names a scrape job after the Service it scrapes, unless the
 ServiceMonitor's `jobLabel` names a label of that Service. The chart's
