@@ -1,0 +1,76 @@
+# metrics-server as the metrics-server chart renders it with default values.
+classes: [common]
+parameters:
+  namespace: kube-system
+  components:
+    metrics-server:
+      image: registry.k8s.io/metrics-server/metrics-server:v0.9.0
+      priority_class_name: system-cluster-critical
+      service_account:
+        create: true
+        automount_service_account_token: true
+      automount_service_account_token: true
+      args:
+        - --secure-port=10250
+        - --cert-dir=/tmp
+        - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
+        - --kubelet-use-node-status-port
+        - --metric-resolution=15s
+        - --kubelet-insecure-tls  # kind's kubelets serve self-signed certificates; the chart gets it from values/
+      ports:
+        https:
+          container_port: 10250
+          service_port: 443
+      healthcheck:
+        liveness: {type: http, scheme: HTTPS, port: https, path: /livez, timeout_seconds: 1}
+        readiness: {type: http, scheme: HTTPS, port: https, path: /readyz, initial_delay_seconds: 20, timeout_seconds: 1}
+      security_context:
+        allowPrivilegeEscalation: false
+        capabilities: {drop: [ALL]}
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile: {type: RuntimeDefault}
+      resources:
+        requests: {cpu: 100m, memory: 200Mi}
+      volume_mounts:
+        tmp: {mount_path: /tmp}
+      volumes:
+        tmp: {emptyDir: {}}
+      service:
+        type: ClusterIP
+      cluster_role:
+        rules:
+          - {apiGroups: [""], resources: [nodes/metrics], verbs: [get]}
+          - {apiGroups: [""], resources: [pods, nodes, namespaces, configmaps], verbs: [get, list, watch]}
+  generators:
+    kubernetes:
+      rbac:
+        metrics-server-aggregated-reader:
+          labels:
+            rbac.authorization.k8s.io/aggregate-to-admin: "true"
+            rbac.authorization.k8s.io/aggregate-to-edit: "true"
+            rbac.authorization.k8s.io/aggregate-to-view: "true"
+          rules:
+            - {apiGroups: [metrics.k8s.io], resources: [pods, nodes], verbs: [get, list, watch]}
+        metrics-server-auth-delegator:
+          cluster_role: system:auth-delegator
+          cluster_wide: true
+          service_accounts: [kube-system/metrics-server]
+        metrics-server-auth-reader:
+          role: extension-apiserver-authentication-reader
+          namespace: kube-system
+          service_accounts: [metrics-server]
+      manifests:
+        v1beta1.metrics.k8s.io:
+          api_version: apiregistration.k8s.io/v1
+          kind: APIService
+          name: v1beta1.metrics.k8s.io
+          body:
+            spec:
+              group: metrics.k8s.io
+              groupPriorityMinimum: 100
+              insecureSkipTLSVerify: true
+              service: {name: metrics-server, namespace: kube-system, port: 443}
+              version: v1beta1
+              versionPriority: 100

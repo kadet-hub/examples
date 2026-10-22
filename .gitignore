@@ -11,3 +11,4 @@ dl/
 /helm-mutate/charts/
 /cert-manager-mutate/charts/
 /recipes/charts/
+/chart-vs-kapitan/kapitan/vendor/

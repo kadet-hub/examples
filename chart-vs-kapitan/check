@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# check <chart>: renders the chart with Helm and the same app from the Kapitan
+# inventory (omegaconf backend), and fails unless
+#   - the API server defaults both to the same objects, RBAC aside,
+#   - the chart's and Kapitan's ServiceAccount hold the same permissions,
+#   - the Kapitan version works on kind.
+# Prints the lines each side asks you to write and maintain.
+# Needs helm, kubectl, kind, uv, docker, and on first run gh and oras.
+set -euo pipefail
+cd "$(dirname "$0")"
+chart=${1:?usage: check <chart>}
+out=$(mktemp -d)
+cluster=chart-vs-kapitan-$$
+trap 'kind delete cluster --name "$cluster" >/dev/null 2>&1 || true; rm -rf -- "$out"' EXIT
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+
+case $chart in
+  metrics-server)
+    # renovate: datasource=github-release-attachments depName=kubernetes-sigs/metrics-server
+    CHART_VERSION=metrics-server-helm-chart-3.14.0
+    CHART_SHA256=c2ca1185c01e6e7f53dd1b7d131f0c9b3fa50e003ed068b784563a1b5a3422a1
+    url=https://github.com/kubernetes-sigs/metrics-server/releases/download/$CHART_VERSION/metrics-server-${CHART_VERSION##*-}.tgz
+    fetch() { curl -fsSLo "$out/chart.tgz" "$url" && echo "$CHART_SHA256  $out/chart.tgz" | sha256sum -c --quiet; }
+    namespace=kube-system
+    sas=(metrics-server)
+    ready() { kubectl -n kube-system rollout status deploy/metrics-server --timeout=180s; }
+    works() {
+      # the API answers only once the first scrape is in
+      for _ in $(seq 60); do kubectl top nodes >/dev/null 2>&1 && break; sleep 2; done
+      kubectl top nodes
+    }
+    ;;
+  cert-manager)
+    # renovate: datasource=docker depName=quay.io/jetstack/charts/cert-manager
+    CHART=quay.io/jetstack/charts/cert-manager:v1.21.2@sha256:634dce9c13b56677a2c05e2ab76c312d0be2664022d5dd05815da67e1fd5f610
+    # renovate: datasource=github-release-attachments depName=cert-manager/cert-manager
+    CRDS_VERSION=v1.21.2
+    CRDS_SHA256=262fef78478492cd35b73a1b227106b7802f9c056361d1f561d04b32d751337f
+    fetch() {
+      helm pull "oci://${CHART%%:*}@${CHART#*@}" -d "$out" >/dev/null 2>&1
+      mv "$out"/cert-manager*.tgz "$out/chart.tgz"
+      mkdir -p kapitan/vendor
+      curl -fsSLo kapitan/vendor/cert-manager.crds.yaml \
+        "https://github.com/cert-manager/cert-manager/releases/download/$CRDS_VERSION/cert-manager.crds.yaml"
+      echo "$CRDS_SHA256  kapitan/vendor/cert-manager.crds.yaml" | sha256sum -c --quiet
+    }
+    namespace=cert-manager
+    sas=(cert-manager cert-manager-cainjector cert-manager-webhook)
+    ready() { for d in cert-manager cert-manager-cainjector cert-manager-webhook; do kubectl -n cert-manager rollout status "deploy/$d" --timeout=180s; done; }
+    works() {
+      # a self-signed issuer signs a certificate through the controller, after the webhook admitted both
+      local i
+      for i in $(seq 30); do kubectl apply -f - >"$out/issuer.log" 2>&1 <<'YAML' && break; sleep 2; done
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata: {name: selfsigned}
+spec: {selfSigned: {}}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: {name: demo, namespace: default}
+spec: {secretName: demo-tls, dnsNames: [demo.example.org], issuerRef: {kind: ClusterIssuer, name: selfsigned}}
+YAML
+      ((i < 30)) || { cat "$out/issuer.log"; return 1; }
+      kubectl -n default wait certificate/demo --for=condition=Ready --timeout=120s
+    }
+    ;;
+  *) echo "unknown chart: $chart" >&2; exit 2 ;;
+esac
+
+# The pinned kadet-hub generator: check its attestation, then pull by digest.
+if [[ ! -d kapitan/lib/kubernetes ]]; then
+  src=$(grep -o 'ghcr.io/kadet-hub/kubernetes:[^ ]*' kapitan/inventory/classes/common.yml)
+  ref=${src%%:*}@${src#*@}
+  gh attestation verify "oci://$ref" --owner kadet-hub \
+    --cert-identity https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main >/dev/null
+  oras pull -o "$out/oci" "$ref" >/dev/null
+  mkdir -p kapitan/lib/kubernetes
+  tar -xf "$out/oci/kubernetes.tar" -C kapitan/lib/kubernetes
+fi
+
+fetch
+helm template "$chart" "$out/chart.tgz" -n "$namespace" -f "values/$chart.yaml" >"$out/chart.yaml"
+(cd kapitan && "${py[@]}" kapitan compile -t "$chart" --output-path "$out/kapitan" >"$out/kapitan.log" 2>&1) \
+  || { cat "$out/kapitan.log"; exit 1; }
+find "$out/kapitan/compiled/$chart" -name '*.yaml' -exec sh -c 'cat "$1"; echo ---' _ {} \; >"$out/kapitan.yaml"
+
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+export KUBECONFIG=$out/kubeconfig
+# A fresh cluster for each install, so neither side sees what the other
+# left behind at runtime, such as the webhook CA Secret of cert-manager.
+new_cluster() {
+  kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+  kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE" >/dev/null 2>&1
+  kind get kubeconfig --name "$cluster" >"$KUBECONFIG"
+  kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl create clusterrolebinding chart-vs-kapitan-viewer --clusterrole view --user viewer >/dev/null
+}
+new_cluster
+
+# Both sides as the API server stores them, without the fields that name the
+# tool or the moment. RBAC objects are compared by what they grant, below.
+normalize() {
+  "${py[@]}" python -I -c '
+import sys, yaml
+drop_meta = ("labels", "annotations", "uid", "resourceVersion", "creationTimestamp", "managedFields", "generation")
+rbac = ("ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding")
+docs = [d for d in yaml.safe_load_all(sys.stdin) if d]
+items = []
+for d in docs:
+    for o in d.get("items", [d]):
+        if o["kind"] in rbac:
+            continue
+        for k in drop_meta:
+            o["metadata"].pop(k, None)
+        o.pop("status", None)
+        # unset means true for a ServiceAccount and a pod; the generator writes it out
+        if o.get("automountServiceAccountToken") is True:
+            del o["automountServiceAccountToken"]
+        pod = o.get("spec", {}).get("template", {}).get("spec", {})
+        if pod.get("automountServiceAccountToken") is True:
+            del pod["automountServiceAccountToken"]
+        tpl = o.get("spec", {}).get("template", {}).get("metadata", {})
+        tpl.pop("labels", None); tpl.pop("annotations", None)
+        o.get("spec", {}).pop("selector", None)
+        items.append(o)
+# Names that follow the generator convention rather than the chart, and
+# list order, are not behaviour. The post lists these differences.
+named = {}
+for o in items:
+    pod = o.get("spec", {}).get("template", {}).get("spec", {})
+    for c in pod.get("containers", []):
+        c["name"] = "-"
+        c.get("ports", []).sort(key=lambda p: p["containerPort"])
+        named[o["metadata"]["name"]] = {p["name"]: p["containerPort"] for p in c.get("ports", []) if "name" in p}
+for o in items:
+    if o["kind"] == "Service":
+        for p in o["spec"].get("ports", []):
+            p.pop("name", None)
+            if isinstance(p.get("targetPort"), str):
+                p["targetPort"] = named.get(o["metadata"]["name"], {}).get(p["targetPort"], p["targetPort"])
+        o["spec"]["ports"].sort(key=lambda p: p["port"])
+    if o["kind"].endswith("WebhookConfiguration"):
+        o["metadata"]["name"] = "-"
+        for w in o["webhooks"]:
+            # the generator keeps a webhook out of its own namespace, the chart does not
+            own = {"matchExpressions": [{"key": "kubernetes.io/metadata.name", "operator": "NotIn",
+                                         "values": [w["clientConfig"]["service"]["namespace"]]}]}
+            if w.get("namespaceSelector") == own:
+                w["namespaceSelector"] = {}
+items.sort(key=lambda o: (o["kind"], o["metadata"].get("namespace", ""), o["metadata"]["name"]))
+if not items:
+    sys.exit("normalize: no objects")
+print(len(items), file=sys.stderr)
+sys.stdout.write(yaml.safe_dump_all(items, sort_keys=True))
+'
+}
+for side in chart kapitan; do
+  kubectl apply --dry-run=server -o yaml -f "$out/$side.yaml" | normalize >"$out/$side.objects" 2>"$out/$side.count"
+done
+diff -u "$out/chart.objects" "$out/kapitan.objects"
+echo "objects: chart = kapitan ($(<"$out/chart.count") outside RBAC)"
+
+# Permissions: install each side on its own cluster and list what its
+# ServiceAccounts may do and what a user with only the built-in view role may
+# do (aggregated ClusterRoles land there).
+# the order of verbs follows the rules, which the two sides split differently
+verbs() { "${py[@]}" python -I -c '
+import re, sys
+print("".join(sorted(re.sub(r"\[([^]]*)\]\s*$", lambda m: "[" + " ".join(sorted(m.group(1).split())) + "]", l.rstrip()) + "\n" for l in sys.stdin)), end="")'; }
+can_i() {
+  for sa in "${sas[@]}"; do
+    echo "--- $sa"
+    kubectl auth can-i --list --as "system:serviceaccount:$namespace:$sa" | verbs
+  done
+  echo "--- viewer"
+  kubectl auth can-i --list --as viewer | verbs
+}
+helm install "$chart" "$out/chart.tgz" -n "$namespace" -f "values/$chart.yaml" --wait >/dev/null
+ready >/dev/null
+can_i >"$out/chart.can-i"
+new_cluster
+kubectl apply -f "$out/kapitan.yaml" >/dev/null
+ready >/dev/null
+can_i >"$out/kapitan.can-i"
+diff -u "$out/chart.can-i" "$out/kapitan.can-i"
+echo "permissions: chart = kapitan ($(wc -l <"$out/kapitan.can-i") lines of can-i --list)"
+works
+
+# What each side asks you to write and maintain.
+tar -xzf "$out/chart.tgz" -C "$out"
+echo "chart: $(find "$out/$chart/templates" -type f -exec cat {} + | wc -l) template lines maintained by the chart," \
+  "$(wc -l <"$out/$chart/values.yaml") lines of values.yaml, $(grep -cv '^\s*#\|^\s*$' "values/$chart.yaml") lines set here"
+echo "kapitan: $(grep -cv '^\s*#\|^\s*$' "kapitan/inventory/targets/$chart.yml") lines of inventory, generator kubernetes maintained by kadet-hub"

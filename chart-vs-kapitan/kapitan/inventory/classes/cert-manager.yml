@@ -1,0 +1,7 @@
+# The CRDs from cert-manager's release, downloaded and checked by ../../../check.
+parameters:
+  kapitan:
+    compile:
+      - input_type: copy
+        input_paths: [vendor/cert-manager.crds.yaml]
+        output_path: manifests/

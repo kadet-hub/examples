@@ -1,0 +1,12 @@
+parameters:
+  kapitan:
+    vars:
+      target: ${_kapitan_.name.short}
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/kubernetes:1.4.0@sha256:d85ebe7040d67fdf238f685fcf70e6e745a339aed680af75f2b390e4a991c06b
+        output_path: lib/kubernetes
+    compile:
+      - input_type: kadet
+        input_paths: [lib/kubernetes]
+        output_path: manifests/
