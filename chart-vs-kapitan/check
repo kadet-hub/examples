@@ -8,7 +8,7 @@
 # kind must report the same scrape targets, rules, Alertmanager and Grafana.
 # Prints the lines each side asks you to write and maintain.
 # Needs helm, kubectl, kind, uv, docker, jq, jb for kube-prometheus-stack,
-# and on first run gh and oras.
+# and gh and oras on first run and after a generator pin changed.
 set -euo pipefail
 cd "$(dirname "$0")"
 chart=${1:?usage: check <chart>}
@@ -136,18 +136,21 @@ YAML
   *) echo "unknown chart: $chart" >&2; exit 2 ;;
 esac
 
-# The pinned kadet-hub generators: check each one's attestation, then pull by digest.
+# The pinned kadet-hub generators: check each one's attestation, then pull by
+# digest. kapitan/lib/<name>/.ref names the digest pulled before; a changed pin pulls again.
 mapfile -t sources < <(grep -ho 'ghcr.io/kadet-hub/[^ ]*' kapitan/inventory/classes/*.yml | sort -u)
 for src in "${sources[@]}"; do
   name=${src#ghcr.io/kadet-hub/}
   name=${name%%:*}
-  [[ -d kapitan/lib/$name ]] && continue
   ref=${src%%:*}@${src#*@}
+  [[ -f kapitan/lib/$name/.ref && $(<"kapitan/lib/$name/.ref") == "$ref" ]] && continue
   gh attestation verify "oci://$ref" --owner kadet-hub \
     --cert-identity https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main >/dev/null
   oras pull -o "$out/oci" "$ref" >/dev/null
+  rm -rf -- "kapitan/lib/$name"
   mkdir -p "kapitan/lib/$name"
   tar -xf "$out/oci/$name.tar" -C "kapitan/lib/$name"
+  echo "$ref" >"kapitan/lib/$name/.ref"
 done
 
 fetch

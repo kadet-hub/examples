@@ -351,8 +351,15 @@ schedule instead of trusting the state on the publishing day.
   release workflow identity, pull by digest with `oras` and compile without
   `--fetch`.
 
-  - Test: `manual:` `grep -rn -- --fetch */check`
-  - Since: tbd
+  `chart-vs-kapitan/check` keeps the generators it pulled in
+  `kapitan/lib/`, each with the reference it was pulled by. When a pin in
+  `kapitan/inventory/classes/` names another digest, it verifies and pulls
+  that generator again.
+
+  - Test: `manual:` `grep -rn -- --fetch */check`; `manual:`
+    `chart-vs-kapitan/check` pulls the kubernetes generator again after
+    its pin in `common.yml` changed, and not while the pin is unchanged
+  - Since: tbd; `chart-vs-kapitan` pulls again on a changed pin: tbd
 
 ## Recipes
 
