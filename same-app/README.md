@@ -1,8 +1,8 @@
 # same-app
 
 The app from [the post](https://kadet-hub.org/blog/same-app/) rendered with
-Helm (`helm/`), Kustomize (`kustomize/`), Pulumi (`pulumi/`) and Kapitan
-(`kapitan/`). `./check` renders dev and prod with each tool and diffs the
+Helm (`helm/`), Helmfile (`helmfile/`, the same chart and values files),
+Kustomize (`kustomize/`), Pulumi (`pulumi/`) and Kapitan (`kapitan/`). `./check` renders dev and prod with each tool and diffs the
 normalized output against Kapitan's.
 
 Pulumi renders without a cluster: the Kubernetes provider's

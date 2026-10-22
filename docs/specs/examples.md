@@ -18,8 +18,8 @@ schedule instead of trusting the state on the publishing day.
   post's claim no longer holds.
 
   The script checks the claim itself, not only that the tools ran:
-  `same-app` diffs the Helm, Kustomize and Pulumi renderings against
-  Kapitan's, `config-tools` diffs its three renderings,
+  `same-app` diffs the Helm, Helmfile, Kustomize and Pulumi renderings
+  against Kapitan's, `config-tools` diffs its three renderings,
   `apiserver-dry-run` expects exactly the five broken documents to be
   rejected and the four valid ones to be created, `gvisor-ci` compares the
   escape scripts' output inside and outside the sandbox and across Docker
@@ -154,10 +154,10 @@ schedule instead of trusting the state on the publishing day.
   Renovate updates a version and its checksum or digest in the same pull
   request. Each pin uses one of four mechanisms:
 
-  - Release asset: uv, oras, kubeconform, Pulumi and its Kubernetes plugin,
-    etcd, tk, jb, kind, chainsaw, talosctl, tofu and gVisor are GitHub
-    release assets, and so are the install manifests of Flux and of the
-    RabbitMQ Cluster Operator. Their `# renovate:` comment names
+  - Release asset: uv, oras, kubeconform, Helmfile, Pulumi and its
+    Kubernetes plugin, etcd, tk, jb, kind, chainsaw, talosctl, tofu and
+    gVisor are GitHub release assets, and so are the install manifests of
+    Flux and of the RabbitMQ Cluster Operator. Their `# renovate:` comment names
     `datasource=github-release-attachments`, which hashes the matching
     asset of the new release. The pinned value MUST be the exact release
     tag, because the datasource looks the release up by it; URLs that need

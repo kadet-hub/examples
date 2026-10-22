@@ -1,0 +1,13 @@
+environments:
+  dev: {}
+  prod: {}
+---
+releases:
+{{- range list "web" "api" }}
+  - name: {{ . }}
+    namespace: shop
+    chart: ../helm/app
+    values:
+      - ../helm/values/{{ . }}.yaml
+      - ../helm/values/{{ . }}-{{ $.Environment.Name }}.yaml
+{{- end }}
