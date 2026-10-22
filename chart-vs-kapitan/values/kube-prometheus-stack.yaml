@@ -1,0 +1,11 @@
+# The admission webhooks' certificates and Grafana's test pod are Helm hooks,
+# which Kapitan has no equivalent of. Without the webhooks nothing creates the
+# operator's TLS Secret, so its web server runs without TLS.
+prometheusOperator:
+  admissionWebhooks:
+    enabled: false
+  tls:
+    enabled: false
+grafana:
+  testFramework:
+    enabled: false

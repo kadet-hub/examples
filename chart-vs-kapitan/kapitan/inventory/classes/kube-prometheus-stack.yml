@@ -1,0 +1,19 @@
+# The prometheus-operator generator, the rules and dashboards compiled from
+# their upstream sources (../../components/, ../../jsonnetfile.json), and the
+# operator's CRDs, downloaded and checked by ../../../check.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/prometheus-operator:1.1.3@sha256:705a388f56bf5abf5bd9cc9e34b843fdee4666c7e47eafd037955612df4b72b5
+        output_path: lib/prometheus-operator
+    compile:
+      - input_type: kadet
+        input_paths: [lib/prometheus-operator]
+        output_path: manifests/
+      - input_type: jsonnet
+        input_paths: [components/kube-prometheus-stack.jsonnet]
+        output_path: manifests/
+      - input_type: copy
+        input_paths: [vendor/prometheus-operator-crds.yaml]
+        output_path: manifests/
