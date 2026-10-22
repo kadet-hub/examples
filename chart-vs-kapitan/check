@@ -8,7 +8,7 @@
 # kind must report the same scrape targets, rules, Alertmanager and Grafana.
 # Prints the lines each side asks you to write and maintain.
 # Needs helm, kubectl, kind, uv, docker, jq, jb for kube-prometheus-stack,
-# and on first run gh and oras.
+# and gh and oras on first run and after a generator pin changed.
 set -euo pipefail
 cd "$(dirname "$0")"
 chart=${1:?usage: check <chart>}
@@ -136,18 +136,21 @@ YAML
   *) echo "unknown chart: $chart" >&2; exit 2 ;;
 esac
 
-# The pinned kadet-hub generators: check each one's attestation, then pull by digest.
+# The pinned kadet-hub generators: check each one's attestation, then pull by
+# digest. kapitan/lib/<name>/.ref names the digest pulled before; a changed pin pulls again.
 mapfile -t sources < <(grep -ho 'ghcr.io/kadet-hub/[^ ]*' kapitan/inventory/classes/*.yml | sort -u)
 for src in "${sources[@]}"; do
   name=${src#ghcr.io/kadet-hub/}
   name=${name%%:*}
-  [[ -d kapitan/lib/$name ]] && continue
   ref=${src%%:*}@${src#*@}
+  [[ -f kapitan/lib/$name/.ref && $(<"kapitan/lib/$name/.ref") == "$ref" ]] && continue
   gh attestation verify "oci://$ref" --owner kadet-hub \
     --cert-identity https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main >/dev/null
   oras pull -o "$out/oci" "$ref" >/dev/null
+  rm -rf -- "kapitan/lib/$name"
   mkdir -p "kapitan/lib/$name"
   tar -xf "$out/oci/$name.tar" -C "kapitan/lib/$name"
+  echo "$ref" >"kapitan/lib/$name/.ref"
 done
 
 fetch
@@ -180,9 +183,10 @@ new_cluster
 # tool or the moment. RBAC objects are compared by what they grant, below.
 normalize() {
   "${py[@]}" python -I -c '
-import sys, yaml
+import re, sys, yaml
 drop_meta = ("labels", "annotations", "uid", "resourceVersion", "creationTimestamp", "managedFields", "generation")
 rbac = ("ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding")
+digest = re.compile(r"@sha256:[0-9a-f]{64}")
 docs = [d for d in yaml.safe_load_all(sys.stdin) if d]
 items = []
 for d in docs:
@@ -209,6 +213,12 @@ for o in items:
     pod = o.get("spec", {}).get("template", {}).get("spec", {})
     for c in pod.get("containers", []):
         c["name"] = "-"
+        # digest pinning: the Kapitan side names images as tag@sha256:digest, also
+        # in arguments (the ACME solver of cert-manager), the chart by tag
+        if sys.argv[1] == "kapitan":
+            c["image"] = digest.sub("", c["image"])
+            if "args" in c:
+                c["args"] = [digest.sub("", a) for a in c["args"]]
         c.get("ports", []).sort(key=lambda p: p["containerPort"])
         named[o["metadata"]["name"]] = {p["name"]: p["containerPort"] for p in c.get("ports", []) if "name" in p}
 for o in items:
@@ -231,7 +241,7 @@ if not items:
     sys.exit("normalize: no objects")
 print(len(items), file=sys.stderr)
 sys.stdout.write(yaml.safe_dump_all(items, sort_keys=True))
-'
+' "$1"
 }
 if [[ $functional ]]; then
   # Names, the RBAC layout and the fields left to the operator's defaults
@@ -249,7 +259,7 @@ print(row % ("total", chart.total(), kapitan.total()))
 ' "$out/chart.yaml" "$out/kapitan.yaml"
 else
   for side in chart kapitan; do
-    kubectl apply --dry-run=server -o yaml -f "$out/$side.yaml" | normalize >"$out/$side.objects" 2>"$out/$side.count"
+    kubectl apply --dry-run=server -o yaml -f "$out/$side.yaml" | normalize "$side" >"$out/$side.objects" 2>"$out/$side.count"
   done
   diff -u "$out/chart.objects" "$out/kapitan.objects"
   echo "objects: chart = kapitan ($(<"$out/chart.count") outside RBAC)"

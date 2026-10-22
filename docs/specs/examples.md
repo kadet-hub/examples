@@ -198,7 +198,8 @@ schedule instead of trusting the state on the publishing day.
   charts by version and the digest of their OCI artifact (the operator
   classes, podinfo in `helm-mutate`, cert-manager and trust-manager in
   `cert-manager-mutate`); images wherever an `image:` or
-  `image_name:` names one, by tag or by `tag@sha256:digest`, as
+  `image_name:` key or an `-image=` argument names one, by tag or by
+  `tag@sha256:digest`, as
   `repository`, `tag` and `digest` values, or as a mutate `images` entry
   with `tag` and `digest`. A `tag` value may be quoted: trust-manager's
   default package image has the tag `20250419.2`, which YAML reads as a
@@ -211,8 +212,7 @@ schedule instead of trusting the state on the publishing day.
   for the cert-manager and trust-manager classes of `cert-manager-mutate`,
   so that one pull request moves both cert-manager pins; kind and its
   node image; podinfo's chart and image; `@pulumi/kubernetes` and its
-  plugin; kube-prometheus-stack's chart, the Prometheus Operator CRDs and
-  the images of its Kapitan rebuild (EX-13a).
+  plugin.
 
   Three values follow another pin, and the pull request that changes that
   pin has to change them: the redis tag follows Argo CD's manifest (EX-7),
@@ -220,6 +220,19 @@ schedule instead of trusting the state on the publishing day.
   version of the `kafka` recipe follows the versions Strimzi supports, and
   the jsonnet sources of kube-prometheus-stack in `chart-vs-kapitan` follow
   the chart (EX-13a). CI fails when one no longer fits.
+
+  The Kapitan side of `chart-vs-kapitan` follows its chart the same way.
+  Its image tags, and the version and sha256 of the CRDs that `check`
+  downloads for it, are the ones the chart ships, and the pull request
+  that moves the chart sets them. Renovate proposes neither a tag nor a
+  CRD version for them. It still updates the digest of a pinned image tag.
+  Grouping them with the chart would not keep the two sides equal, because
+  Renovate moves each image to its newest tag. On 2026-10-22 the former
+  group `kube-prometheus-stack` held Prometheus v3.15.1 alone, while chart
+  92.11.0 ships v3.15.0. EX-13 fails when an image tag of metrics-server
+  or cert-manager, or the content of cert-manager's CRDs, differs from the
+  chart's. The comparison of kube-prometheus-stack does not look at
+  versions (OQ-6).
 
   Kapitan and Python packages are pinned by version through uv or with
   `==` in the scripts' `uv run --with` and `uvx`, which a regex manager
@@ -255,10 +268,15 @@ schedule instead of trusting the state on the publishing day.
 
   - Test: `manual:` review of `.github/workflows/examples.yml` and the `check` scripts;
     `renovate --platform=local --dry-run=lookup` with pins set one release
-    back; workflow job `pins`
+    back; workflow job `pins`. On 2026-10-22 Renovate 44.171.1 got
+    `chart-vs-kapitan` with the cert-manager chart and CRDs, the
+    metrics-server image and the kubernetes generator one release back,
+    and another digest on cert-manager's controller tag. It opened branches
+    for the chart, the generator and the digest, and none for the CRDs, the
+    metrics-server image and Prometheus v3.15.1
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
-    #33
+    #33; `chart-vs-kapitan` follows the chart: #50
 
 - EX-3a: Every image that an inventory, a Chainsaw test, a script or a
   workflow names MUST be pinned as `tag@sha256:digest`.
@@ -291,12 +309,12 @@ schedule instead of trusting the state on the publishing day.
   digest or the manifest's sha256 fixes such a reference, not the image
   behind it.
 
-  - Test: `manual:` `git grep -nE 'image(_name)?: [a-z0-9.-]+\.[a-z]+/' -- '**/inventory/**' '*/tests/**' | grep -v @sha256:`
+  - Test: `manual:` `git grep -nE 'image(_name)?(: |=)[a-z0-9.-]+\.[a-z]+/' -- '**/inventory/**' '*/tests/**' | grep -v @sha256:`
     lists the placeholders only; `renovate --platform=local --dry-run=lookup`
     reports every image with its current digest, and with the digest of
     `gvisor-ci/run` set back proposes the current `3.13-slim` digest and
     no 3.14
-  - Since: #32; `gvisor-ci/run`: #33
+  - Since: #32; `gvisor-ci/run`: #33; `chart-vs-kapitan`: #50
 
 - EX-3b: Renovate MUST propose a version only once it has been published
   for three days.
@@ -350,8 +368,15 @@ schedule instead of trusting the state on the publishing day.
   release workflow identity, pull by digest with `oras` and compile without
   `--fetch`.
 
-  - Test: `manual:` `grep -rn -- --fetch */check`
-  - Since: tbd
+  `chart-vs-kapitan/check` keeps the generators it pulled in
+  `kapitan/lib/`, each with the reference it was pulled by. When a pin in
+  `kapitan/inventory/classes/` names another digest, it verifies and pulls
+  that generator again.
+
+  - Test: `manual:` `grep -rn -- --fetch */check`; `manual:`
+    `chart-vs-kapitan/check` pulls the kubernetes generator again after
+    its pin in `common.yml` changed, and not while the pin is unchanged
+  - Since: tbd; `chart-vs-kapitan` pulls again on a changed pin: #50
 
 ## Recipes
 
@@ -787,8 +812,14 @@ objects by its own convention, puts one ClusterRole on each component and
 cannot use colons in names, which double as label values. The check
 therefore compares objects after the API server has defaulted them, with
 names, labels, selectors and port order normalized, and compares RBAC by
-what it grants. One behavioural difference is normalized and named: the
-generator keeps a webhook out of its own namespace, the chart does not.
+what it grants. Two differences are normalized and named. The generator
+keeps a webhook out of its own namespace, which the chart does not. The
+Kapitan side names its images as `tag@sha256:digest` (EX-3a), including
+the ACME solver image that cert-manager's controller takes as an
+argument, while the chart names the tag alone. This digest pinning is
+intended. The check strips the digest from container images and their
+arguments on the Kapitan side only, so a tag that differs from the
+chart's still fails.
 
 - EX-13: `chart-vs-kapitan/check <chart>` MUST fail unless, for
   metrics-server and cert-manager,
@@ -806,8 +837,11 @@ generator keeps a webhook out of its own namespace, the chart does not.
   cannot pass as equality. The check prints the template and values lines
   the chart maintains and the inventory lines the Kapitan side needs.
 
-  - Test: `examples` workflow, job `chart-vs-kapitan`
-  - Since: #44
+  - Test: `examples` workflow, job `chart-vs-kapitan`; `manual:` with the
+    metrics-server image set to v0.8.0 and its digest, or cert-manager's
+    ACME solver image to v1.21.1 and its digest, the object diff fails on
+    the tag
+  - Since: #44; digest pinning: #50
 
 kube-prometheus-stack 92.11.0 cannot be compared object by object. Its
 Kapitan side renders the operator, kube-state-metrics, node-exporter and
@@ -935,13 +969,17 @@ recipes (EX-5).
   committed copy of the release asset, which Renovate cannot replace.
   Should `check` download them by version and sha256 instead, although the
   post's workflow template reads them from the folder?
+- OQ-6: `chart-vs-kapitan/check kube-prometheus-stack` compares what both
+  sides do, not their versions. A chart pull request that leaves an image
+  tag or the CRDs of the Kapitan side behind passes CI. Should `check` also
+  compare the image tags of both sides?
 
 ## Inventory
 
 | Path | Content |
 |---|---|
 | `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3) |
-| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins (EX-3), keep MySQL on 9.7 (EX-5b) and the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
+| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins and leave the Kapitan side of `chart-vs-kapitan` to the chart (EX-3), keep MySQL on 9.7 (EX-5b) and the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
 | `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |

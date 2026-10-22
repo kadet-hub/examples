@@ -5,7 +5,6 @@
 classes: [common, cert-manager]
 parameters:
   namespace: cert-manager
-  cm_version: v1.21.2
   generators:
     manifest:
       default_config:
@@ -56,12 +55,12 @@ parameters:
             - {apiGroups: [acme.cert-manager.io], resources: [orders], verbs: [delete, deletecollection]}
   components:
     cert-manager:
-      image: quay.io/jetstack/cert-manager-controller:${cm_version}
+      image: quay.io/jetstack/cert-manager-controller:v1.21.2@sha256:70f532fd9cfde0b09d55687200942399d89838bc2d5d5b45152eb799a15912b8
       args:
         - --v=2
         - --cluster-resource-namespace=$(POD_NAMESPACE)
         - --leader-election-namespace=kube-system
-        - --acme-http01-solver-image=quay.io/jetstack/cert-manager-acmesolver:${cm_version}
+        - --acme-http01-solver-image=quay.io/jetstack/cert-manager-acmesolver:v1.21.2@sha256:699b40d622211ab7accad8a21b04c5fbaa1841ef7a12621e8de492dbe27b2503
         - --max-concurrent-challenges=60
       ports:
         http-healthz: {container_port: 9403}
@@ -112,7 +111,7 @@ parameters:
           - {apiGroups: [certificates.k8s.io], resourceNames: [issuers.cert-manager.io/*, clusterissuers.cert-manager.io/*], resources: [signers], verbs: [sign]}
           - {apiGroups: [authorization.k8s.io], resources: [subjectaccessreviews], verbs: [create]}
     cert-manager-cainjector:
-      image: quay.io/jetstack/cert-manager-cainjector:${cm_version}
+      image: quay.io/jetstack/cert-manager-cainjector:v1.21.2@sha256:c85268c64f2e0e76684bf5fe8906caff34b82523561c6affe0fae3546bd87562
       args: [--v=2, --leader-election-namespace=kube-system]
       role:
         namespace: kube-system
@@ -128,7 +127,7 @@ parameters:
           - {apiGroups: [apiregistration.k8s.io], resources: [apiservices], verbs: [get, list, watch, update, patch]}
           - {apiGroups: [apiextensions.k8s.io], resources: [customresourcedefinitions], verbs: [get, list, watch, update, patch]}
     cert-manager-webhook:
-      image: quay.io/jetstack/cert-manager-webhook:${cm_version}
+      image: quay.io/jetstack/cert-manager-webhook:v1.21.2@sha256:a60e2dac46dbb8a7f3df95c54ce941012f54c2fe022f0ee55aaa1ab40ed957ae
       args:
         - --v=2
         - --secure-port=10250
