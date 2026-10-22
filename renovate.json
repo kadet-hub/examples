@@ -41,7 +41,7 @@
       ],
       "matchStrings": [
         "source: oci://(?<depName>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})\\n\\s*chart_name: \\S+\\n\\s*version: (?<currentValue>\\S+)",
-        "image(?:_name)?: (?<depName>[a-z0-9.-]+\\.[a-z]+/[^:@\\s]+):(?<currentValue>[^@\\s]+)(?:@(?<currentDigest>sha256:[0-9a-f]{64}))?",
+        "image(?:_name)?(?:: |=)(?<depName>[a-z0-9.-]+\\.[a-z]+/[^:@\\s]+):(?<currentValue>[^@\\s]+)(?:@(?<currentDigest>sha256:[0-9a-f]{64}))?",
         "repository: (?<depName>\\S+)\\n\\s*tag: \"?(?<currentValue>[^\"\\s]+)\"?\\n\\s*digest: (?<currentDigest>sha256:[0-9a-f]{64})",
         "\\n\\s+(?<depName>[a-z0-9.-]+\\.[a-z]+/[^:@\\s]+):\\n\\s+tag: (?<currentValue>\\S+)\\n\\s+digest: (?<currentDigest>sha256:[0-9a-f]{64})"
       ],

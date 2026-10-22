@@ -180,9 +180,10 @@ new_cluster
 # tool or the moment. RBAC objects are compared by what they grant, below.
 normalize() {
   "${py[@]}" python -I -c '
-import sys, yaml
+import re, sys, yaml
 drop_meta = ("labels", "annotations", "uid", "resourceVersion", "creationTimestamp", "managedFields", "generation")
 rbac = ("ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding")
+digest = re.compile(r"@sha256:[0-9a-f]{64}")
 docs = [d for d in yaml.safe_load_all(sys.stdin) if d]
 items = []
 for d in docs:
@@ -209,6 +210,12 @@ for o in items:
     pod = o.get("spec", {}).get("template", {}).get("spec", {})
     for c in pod.get("containers", []):
         c["name"] = "-"
+        # digest pinning: the Kapitan side names images as tag@sha256:digest, also
+        # in arguments (the ACME solver of cert-manager), the chart by tag
+        if sys.argv[1] == "kapitan":
+            c["image"] = digest.sub("", c["image"])
+            if "args" in c:
+                c["args"] = [digest.sub("", a) for a in c["args"]]
         c.get("ports", []).sort(key=lambda p: p["containerPort"])
         named[o["metadata"]["name"]] = {p["name"]: p["containerPort"] for p in c.get("ports", []) if "name" in p}
 for o in items:
@@ -231,7 +238,7 @@ if not items:
     sys.exit("normalize: no objects")
 print(len(items), file=sys.stderr)
 sys.stdout.write(yaml.safe_dump_all(items, sort_keys=True))
-'
+' "$1"
 }
 if [[ $functional ]]; then
   # Names, the RBAC layout and the fields left to the operator's defaults
@@ -249,7 +256,7 @@ print(row % ("total", chart.total(), kapitan.total()))
 ' "$out/chart.yaml" "$out/kapitan.yaml"
 else
   for side in chart kapitan; do
-    kubectl apply --dry-run=server -o yaml -f "$out/$side.yaml" | normalize >"$out/$side.objects" 2>"$out/$side.count"
+    kubectl apply --dry-run=server -o yaml -f "$out/$side.yaml" | normalize "$side" >"$out/$side.objects" 2>"$out/$side.count"
   done
   diff -u "$out/chart.objects" "$out/kapitan.objects"
   echo "objects: chart = kapitan ($(<"$out/chart.count") outside RBAC)"

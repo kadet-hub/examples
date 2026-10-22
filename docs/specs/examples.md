@@ -198,7 +198,8 @@ schedule instead of trusting the state on the publishing day.
   charts by version and the digest of their OCI artifact (the operator
   classes, podinfo in `helm-mutate`, cert-manager and trust-manager in
   `cert-manager-mutate`); images wherever an `image:` or
-  `image_name:` names one, by tag or by `tag@sha256:digest`, as
+  `image_name:` key or an `-image=` argument names one, by tag or by
+  `tag@sha256:digest`, as
   `repository`, `tag` and `digest` values, or as a mutate `images` entry
   with `tag` and `digest`. A `tag` value may be quoted: trust-manager's
   default package image has the tag `20250419.2`, which YAML reads as a
@@ -291,12 +292,12 @@ schedule instead of trusting the state on the publishing day.
   digest or the manifest's sha256 fixes such a reference, not the image
   behind it.
 
-  - Test: `manual:` `git grep -nE 'image(_name)?: [a-z0-9.-]+\.[a-z]+/' -- '**/inventory/**' '*/tests/**' | grep -v @sha256:`
+  - Test: `manual:` `git grep -nE 'image(_name)?(: |=)[a-z0-9.-]+\.[a-z]+/' -- '**/inventory/**' '*/tests/**' | grep -v @sha256:`
     lists the placeholders only; `renovate --platform=local --dry-run=lookup`
     reports every image with its current digest, and with the digest of
     `gvisor-ci/run` set back proposes the current `3.13-slim` digest and
     no 3.14
-  - Since: #32; `gvisor-ci/run`: #33
+  - Since: #32; `gvisor-ci/run`: #33; `chart-vs-kapitan`: tbd
 
 - EX-3b: Renovate MUST propose a version only once it has been published
   for three days.
@@ -787,8 +788,14 @@ objects by its own convention, puts one ClusterRole on each component and
 cannot use colons in names, which double as label values. The check
 therefore compares objects after the API server has defaulted them, with
 names, labels, selectors and port order normalized, and compares RBAC by
-what it grants. One behavioural difference is normalized and named: the
-generator keeps a webhook out of its own namespace, the chart does not.
+what it grants. Two differences are normalized and named. The generator
+keeps a webhook out of its own namespace, which the chart does not. The
+Kapitan side names its images as `tag@sha256:digest` (EX-3a), including
+the ACME solver image that cert-manager's controller takes as an
+argument, while the chart names the tag alone. This digest pinning is
+intended. The check strips the digest from container images and their
+arguments on the Kapitan side only, so a tag that differs from the
+chart's still fails.
 
 - EX-13: `chart-vs-kapitan/check <chart>` MUST fail unless, for
   metrics-server and cert-manager,
@@ -806,8 +813,11 @@ generator keeps a webhook out of its own namespace, the chart does not.
   cannot pass as equality. The check prints the template and values lines
   the chart maintains and the inventory lines the Kapitan side needs.
 
-  - Test: `examples` workflow, job `chart-vs-kapitan`
-  - Since: #44
+  - Test: `examples` workflow, job `chart-vs-kapitan`; `manual:` with the
+    metrics-server image set to v0.8.0 and its digest, or cert-manager's
+    ACME solver image to v1.21.1 and its digest, the object diff fails on
+    the tag
+  - Since: #44; digest pinning: tbd
 
 kube-prometheus-stack 92.11.0 cannot be compared object by object. Its
 Kapitan side renders the operator, kube-state-metrics, node-exporter and
