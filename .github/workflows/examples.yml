@@ -227,7 +227,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           # renovate: datasource=docker depName=ghcr.io/kadet-hub/kubernetes
-          GENERATOR_VERSION: 1.2.0
+          GENERATOR_VERSION: 1.6.0
         run: verify-oci/verify kubernetes "$GENERATOR_VERSION" 47
 
   gvisor-ci:
