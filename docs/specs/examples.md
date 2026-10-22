@@ -221,18 +221,37 @@ schedule instead of trusting the state on the publishing day.
   the jsonnet sources of kube-prometheus-stack in `chart-vs-kapitan` follow
   the chart (EX-13a). CI fails when one no longer fits.
 
-  The Kapitan side of `chart-vs-kapitan` follows its chart the same way.
-  Its image tags, and the version and sha256 of the CRDs that `check`
-  downloads for it, are the ones the chart ships, and the pull request
-  that moves the chart sets them. Renovate proposes neither a tag nor a
-  CRD version for them. It still updates the digest of a pinned image tag.
-  Grouping them with the chart would not keep the two sides equal, because
-  Renovate moves each image to its newest tag. On 2026-10-22 the former
-  group `kube-prometheus-stack` held Prometheus v3.15.1 alone, while chart
+  The Kapitan side of `chart-vs-kapitan` follows its chart the same way
+  for metrics-server and kube-prometheus-stack. Their image tags, and the
+  version and sha256 of the Prometheus Operator CRDs that `check`
+  downloads, are the ones the chart ships, and the pull request that moves
+  the chart sets them. Renovate proposes neither a tag nor a CRD version
+  for them. It still updates the digest of a pinned image tag. Grouping
+  them with the chart would not keep the two sides equal, because Renovate
+  moves each image to its newest tag. On 2026-10-22 the former group
+  `kube-prometheus-stack` held Prometheus v3.15.1 alone, while chart
   92.11.0 ships v3.15.0. EX-13 fails when an image tag of metrics-server
   or cert-manager, or the content of cert-manager's CRDs, differs from the
   chart's. The comparison of kube-prometheus-stack does not look at
   versions (OQ-6).
+
+  cert-manager releases its chart, the CRDs that `check` downloads and the
+  controller, cainjector, webhook and ACME solver images under one
+  version, so the newest tag of each image is the chart's. Renovate moves
+  these six pins in the group `chart-vs-kapitan cert-manager` and creates
+  the group's branch only once all six have an update
+  (`minimumGroupSize: 6`). The CRDs are a GitHub release asset and wait
+  three days (EX-3b). The chart and the images on quay.io do not, so for
+  three days the group has five updates and no branch. Digest updates of
+  the chart and the images stay outside the group, and a rebuilt tag
+  still gets its own pull request.
+
+  A newer cert-manager release within those three days leaves the group
+  with the chart and images of the newer release and the CRDs of the
+  older one. EX-13 fails on this when the CRDs of the two releases differ.
+  When they are equal and the pull request is merged as it is, the CRD pin
+  stays one release behind until the next release, because one update
+  stays below the group size.
 
   Kapitan and Python packages are pinned by version through uv or with
   `==` in the scripts' `uv run --with` and `uvx`, which a regex manager
@@ -269,14 +288,20 @@ schedule instead of trusting the state on the publishing day.
   - Test: `manual:` review of `.github/workflows/examples.yml` and the `check` scripts;
     `renovate --platform=local --dry-run=lookup` with pins set one release
     back; workflow job `pins`. On 2026-10-22 Renovate 44.171.1 got
-    `chart-vs-kapitan` with the cert-manager chart and CRDs, the
-    metrics-server image and the kubernetes generator one release back,
-    and another digest on cert-manager's controller tag. It opened branches
-    for the chart, the generator and the digest, and none for the CRDs, the
-    metrics-server image and Prometheus v3.15.1
+    `chart-vs-kapitan` with cert-manager's chart, CRDs and four images at
+    v1.21.1 and the metrics-server image at v0.8.0. It opened one branch,
+    `renovate/chart-vs-kapitan-cert-manager`, that moves all six to
+    v1.21.2, and none for metrics-server and Prometheus v3.15.1. A stale
+    digest on cert-manager's webhook tag got a branch of its own, and so
+    did the kubernetes generator one release back (#50). `--platform=local`
+    stops before the branch worker, which applies `minimumGroupSize`.
+    Against a local Gitea with `--dry-run=full`, Renovate would commit the
+    group's branch, and skipped it with the CRDs' release age raised to 90
+    days, which leaves five updates
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
-    #33; `chart-vs-kapitan` follows the chart: #50
+    #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
+    `chart-vs-kapitan`: #51
 
 - EX-3a: Every image that an inventory, a Chainsaw test, a script or a
   workflow names MUST be pinned as `tag@sha256:digest`.
@@ -334,6 +359,10 @@ schedule instead of trusting the state on the publishing day.
   (`timestamp-optional`), as do the generator pins of the org preset. Docker
   Hub dates a tag by its last push, which a rebuild only moves later.
 
+  cert-manager's chart and images in `chart-vs-kapitan` wait for its CRDs.
+  Their group (EX-3) gets a branch only once the CRDs' GitHub release is
+  three days old.
+
   Renovate's `terraform-provider` datasource dates a version on
   registry.opentofu.org by the `published` field of api.opentofu.org, which
   is the date of the tagged commit. HashiCorp tagged kubernetes provider
@@ -368,15 +397,19 @@ schedule instead of trusting the state on the publishing day.
   release workflow identity, pull by digest with `oras` and compile without
   `--fetch`.
 
-  `chart-vs-kapitan/check` keeps the generators it pulled in
-  `kapitan/lib/`, each with the reference it was pulled by. When a pin in
-  `kapitan/inventory/classes/` names another digest, it verifies and pulls
-  that generator again.
+  `chart-vs-kapitan/check`, `same-app/check` and `config-tools/check` keep
+  the generators they pulled in `kapitan/lib/`, each with the reference it
+  was pulled by. When a pin in `kapitan/inventory/classes/` names another
+  digest, or a generator in `kapitan/lib/` has no reference, they verify
+  and pull that generator again.
 
   - Test: `manual:` `grep -rn -- --fetch */check`; `manual:`
-    `chart-vs-kapitan/check` pulls the kubernetes generator again after
-    its pin in `common.yml` changed, and not while the pin is unchanged
-  - Since: tbd; `chart-vs-kapitan` pulls again on a changed pin: #50
+    `chart-vs-kapitan/check` and `same-app/check` pull the kubernetes
+    generator again after its pin in `common.yml` changed, and not while
+    the pin is unchanged; `same-app/check` also pulls it again over a
+    `kapitan/lib/kubernetes` without a reference
+  - Since: tbd; `chart-vs-kapitan` pulls again on a changed pin: #50;
+    `same-app` and `config-tools`: #51
 
 ## Recipes
 
@@ -979,7 +1012,7 @@ recipes (EX-5).
 | Path | Content |
 |---|---|
 | `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3) |
-| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins and leave the Kapitan side of `chart-vs-kapitan` to the chart (EX-3), keep MySQL on 9.7 (EX-5b) and the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
+| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins, cert-manager's in `chart-vs-kapitan` included, and leave the rest of its Kapitan side to the chart (EX-3), keep MySQL on 9.7 (EX-5b) and the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
 | `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |

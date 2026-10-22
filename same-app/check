@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Renders the app with Helm, Helmfile, Kustomize, Pulumi and Kapitan and exits
 # 0 only if all five produce the same manifests for each environment.
-# Needs helm, helmfile, kustomize, pulumi, node/npm and uv; on first run also gh and oras
-# to fetch the generator. PULUMI_KUBERNETES_SHA256, if set, is the expected
+# Needs helm, helmfile, kustomize, pulumi, node/npm and uv; gh and oras on first run
+# and after the generator pin changed. PULUMI_KUBERNETES_SHA256, if set, is the expected
 # sha256 of the provider plugin archive.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -11,14 +11,17 @@ trap 'rm -rf -- "$out"' EXIT
 py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
 
 # Fetch the pinned kadet-hub generator: check its attestation, then pull by digest.
-if [[ ! -d kapitan/lib/kubernetes ]]; then
-  src=$(grep -o 'ghcr.io/kadet-hub/kubernetes:[^ ]*' kapitan/inventory/classes/common.yml)
-  ref=${src%%:*}@${src#*@}
+# kapitan/lib/kubernetes/.ref names the digest pulled before; a changed pin pulls again.
+src=$(grep -o 'ghcr.io/kadet-hub/kubernetes:[^ ]*' kapitan/inventory/classes/common.yml)
+ref=${src%%:*}@${src#*@}
+if [[ ! -f kapitan/lib/kubernetes/.ref || $(<kapitan/lib/kubernetes/.ref) != "$ref" ]]; then
   gh attestation verify "oci://$ref" --owner kadet-hub \
     --cert-identity https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main >/dev/null
   oras pull -o "$out/oci" "$ref" >/dev/null
+  rm -rf -- kapitan/lib/kubernetes
   mkdir -p kapitan/lib/kubernetes
   tar -xf "$out/oci/kubernetes.tar" -C kapitan/lib/kubernetes
+  echo "$ref" >kapitan/lib/kubernetes/.ref
 fi
 
 # Pulumi: npm packages from the lock file without install scripts, because
