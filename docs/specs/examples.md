@@ -276,7 +276,7 @@ schedule instead of trusting the state on the publishing day.
     metrics-server image and Prometheus v3.15.1
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
-    #33; `chart-vs-kapitan` follows the chart: tbd
+    #33; `chart-vs-kapitan` follows the chart: #50
 
 - EX-3a: Every image that an inventory, a Chainsaw test, a script or a
   workflow names MUST be pinned as `tag@sha256:digest`.
@@ -314,7 +314,7 @@ schedule instead of trusting the state on the publishing day.
     reports every image with its current digest, and with the digest of
     `gvisor-ci/run` set back proposes the current `3.13-slim` digest and
     no 3.14
-  - Since: #32; `gvisor-ci/run`: #33; `chart-vs-kapitan`: tbd
+  - Since: #32; `gvisor-ci/run`: #33; `chart-vs-kapitan`: #50
 
 - EX-3b: Renovate MUST propose a version only once it has been published
   for three days.
@@ -376,7 +376,7 @@ schedule instead of trusting the state on the publishing day.
   - Test: `manual:` `grep -rn -- --fetch */check`; `manual:`
     `chart-vs-kapitan/check` pulls the kubernetes generator again after
     its pin in `common.yml` changed, and not while the pin is unchanged
-  - Since: tbd; `chart-vs-kapitan` pulls again on a changed pin: tbd
+  - Since: tbd; `chart-vs-kapitan` pulls again on a changed pin: #50
 
 ## Recipes
 
@@ -841,7 +841,7 @@ chart's still fails.
     metrics-server image set to v0.8.0 and its digest, or cert-manager's
     ACME solver image to v1.21.1 and its digest, the object diff fails on
     the tag
-  - Since: #44; digest pinning: tbd
+  - Since: #44; digest pinning: #50
 
 kube-prometheus-stack 92.11.0 cannot be compared object by object. Its
 Kapitan side renders the operator, kube-state-metrics, node-exporter and
