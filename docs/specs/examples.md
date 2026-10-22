@@ -301,7 +301,7 @@ schedule instead of trusting the state on the publishing day.
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
-    `chart-vs-kapitan`: this change
+    `chart-vs-kapitan`: #51
 
 - EX-3a: Every image that an inventory, a Chainsaw test, a script or a
   workflow names MUST be pinned as `tag@sha256:digest`.
@@ -409,7 +409,7 @@ schedule instead of trusting the state on the publishing day.
     the pin is unchanged; `same-app/check` also pulls it again over a
     `kapitan/lib/kubernetes` without a reference
   - Since: tbd; `chart-vs-kapitan` pulls again on a changed pin: #50;
-    `same-app` and `config-tools`: this change
+    `same-app` and `config-tools`: #51
 
 ## Recipes
 
