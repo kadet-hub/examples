@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Renders the app with Tanka, cdk8s and Kapitan and exits 0 only if all three
 # produce the same manifests for each environment.
-# Needs tk, jb, node/npm and uv; on first run also gh and oras to fetch the generator.
+# Needs tk, jb, node/npm and uv; gh and oras on first run and after the generator pin changed.
 set -euo pipefail
 cd "$(dirname "$0")"
 out=$(mktemp -d)
@@ -12,14 +12,17 @@ py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' 
 # from the lock file, the kadet-hub generator by attested digest.
 [[ -d tanka/vendor ]] || (cd tanka && jb install >/dev/null 2>&1)
 [[ -d cdk8s/node_modules ]] || (cd cdk8s && npm ci --no-audit --no-fund >/dev/null)
-if [[ ! -d kapitan/lib/kubernetes ]]; then
-  src=$(grep -o 'ghcr.io/kadet-hub/kubernetes:[^ ]*' kapitan/inventory/classes/common.yml)
-  ref=${src%%:*}@${src#*@}
+# kapitan/lib/kubernetes/.ref names the digest pulled before; a changed pin pulls again.
+src=$(grep -o 'ghcr.io/kadet-hub/kubernetes:[^ ]*' kapitan/inventory/classes/common.yml)
+ref=${src%%:*}@${src#*@}
+if [[ ! -f kapitan/lib/kubernetes/.ref || $(<kapitan/lib/kubernetes/.ref) != "$ref" ]]; then
   gh attestation verify "oci://$ref" --owner kadet-hub \
     --cert-identity https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main >/dev/null
   oras pull -o "$out/oci" "$ref" >/dev/null
+  rm -rf -- kapitan/lib/kubernetes
   mkdir -p kapitan/lib/kubernetes
   tar -xf "$out/oci/kubernetes.tar" -C kapitan/lib/kubernetes
+  echo "$ref" >kapitan/lib/kubernetes/.ref
 fi
 
 (cd kapitan && "${py[@]}" kapitan compile --output-path "$out" >"$out/kapitan.log" 2>&1) \
