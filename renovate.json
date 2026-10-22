@@ -92,9 +92,10 @@
       "groupName": "strimzi operator"
     },
     {
-      "description": "EX-3: the Kapitan side of chart-vs-kapitan runs the image tags of the chart it rebuilds, which the chart's pull request sets; Renovate updates only the digest of a pinned tag",
+      "description": "EX-3: the Kapitan side of chart-vs-kapitan runs the image tags of the chart it rebuilds, which the chart's pull request sets; Renovate updates only the digest of a pinned tag. cert-manager has its group below",
       "matchFileNames": [
-        "chart-vs-kapitan/kapitan/inventory/targets/*.yml"
+        "chart-vs-kapitan/kapitan/inventory/targets/*.yml",
+        "!chart-vs-kapitan/kapitan/inventory/targets/cert-manager.yml"
       ],
       "matchUpdateTypes": [
         "major",
@@ -104,15 +105,36 @@
       "enabled": false
     },
     {
-      "description": "EX-3: so do the version and sha256 of the CRDs that chart-vs-kapitan/check downloads for the Kapitan side",
+      "description": "EX-3: so do the version and sha256 of the Prometheus Operator CRDs that chart-vs-kapitan/check downloads for the Kapitan side",
       "matchFileNames": [
         "chart-vs-kapitan/check"
       ],
       "matchDepNames": [
-        "cert-manager/cert-manager",
         "prometheus-operator/prometheus-operator"
       ],
       "enabled": false
+    },
+    {
+      "description": "EX-3: cert-manager's chart, CRDs and four images in chart-vs-kapitan share one version and move in one pull request, created only once all six have an update; the CRDs' release age holds it back three days (EX-3b)",
+      "matchFileNames": [
+        "chart-vs-kapitan/check",
+        "chart-vs-kapitan/kapitan/inventory/targets/cert-manager.yml"
+      ],
+      "matchPackageNames": [
+        "quay.io/jetstack/charts/cert-manager",
+        "cert-manager/cert-manager",
+        "quay.io/jetstack/cert-manager-controller",
+        "quay.io/jetstack/cert-manager-cainjector",
+        "quay.io/jetstack/cert-manager-webhook",
+        "quay.io/jetstack/cert-manager-acmesolver"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "groupName": "chart-vs-kapitan cert-manager",
+      "minimumGroupSize": 6
     },
     {
       "description": "EX-3: kind and the node image of its release",
