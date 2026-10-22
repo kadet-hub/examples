@@ -39,6 +39,7 @@ parameters:
         tmp: {emptyDir: {}}
       service:
         type: ClusterIP
+      api_service: {group: metrics.k8s.io, version: v1beta1, insecure_skip_tls_verify: true}
       cluster_role:
         rules:
           - {apiGroups: [""], resources: [nodes/metrics], verbs: [get]}
@@ -61,16 +62,3 @@ parameters:
           role: extension-apiserver-authentication-reader
           namespace: kube-system
           service_accounts: [metrics-server]
-      manifests:
-        v1beta1.metrics.k8s.io:
-          api_version: apiregistration.k8s.io/v1
-          kind: APIService
-          name: v1beta1.metrics.k8s.io
-          body:
-            spec:
-              group: metrics.k8s.io
-              groupPriorityMinimum: 100
-              insecureSkipTLSVerify: true
-              service: {name: metrics-server, namespace: kube-system, port: 443}
-              version: v1beta1
-              versionPriority: 100
