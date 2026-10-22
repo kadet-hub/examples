@@ -92,19 +92,27 @@
       "groupName": "strimzi operator"
     },
     {
-      "description": "EX-3: the images of the Kapitan rebuild of kube-prometheus-stack, together with the chart and the operator's CRDs of the next rule, so that both sides of EX-13a move in one pull request",
+      "description": "EX-3: the Kapitan side of chart-vs-kapitan runs the image tags of the chart it rebuilds, which the chart's pull request sets; Renovate updates only the digest of a pinned tag",
       "matchFileNames": [
-        "chart-vs-kapitan/kapitan/inventory/targets/kube-prometheus-stack.yml"
+        "chart-vs-kapitan/kapitan/inventory/targets/*.yml"
       ],
-      "groupName": "kube-prometheus-stack"
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "enabled": false
     },
     {
-      "description": "EX-3: kube-prometheus-stack's chart and the Prometheus Operator CRDs that chart-vs-kapitan/check pins, grouped with the rule before",
-      "matchPackageNames": [
-        "ghcr.io/prometheus-community/charts/kube-prometheus-stack",
+      "description": "EX-3: so do the version and sha256 of the CRDs that chart-vs-kapitan/check downloads for the Kapitan side",
+      "matchFileNames": [
+        "chart-vs-kapitan/check"
+      ],
+      "matchDepNames": [
+        "cert-manager/cert-manager",
         "prometheus-operator/prometheus-operator"
       ],
-      "groupName": "kube-prometheus-stack"
+      "enabled": false
     },
     {
       "description": "EX-3: kind and the node image of its release",
