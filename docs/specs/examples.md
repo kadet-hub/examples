@@ -1055,12 +1055,12 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
   the volume's target. A PVC bound by another provisioner, or a volume that
   never reaches the VM, fails one of these.
 
-  The job's `timeout-minutes` is 20. The run takes about 5 minutes on an
-  ubuntu-24.04 runner, half of it for KubeVirt and CDI to become
-  Available.
+  The job's `timeout-minutes` is 20. In the first run of #60 the job took
+  4 minutes 22 seconds on an ubuntu-24.04 runner, 1 minute 47 seconds of
+  it waiting for KubeVirt and CDI to become Available.
 
   - Test: `examples` workflow, job `kubevirt-csi`
-  - Since: this change
+  - Since: #60
 
 - EX-14a: `kubevirt-csi/check` MUST fail at once, naming KVM, when the host
   has no `/dev/kvm` or KubeVirt reports no allocatable
@@ -1072,7 +1072,7 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
 
   - Test: `examples` workflow, job `kubevirt-csi` (partial: the missing
     case only by hand, on a host without `/dev/kvm`)
-  - Since: this change
+  - Since: #60
 
 ## Open questions
 
