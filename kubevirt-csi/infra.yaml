@@ -1,0 +1,35 @@
+# What the infra cluster needs besides the compiled target: the namespace of
+# the tenant VM, the Service through which the CSI controller reaches the
+# tenant API, and the CDI CR, a kind the kubevirt generator does not render
+# (upstream's cdi-cr.yaml of the pinned release).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tenant-api
+  namespace: tenant
+spec:
+  selector:
+    vm.kubevirt.io/name: tenant
+  ports:
+    - port: 6443
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: CDI
+metadata:
+  name: cdi
+spec:
+  config:
+    featureGates:
+      - HonorWaitForFirstConsumer
+  imagePullPolicy: IfNotPresent
+  infra:
+    nodeSelector:
+      kubernetes.io/os: linux
+  workload:
+    nodeSelector:
+      kubernetes.io/os: linux

@@ -1,0 +1,29 @@
+# EX-14's negative case: a claim bound to a hostPath PV that no provisioner
+# created, which check's assertions must reject.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: static
+spec:
+  storageClassName: static
+  capacity:
+    storage: 1Gi
+  accessModes: [ReadWriteOnce]
+  hostPath:
+    path: /var/tmp/static
+  claimRef:
+    namespace: default
+    name: static
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: static
+  namespace: default
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: static
+  volumeName: static
+  resources:
+    requests:
+      storage: 1Gi

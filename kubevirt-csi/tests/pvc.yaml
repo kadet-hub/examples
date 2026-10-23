@@ -1,0 +1,31 @@
+# The tenant workload: a claim on the KubeVirt CSI driver's StorageClass and
+# a pod that writes to it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data
+  namespace: default
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: kubevirt
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: writer
+  namespace: default
+spec:
+  containers:
+    - name: writer
+      image: docker.io/library/busybox:1.38.0@sha256:fd7dc98638c8e305f4dc34e979f1c0fdfdcaeb0fbf8fcff77ae834b6da3d7e6e
+      command: [sh, -c, "echo written-by-tenant-pod > /data/hello && sleep 3600"]
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: data

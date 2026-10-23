@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `.github/workflows/examples.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `.github/workflows/examples.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -53,7 +53,8 @@ schedule instead of trusting the state on the publishing day.
 
   `argocd-vs-flux` fails unless EX-7 and EX-8 hold, `helm-mutate` unless
   EX-9 and EX-10 hold, `cert-manager-mutate` unless EX-11 holds,
-  `first-platform` and `helm-vs-terraform` unless EX-12 holds.
+  `first-platform` and `helm-vs-terraform` unless EX-12 holds,
+  `kubevirt-csi` unless EX-14 and EX-14a hold.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -102,8 +103,9 @@ schedule instead of trusting the state on the publishing day.
 
   kubeconform and an API server accept manifests that the kubelet cannot
   run, such as a readiness probe on a port the app does not listen on.
-  `recipes`, `argocd-vs-flux`, `helm-mutate` and `cert-manager-mutate`
-  deploy their workloads under EX-6, EX-7, EX-10 and EX-11.
+  `recipes`, `argocd-vs-flux`, `helm-mutate`, `cert-manager-mutate` and
+  `kubevirt-csi` deploy their workloads under EX-6, EX-7, EX-10, EX-11 and
+  EX-14.
   `first-platform/check` deploys `compiled/prod/apps` (Namespace,
   Deployment, Service, PodDisruptionBudget), `helm-vs-terraform/check`
   the Deployment, Service and ConfigMap of its first compile. Both create
@@ -160,7 +162,11 @@ schedule instead of trusting the state on the publishing day.
     Kubernetes plugin, etcd, tk, jb, kind, chainsaw, talosctl, tofu and
     gVisor are GitHub release assets, and so are the install manifests of
     Flux and of the RabbitMQ Cluster Operator and the CRDs of cert-manager
-    and Prometheus Operator in `chart-vs-kapitan`. Their `# renovate:` comment names
+    and Prometheus Operator in `chart-vs-kapitan`. In `kubevirt-csi` the
+    operator manifests of KubeVirt and CDI, virtctl and the k3s binary are
+    release assets too. The k3s pin sits in the cloud-init script of
+    `kubevirt-csi/inventory/targets/infra.yml`, which the comment manager
+    reads as well. Their `# renovate:` comment names
     `datasource=github-release-attachments`, which hashes the matching
     asset of the new release. The pinned value MUST be the exact release
     tag, because the datasource looks the release up by it; URLs that need
@@ -1004,6 +1010,90 @@ creates in `check`'s temporary refs path and the second, with `--reveal`,
 writes into the Secret. The base64 backend encrypts nothing, as in the
 recipes (EX-5).
 
+## KubeVirt CSI driver
+
+`kubevirt-csi/` runs the KubeVirt CSI driver that the kubevirt generator
+renders, end to end on one kind cluster. The kind cluster is the infra
+cluster. It runs KubeVirt, CDI and one VM, and that VM runs a single-node
+k3s cluster, the tenant. A PVC in the tenant becomes a DataVolume in the
+infra cluster, which KubeVirt hotplugs into the VM as a disk.
+
+One Kapitan project compiles two targets with the kubevirt generator,
+pinned by version and digest in `inventory/classes/generators.yml` and
+verified and pulled as in EX-4. Target `infra` renders the KubeVirt CR,
+the VM `tenant` and the driver's controller with its RBAC into the
+namespace `tenant`. Target `tenant` renders the node plugin, the CSIDriver
+and the default StorageClass `kubevirt`, whose volumes use kind's
+`standard` class in the infra cluster. The snapshot controller stays off,
+because the check takes no snapshot.
+
+The generator renders neither the operators nor a CDI CR. `check` applies
+the KubeVirt and CDI operators from their release manifests, pinned by
+version and sha256. `infra.yaml` holds what else the infra cluster needs:
+the namespace `tenant`, the CDI CR of the pinned release and the Service
+`tenant-api`, through which the controller reaches the tenant API.
+
+The VM boots the Debian 13 containerdisk, pinned as
+`13@sha256:<digest>`. quay.io/containerdisks publishes date tags in two
+schemes, so Renovate follows the digest of `13`. Its cloud-init script
+downloads k3s by version and sha256, starts it and annotates the node with
+the VM's name and namespace, which the driver reads to find the VM to
+hotplug into. `check` reads the admin kubeconfig over `virtctl ssh` with a
+key pair it creates per run and passes to the VM through
+`accessCredentials`, and reaches the tenant API from the host through
+`virtctl port-forward`.
+
+`check` applies the tenant side before the infra side, because the
+controller's kubeconfig Secret is built from the token Secret that the
+tenant's token controller fills. It applies the tenant Namespace first and
+the ServiceAccount `kubevirt-csi-controller-sa` before the rest, because
+the token controller deletes a token Secret whose ServiceAccount does not
+exist yet (generator README, Prerequisites).
+
+CDI has no StorageProfile entry for kind's `rancher.io/local-path`
+provisioner, and the driver's DataVolumes name no access mode. `check`
+therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
+`Filesystem`. Without the patch the DataVolumes stay Pending.
+
+- EX-14: `kubevirt-csi/check` MUST fail unless a PVC of the tenant's
+  StorageClass `kubevirt` is provisioned through the KubeVirt CSI driver
+  and its pod reads back what it wrote.
+
+  Provisioned through the driver means all of the following. The PVC is
+  Bound to a PV of driver `csi.kubevirt.io`. The PV's volume handle names
+  a DataVolume in the infra namespace `tenant` that carries the label
+  `csi-driver/cluster: tenant` from `infra_cluster_labels` and has
+  succeeded. The VMI `tenant` reports a hotplug volume of that name as
+  Ready. The pod's `/data` is mounted from the device that the VMI names as
+  the volume's target. A PVC bound by another provisioner, or a volume that
+  never reaches the VM, fails one of these.
+
+  `check` runs the same assertions against a second claim and fails unless
+  they reject it. `tests/static-pvc.yaml` binds that claim to a hostPath
+  PV of StorageClass `static`, which no provisioner serves, so the claim is
+  Bound without the driver. The assertions must stop on the PV's driver.
+  This takes seconds and needs no second cluster.
+
+  The job's `timeout-minutes` is 20. In the first run of #60 the job took
+  4 minutes 22 seconds on an ubuntu-24.04 runner, 1 minute 47 seconds of
+  it waiting for KubeVirt and CDI to become Available.
+
+  - Test: `examples` workflow, job `kubevirt-csi`; the negative case on
+    `tests/static-pvc.yaml` in the same `check`
+  - Since: #60
+
+- EX-14a: `kubevirt-csi/check` MUST fail at once, naming KVM, when the host
+  has no `/dev/kvm` or KubeVirt reports no allocatable
+  `devices.kubevirt.io/kvm` on the kind node.
+
+  KubeVirt does not emulate without KVM unless `useEmulation` is set, so
+  without it the VM stays unscheduled and the check would wait out its
+  timeouts. GitHub's ubuntu-24.04 runners expose `/dev/kvm`.
+
+  - Test: `examples` workflow, job `kubevirt-csi` (partial: the missing
+    case only by hand, on a host without `/dev/kvm`)
+  - Since: #60
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -1042,6 +1132,7 @@ recipes (EX-5).
 | `helm-mutate/` | One Kapitan project (targets `helm`, `podinfo`, `argocd`, `flux`), the podinfo chart pinned in `inventory/classes/podinfo.yml`, the mutations in `inventory/targets/podinfo.yml`, a Chainsaw test per tool; `check <kubectl\|argocd\|flux>` |
 | `chart-vs-kapitan/` | One Kapitan project on the omegaconf backend, one target per chart, chart values in `values/`, CRDs and jsonnet libraries fetched by `check` into `kapitan/vendor/`; `check <chart>` (EX-13, EX-13a) |
 | `chart-vs-kapitan/kapitan/components/kube-prometheus-stack.jsonnet`, `chart-vs-kapitan/kapitan/jsonnetfile.json`, `chart-vs-kapitan/kapitan/jsonnetfile.lock.json` | Rules and dashboards of kube-prometheus-stack and the pins of their sources (EX-13a) |
+| `kubevirt-csi/` | One Kapitan project (targets `infra`, `tenant`) with the kubevirt generator pinned in `inventory/classes/generators.yml`, `infra.yaml`, the tenant workload in `tests/pvc.yaml`, the negative case's claim in `tests/static-pvc.yaml`; `check` (EX-14, EX-14a) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
 
 Recipes and their checks:

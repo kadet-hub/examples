@@ -71,6 +71,9 @@ env:
   # renovate: datasource=github-release-attachments depName=opentofu/opentofu
   TOFU_VERSION: v1.13.1
   TOFU_SHA256: 378ada19d4bc70c43732004e8159be771b23b9a5afdf059e5f8a2b3fa2c70a69
+  # renovate: datasource=github-release-attachments depName=kubevirt/kubevirt
+  VIRTCTL_VERSION: v1.9.1
+  VIRTCTL_SHA256: c289393c8186a258653594605f5199b4c171a3131e6e409ed204a96b491b782a
 
 jobs:
   same-app:
@@ -593,6 +596,42 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: cert-manager-mutate/check
+
+  # EX-14, EX-14a: the KubeVirt CSI driver on kind, a tenant PVC through a
+  # k3s cluster in a KubeVirt VM.
+  kubevirt-csi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install oras, uv, kubectl, kind and virtctl
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          curl -fsSLo virtctl "https://github.com/kubevirt/kubevirt/releases/download/$VIRTCTL_VERSION/virtctl-$VIRTCTL_VERSION-linux-amd64"
+          sha256sum -c <<EOF
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          $KIND_SHA256  kind
+          $VIRTCTL_SHA256  virtctl
+          EOF
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
+          chmod +x kind virtctl
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: kubevirt-csi/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: kubevirt-csi/check
 
   # EX-3: Renovate bumps these versions only; the checksum comes from the
   # publisher, and the failure names the line to paste.
