@@ -317,7 +317,8 @@ schedule instead of trusting the state on the publishing day.
   The tag tells the reader which release runs, the digest makes every run
   pull the image CI checked. Renovate updates tag and digest in one pull
   request, and opens a digest-only one when the publisher rebuilds a tag,
-  as CloudNativePG does with `postgresql:18.6-system-trixie`. Where the tag
+  as CloudNativePG does with `postgresql:18.6-system-trixie` and Keycloak
+  with a whole release (EX-5a). Where the tag
   points to a multi-arch index, the digest is the index's, which
   `crane digest` and Renovate's docker datasource both return.
 
@@ -501,6 +502,18 @@ under Inventory names.
   runs in `keycloak` and watches that namespace only, as its release
   manifests install it.
 
+  Keycloak re-pushes release tags with new digests and deletes the old
+  chart digest. Between 09:47 and 09:49 UTC on 2026-10-23 it published
+  26.8.1 again: the chart, `keycloak` and `keycloak-operator` got new
+  digests, and quay answered the chart's old digest with `manifest
+  unknown`, so job `recipe` failed on the chart digest until the class
+  moved to the new one. The old image digests still resolved that day.
+  The rebuild came from the same source commit. The new chart's templates
+  carry `app.quarkus.io/commit-id` 24ed1dadf3f246a555adb6d3d4a99e9b3003fb3b,
+  the commit of the public 26.8.1 tag, and in the images only the build
+  date of the base image changed. Keycloak signs neither charts nor images,
+  so such a digest change is checked by hand against the commit ID (OQ-7).
+
   The RabbitMQ Cluster Operator has no Helm chart from its project (checked
   2026-10-19): rabbitmq/cluster-operator publishes release manifests and
   Kustomize bases, and Bitnami's `rabbitmq-cluster-operator` chart is
@@ -525,7 +538,7 @@ under Inventory names.
   - Test: `recipes/check` via the `examples` workflow, job `recipe` for
     `postgresql`, `keycloak`, `kafka` and `rabbitmq` (fails when helm rejects a chart's
     digest, a mutation matches nothing, or the operator does not come up)
-  - Since: #21; OQ-4 decided: #22
+  - Since: #21; OQ-4 decided: #22; Keycloak 26.8.1 re-push: #61
 
 - EX-5b: The `mysql` recipe MUST stay on MySQL's 9.7 LTS release line.
 
@@ -1098,6 +1111,10 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
   sides do, not their versions. A chart pull request that leaves an image
   tag or the CRDs of the Kapitan side behind passes CI. Should `check` also
   compare the image tags of both sides?
+- OQ-7: Keycloak publishes its chart and images unsigned, and
+  keycloak/keycloak#54273 asks for signatures. Once Keycloak signs charts
+  and images, should the Keycloak Operator class and `recipes/check` verify
+  signatures instead of a re-pushed digest being checked by hand (EX-5a)?
 
 ## Inventory
 
