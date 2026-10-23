@@ -1,0 +1,59 @@
+# The infra cluster, kind: the KubeVirt CR, the tenant cluster's VM and the
+# CSI driver's controller in the VM's namespace.
+classes:
+  - generators
+
+parameters:
+  kapitan:
+    vars:
+      target: infra
+  generators:
+    kubevirt:
+      namespace: tenant
+      kubevirt_operators:
+        # The CRD requires spec, which the generator omits unless set.
+        kubevirt:
+          spec: {}
+      virtual_machines:
+        # Single-node k3s. The cloud-init script annotates the node with its
+        # VM, which the CSI driver reads to find the VM to hotplug into.
+        tenant:
+          run_strategy: Always
+          cpu:
+            cores: 2
+          memory: 2Gi
+          image: quay.io/containerdisks/debian:13@sha256:0954f14f44c8657b5a4e4af974e185cbdff4b99314f02b3059c78e5fc3a1b930
+          cloudinit: |
+            #!/bin/bash
+            set -euo pipefail
+            # renovate: datasource=github-release-attachments depName=k3s-io/k3s
+            K3S_VERSION=v1.37.1+k3s1
+            K3S_SHA256=92b94582eb7b34a8cf532e6006842b9ed215a6783cf56a3dd6271fd35243b2c0
+            mkdir -p /etc/rancher/k3s
+            cat >/etc/rancher/k3s/config.yaml <<EOF
+            node-name: tenant
+            disable: [traefik, servicelb, metrics-server, local-storage]
+            tls-san: [tenant-api.tenant.svc]
+            EOF
+            curl -fsSLo /usr/local/bin/k3s "https://github.com/k3s-io/k3s/releases/download/$(sed s/+/%2B/ <<<"$K3S_VERSION")/k3s"
+            echo "$K3S_SHA256  /usr/local/bin/k3s" | sha256sum -c
+            chmod +x /usr/local/bin/k3s
+            systemd-run --unit=k3s -p Type=notify -p Delegate=yes -p KillMode=process /usr/local/bin/k3s server
+            until k3s kubectl get node tenant; do sleep 2; done
+            k3s kubectl annotate node tenant csi.kubevirt.io/infra-vm-name=tenant csi.kubevirt.io/infra-vm-namespace=tenant
+          spec:
+            template:
+              spec:
+                # check creates the Secret from a key pair of its own.
+                accessCredentials:
+                  - sshPublicKey:
+                      source:
+                        secret:
+                          secretName: tenant-ssh
+                      propagationMethod:
+                        noCloud: {}
+      csi:
+        role: infra
+        tenant_kubeconfig_secret: tenant-kubeconfig
+        infra_cluster_labels:
+          csi-driver/cluster: tenant

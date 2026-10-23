@@ -22,7 +22,8 @@
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.github/workflows/[^/]+\\.yml$/",
-        "/^[^/]+/(check|run)$/"
+        "/^[^/]+/(check|run)$/",
+        "kubevirt-csi/inventory/targets/infra.yml"
       ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>github-releases|node-version|docker) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?(?<currentValue>[^\"\\s:@]+)\"?\\n",

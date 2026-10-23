@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+# check: compiles the targets infra and tenant from the kubevirt generator,
+# installs KubeVirt and CDI on a new kind cluster, starts the tenant cluster,
+# k3s in a KubeVirt VM, deploys the KubeVirt CSI driver on both sides and
+# fails unless a tenant PVC is provisioned through the driver as a
+# DataVolume hotplugged into the VM (EX-14, EX-14a). Set KEEP=1 to keep the
+# cluster.
+# Needs a host with /dev/kvm, gh (authenticated), oras, uv, kind, kubectl,
+# virtctl, docker, ssh and jq.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+# EX-14a: without KVM the VM never starts and every wait below times out.
+[[ -c /dev/kvm ]] || { echo "EX-14a: /dev/kvm is missing; KubeVirt needs KVM on this host" >&2; exit 1; }
+
+tmp=$(mktemp -d)
+cluster=kubevirt-csi
+export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
+tkc=$tmp/tenant.kubeconfig
+tk() { kubectl --kubeconfig "$tkc" "$@"; }
+py=(uv run --quiet --python 3.13 --with 'kapitan[reclass-rs]==0.36.3')
+diagnose() {
+  kubectl get pods -A -o wide || true
+  kubectl get events -A --sort-by=.lastTimestamp | tail -40 || true
+  kubectl -n tenant get vm,vmi,dv,pvc -o wide || true
+  if [[ -s $tkc ]]; then
+    tk get pods,pvc -A -o wide || true
+    tk get events -A --sort-by=.lastTimestamp | tail -30 || true
+  fi
+}
+finish() {
+  local rc=$?
+  ((rc == 0)) || diagnose >&2
+  # shellcheck disable=SC2046 # one PID per word
+  kill $(jobs -p) 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+  exit "$rc"
+}
+trap finish EXIT
+until_ok() { # seconds command...: polls a condition every 5 seconds
+  local end=$((SECONDS + $1))
+  shift
+  until "$@"; do
+    ((SECONDS < end)) || { echo "timed out: $*" >&2; return 1; }
+    sleep 5
+  done
+}
+
+# EX-4: each pinned generator's attestation, then a pull by digest.
+# lib/<name>/.ref names the digest pulled before; a changed pin pulls again.
+mapfile -t sources < <(grep -ho 'ghcr.io/kadet-hub/[^ ]*' inventory/classes/generators.yml | sort -u)
+for src in "${sources[@]}"; do
+  name=${src#ghcr.io/kadet-hub/}
+  name=${name%%:*}
+  ref=${src%%:*}@${src#*@}
+  [[ -f lib/$name/.ref && $(<"lib/$name/.ref") == "$ref" ]] && continue
+  gh attestation verify "oci://$ref" --owner kadet-hub \
+    --cert-identity https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main >/dev/null
+  oras pull -o "$tmp/oci" "$ref" >/dev/null
+  rm -rf -- "lib/$name"
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/oci/$name.tar" -C "lib/$name" --no-same-owner
+  echo "$ref" >"lib/$name/.ref"
+done
+rm -rf compiled
+"${py[@]}" kapitan compile --inventory-backend reclass-rs
+
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
+
+# The operators from their release manifests; the generator renders the
+# KubeVirt CR, infra.yaml the CDI CR.
+# renovate: datasource=github-release-attachments depName=kubevirt/kubevirt
+KUBEVIRT_VERSION=v1.9.1
+KUBEVIRT_SHA256=9ac45a436c49d32e6fc21d542bcb7600b970705297b9e6752f3ef9b0a1d292da
+# renovate: datasource=github-release-attachments depName=kubevirt/containerized-data-importer
+CDI_VERSION=v1.66.1
+CDI_SHA256=c7d92bd1b2ee1a3952a5990000437c08d58109f31c0bd48ab6188ec27a13e224
+curl -fsSLo "$tmp/kubevirt-operator.yaml" \
+  "https://github.com/kubevirt/kubevirt/releases/download/$KUBEVIRT_VERSION/kubevirt-operator.yaml"
+curl -fsSLo "$tmp/cdi-operator.yaml" \
+  "https://github.com/kubevirt/containerized-data-importer/releases/download/$CDI_VERSION/cdi-operator.yaml"
+sha256sum -c --quiet <<EOF
+$KUBEVIRT_SHA256  $tmp/kubevirt-operator.yaml
+$CDI_SHA256  $tmp/cdi-operator.yaml
+EOF
+kubectl apply -f "$tmp/kubevirt-operator.yaml" -f "$tmp/cdi-operator.yaml" >/dev/null
+kubectl wait --for=condition=Established crd/kubevirts.kubevirt.io crd/cdis.cdi.kubevirt.io
+kubectl apply -f infra.yaml
+kubectl apply -f compiled/infra/kubevirt-kv.yaml
+kubectl -n kubevirt wait kv/kubevirt --for=condition=Available --timeout=600s
+kubectl wait cdi/cdi --for=condition=Available --timeout=600s
+# EX-14a: virt-handler advertises the KVM device only where it can use it.
+kvm=$(kubectl get nodes -o jsonpath='{.items[0].status.allocatable.devices\.kubevirt\.io/kvm}')
+[[ -n $kvm && $kvm != 0 ]] || { echo "EX-14a: the kind node has no allocatable devices.kubevirt.io/kvm" >&2; exit 1; }
+# CDI knows no access mode for kind's local-path provisioner, and the CSI
+# driver's DataVolumes name none; without this they stay Pending.
+kubectl wait --for=create storageprofile/standard --timeout=120s
+kubectl patch storageprofile standard --type=merge \
+  -p '{"spec":{"claimPropertySets":[{"accessModes":["ReadWriteOnce"],"volumeMode":"Filesystem"}]}}'
+
+# The tenant cluster. Its admin kubeconfig comes over SSH, the API through a
+# port-forward to the VM.
+ssh-keygen -q -t ed25519 -N '' -f "$tmp/id"
+kubectl -n tenant create secret generic tenant-ssh --from-file=key="$tmp/id.pub"
+kubectl apply -f compiled/infra/tenant/tenant-vm.yaml
+kubectl -n tenant wait vm/tenant --for=condition=Ready --timeout=300s
+ssh_vm() {
+  virtctl ssh -n tenant -l debian -i "$tmp/id" --known-hosts=/dev/null \
+    -t '-o StrictHostKeyChecking=no' -t '-o UserKnownHostsFile=/dev/null' -t '-o LogLevel=ERROR' \
+    vm/tenant -c "$1"
+}
+until_ok 600 ssh_vm 'test -f /etc/rancher/k3s/k3s.yaml' 2>/dev/null
+ssh_vm 'sudo cat /etc/rancher/k3s/k3s.yaml' | sed 's|https://127.0.0.1:6443|https://127.0.0.1:16443|' >"$tkc"
+virtctl port-forward -n tenant vm/tenant 16443:6443 >"$tmp/port-forward.log" 2>&1 &
+until_ok 120 tk get --raw /readyz >/dev/null 2>&1
+tk wait --for=create node/tenant --timeout=300s
+tk wait node/tenant --for=condition=Ready --timeout=300s
+tk wait node/tenant --for=jsonpath='{.metadata.annotations.csi\.kubevirt\.io/infra-vm-name}'=tenant --timeout=300s
+
+# The tenant side. The token controller deletes a token Secret whose
+# ServiceAccount does not exist yet, so the ServiceAccount goes first, after
+# its Namespace.
+tk apply -f compiled/tenant/kubevirt-csi-driver-namespace.yaml
+tk apply -f compiled/tenant/kubevirt-csi-driver/kubevirt-csi-controller-sa.yaml
+tk apply -R -f compiled/tenant
+tk -n kubevirt-csi-driver wait secret/kubevirt-csi-controller-sa-token --for=jsonpath='{.data.token}' --timeout=60s
+
+# The infra side, with the tenant kubeconfig the generator README describes.
+k=$tmp/csi
+mkdir "$k"
+tk -n kubevirt-csi-driver get secret kubevirt-csi-controller-sa-token -o jsonpath='{.data.ca\.crt}' | base64 -d >"$k/ca.crt"
+kubectl config --kubeconfig="$k/value" set-cluster tenant --server=https://tenant-api.tenant.svc:6443 \
+  --certificate-authority="$k/ca.crt" --embed-certs >/dev/null
+kubectl config --kubeconfig="$k/value" set-credentials kubevirt-csi \
+  --token="$(tk -n kubevirt-csi-driver get secret kubevirt-csi-controller-sa-token -o jsonpath='{.data.token}' | base64 -d)" >/dev/null
+kubectl config --kubeconfig="$k/value" set-context tenant --cluster=tenant --user=kubevirt-csi >/dev/null
+kubectl config --kubeconfig="$k/value" use-context tenant >/dev/null
+kubectl -n tenant create secret generic tenant-kubeconfig --from-file=value="$k/value"
+kubectl apply -R -f compiled/infra
+kubectl -n tenant rollout status deploy/kubevirt-csi-controller --timeout=300s
+tk -n kubevirt-csi-driver rollout status ds/kubevirt-csi-node --timeout=300s
+
+# EX-14: a tenant claim, provisioned by the driver as a DataVolume in the
+# infra cluster, hotplugged into the VM and mounted by the tenant pod.
+tk apply -f tests/pvc.yaml
+tk wait pvc/data --for=jsonpath='{.status.phase}'=Bound --timeout=300s
+tk wait pod/writer --for=condition=Ready --timeout=300s
+pv=$(tk get pvc data -o jsonpath='{.spec.volumeName}')
+driver=$(tk get pv "$pv" -o jsonpath='{.spec.csi.driver}')
+[[ $driver == csi.kubevirt.io ]] || { echo "EX-14: PV $pv has driver '$driver', not csi.kubevirt.io" >&2; exit 1; }
+handle=$(tk get pv "$pv" -o jsonpath='{.spec.csi.volumeHandle}')
+kubectl -n tenant get dv "$handle" -o json |
+  jq -e '.metadata.labels["csi-driver/cluster"] == "tenant" and .status.phase == "Succeeded"' >/dev/null ||
+  { echo "EX-14: DataVolume $handle is not Succeeded with label csi-driver/cluster=tenant" >&2; exit 1; }
+target=$(kubectl -n tenant get vmi tenant -o json |
+  jq -er --arg h "$handle" '.status.volumeStatus[] | select(.name == $h and .hotplugVolume != null and .phase == "Ready") | .target') ||
+  { echo "EX-14: VMI tenant has no Ready hotplug volume $handle" >&2; exit 1; }
+mount=$(tk exec writer -- grep ' /data ' /proc/mounts)
+[[ $mount == "/dev/$target "* ]] || { echo "EX-14: /data is '$mount', not the hotplugged /dev/$target" >&2; exit 1; }
+[[ $(tk exec writer -- cat /data/hello) == written-by-tenant-pod ]] ||
+  { echo "EX-14: the pod does not read back what it wrote to /data" >&2; exit 1; }
+echo "PVC data: PV $pv on csi.kubevirt.io, DataVolume tenant/$handle, hotplugged as /dev/$target, mounted at /data"

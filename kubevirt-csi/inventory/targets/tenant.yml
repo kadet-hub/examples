@@ -1,0 +1,18 @@
+# The tenant cluster, k3s in the VM tenant: the CSI driver's node plugin and
+# a default StorageClass whose volumes are DataVolumes on kind's local-path
+# class in the infra cluster.
+classes:
+  - generators
+
+parameters:
+  kapitan:
+    vars:
+      target: tenant
+  generators:
+    kubevirt:
+      csi:
+        role: tenant
+        storage_classes:
+          kubevirt:
+            default: true
+            infra_storage_class: standard

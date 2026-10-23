@@ -1,0 +1,11 @@
+# kadet-hub generators, pinned by version and digest.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/kubevirt:1.3.0@sha256:56abc77e8762e9ac5ea3f99726127c5fe4019e957882c27934fa0e48881ce6a4
+        output_path: lib/kubevirt
+    compile:
+      - input_type: kadet
+        input_paths: [lib/kubevirt]
+        output_path: .
