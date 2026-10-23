@@ -11,9 +11,7 @@ parameters:
     kubevirt:
       namespace: tenant
       kubevirt_operators:
-        # The CRD requires spec, which the generator omits unless set.
-        kubevirt:
-          spec: {}
+        kubevirt: {}
       virtual_machines:
         # Single-node k3s. The cloud-init script annotates the node with its
         # VM, which the CSI driver reads to find the VM to hotplug into.
