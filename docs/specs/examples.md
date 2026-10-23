@@ -1055,11 +1055,18 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
   the volume's target. A PVC bound by another provisioner, or a volume that
   never reaches the VM, fails one of these.
 
+  `check` runs the same assertions against a second claim and fails unless
+  they reject it. `tests/static-pvc.yaml` binds that claim to a hostPath
+  PV of StorageClass `static`, which no provisioner serves, so the claim is
+  Bound without the driver. The assertions must stop on the PV's driver.
+  This takes seconds and needs no second cluster.
+
   The job's `timeout-minutes` is 20. In the first run of #60 the job took
   4 minutes 22 seconds on an ubuntu-24.04 runner, 1 minute 47 seconds of
   it waiting for KubeVirt and CDI to become Available.
 
-  - Test: `examples` workflow, job `kubevirt-csi`
+  - Test: `examples` workflow, job `kubevirt-csi`; the negative case on
+    `tests/static-pvc.yaml` in the same `check`
   - Since: #60
 
 - EX-14a: `kubevirt-csi/check` MUST fail at once, naming KVM, when the host
@@ -1108,7 +1115,7 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
 | `helm-mutate/` | One Kapitan project (targets `helm`, `podinfo`, `argocd`, `flux`), the podinfo chart pinned in `inventory/classes/podinfo.yml`, the mutations in `inventory/targets/podinfo.yml`, a Chainsaw test per tool; `check <kubectl\|argocd\|flux>` |
 | `chart-vs-kapitan/` | One Kapitan project on the omegaconf backend, one target per chart, chart values in `values/`, CRDs and jsonnet libraries fetched by `check` into `kapitan/vendor/`; `check <chart>` (EX-13, EX-13a) |
 | `chart-vs-kapitan/kapitan/components/kube-prometheus-stack.jsonnet`, `chart-vs-kapitan/kapitan/jsonnetfile.json`, `chart-vs-kapitan/kapitan/jsonnetfile.lock.json` | Rules and dashboards of kube-prometheus-stack and the pins of their sources (EX-13a) |
-| `kubevirt-csi/` | One Kapitan project (targets `infra`, `tenant`) with the kubevirt generator pinned in `inventory/classes/generators.yml`, `infra.yaml`, the tenant workload in `tests/pvc.yaml`; `check` (EX-14, EX-14a) |
+| `kubevirt-csi/` | One Kapitan project (targets `infra`, `tenant`) with the kubevirt generator pinned in `inventory/classes/generators.yml`, `infra.yaml`, the tenant workload in `tests/pvc.yaml`, the negative case's claim in `tests/static-pvc.yaml`; `check` (EX-14, EX-14a) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
 
 Recipes and their checks:
