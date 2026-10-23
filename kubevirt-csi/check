@@ -143,23 +143,39 @@ kubectl apply -R -f compiled/infra
 kubectl -n tenant rollout status deploy/kubevirt-csi-controller --timeout=300s
 tk -n kubevirt-csi-driver rollout status ds/kubevirt-csi-node --timeout=300s
 
-# EX-14: a tenant claim, provisioned by the driver as a DataVolume in the
-# infra cluster, hotplugged into the VM and mounted by the tenant pod.
-tk apply -f tests/pvc.yaml
-tk wait pvc/data --for=jsonpath='{.status.phase}'=Bound --timeout=300s
+# EX-14: a claim is provisioned by the driver when its PV is the driver's,
+# the PV's DataVolume in the infra cluster succeeded, the VM has it
+# hotplugged and the pod mounts that device and reads back what it wrote.
+# Returns 1 with the first assertion that fails.
+provisioned() { # pvc pod
+  local pv driver handle target mount
+  pv=$(tk get pvc "$1" -o jsonpath='{.spec.volumeName}')
+  driver=$(tk get pv "$pv" -o jsonpath='{.spec.csi.driver}')
+  [[ $driver == csi.kubevirt.io ]] || { echo "EX-14: PV $pv has driver '$driver', not csi.kubevirt.io" >&2; return 1; }
+  handle=$(tk get pv "$pv" -o jsonpath='{.spec.csi.volumeHandle}')
+  kubectl -n tenant get dv "$handle" -o json |
+    jq -e '.metadata.labels["csi-driver/cluster"] == "tenant" and .status.phase == "Succeeded"' >/dev/null ||
+    { echo "EX-14: DataVolume $handle is not Succeeded with label csi-driver/cluster=tenant" >&2; return 1; }
+  target=$(kubectl -n tenant get vmi tenant -o json |
+    jq -er --arg h "$handle" '.status.volumeStatus[] | select(.name == $h and .hotplugVolume != null and .phase == "Ready") | .target') ||
+    { echo "EX-14: VMI tenant has no Ready hotplug volume $handle" >&2; return 1; }
+  mount=$(tk exec "$2" -- grep ' /data ' /proc/mounts)
+  [[ $mount == "/dev/$target "* ]] || { echo "EX-14: /data is '$mount', not the hotplugged /dev/$target" >&2; return 1; }
+  [[ $(tk exec "$2" -- cat /data/hello) == written-by-tenant-pod ]] ||
+    { echo "EX-14: the pod does not read back what it wrote to /data" >&2; return 1; }
+  echo "PVC $1: PV $pv on csi.kubevirt.io, DataVolume tenant/$handle, hotplugged as /dev/$target, mounted at /data"
+}
+tk apply -f tests/pvc.yaml -f tests/static-pvc.yaml
+tk wait pvc/data pvc/static --for=jsonpath='{.status.phase}'=Bound --timeout=300s
 tk wait pod/writer --for=condition=Ready --timeout=300s
-pv=$(tk get pvc data -o jsonpath='{.spec.volumeName}')
-driver=$(tk get pv "$pv" -o jsonpath='{.spec.csi.driver}')
-[[ $driver == csi.kubevirt.io ]] || { echo "EX-14: PV $pv has driver '$driver', not csi.kubevirt.io" >&2; exit 1; }
-handle=$(tk get pv "$pv" -o jsonpath='{.spec.csi.volumeHandle}')
-kubectl -n tenant get dv "$handle" -o json |
-  jq -e '.metadata.labels["csi-driver/cluster"] == "tenant" and .status.phase == "Succeeded"' >/dev/null ||
-  { echo "EX-14: DataVolume $handle is not Succeeded with label csi-driver/cluster=tenant" >&2; exit 1; }
-target=$(kubectl -n tenant get vmi tenant -o json |
-  jq -er --arg h "$handle" '.status.volumeStatus[] | select(.name == $h and .hotplugVolume != null and .phase == "Ready") | .target') ||
-  { echo "EX-14: VMI tenant has no Ready hotplug volume $handle" >&2; exit 1; }
-mount=$(tk exec writer -- grep ' /data ' /proc/mounts)
-[[ $mount == "/dev/$target "* ]] || { echo "EX-14: /data is '$mount', not the hotplugged /dev/$target" >&2; exit 1; }
-[[ $(tk exec writer -- cat /data/hello) == written-by-tenant-pod ]] ||
-  { echo "EX-14: the pod does not read back what it wrote to /data" >&2; exit 1; }
-echo "PVC data: PV $pv on csi.kubevirt.io, DataVolume tenant/$handle, hotplugged as /dev/$target, mounted at /data"
+provisioned data writer
+# EX-14: the negative case. A claim Bound without the driver must fail the
+# assertions, and on the PV's driver.
+if provisioned static writer 2>"$tmp/static.err"; then
+  echo "EX-14: the assertions accepted PVC static, which the driver did not provision" >&2
+  exit 1
+fi
+cat "$tmp/static.err"
+grep -q "not csi.kubevirt.io" "$tmp/static.err" ||
+  { echo "EX-14: PVC static failed on another assertion than the PV's driver" >&2; exit 1; }
+echo "PVC static: rejected as expected"
