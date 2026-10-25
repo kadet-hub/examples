@@ -441,11 +441,17 @@ under Inventory names.
   chart.
 
   Images come from the project that builds the software, pinned by tag and
-  digest in the class (EX-3a). Secrets a recipe generates, such as the Valkey password, are
+  digest in the class (EX-3a). Secrets a recipe generates, such as the PowerDNS API key, are
   Kapitan refs created on the first compile; the recipes use the base64
-  backend so they run anywhere, which encrypts nothing. Valkey stands in for Redis: Redis 8 and later are licensed
-  RSALv2, SSPLv1 or AGPLv3, Valkey stays BSD-3-Clause and speaks the same
-  protocol.
+  backend so they run anywhere, which encrypts nothing.
+
+  A recipe moves to kadet-hub/recipes once its project's own chart can be
+  its source there, and is then removed here. `valkey`, the replacement
+  for Bitnami's redis chart, moved to
+  [kadet-hub/recipes `valkey`](https://github.com/kadet-hub/recipes/tree/main/valkey),
+  built on valkey-io's chart. Valkey stands in for Redis because Redis 8
+  and later are licensed RSALv2, SSPLv1 or AGPLv3, while Valkey stays
+  BSD-3-Clause and speaks the same protocol.
 
   The MySQL image is Oracle's `container-registry.oracle.com/mysql/community-server`,
   built by the MySQL team, rather than the Docker Official Image `mysql`,
@@ -460,7 +466,7 @@ under Inventory names.
 
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
-  - Since: #8, #20; images by tag and digest: #32
+  - Since: #8, #20; images by tag and digest: #32; valkey moved: #66
 
 - EX-5a: A recipe whose resources need an operator MUST install it from
   the project's Helm chart through an operator class
@@ -1141,7 +1147,6 @@ Recipes and their checks:
 |---|---|---|---|---|
 | `postgresql` | postgresql, postgresql-ha | cloudnative-pg, mutate | CloudNativePG (chart) | Cluster `Ready`, `select 1` as the app user through the pooler |
 | `keycloak` | keycloak | keycloak, cloudnative-pg, certmanager, mutate | Keycloak Operator, CloudNativePG, cert-manager (charts) | Keycloak `Ready`, `/realms/master` answers 200 over TLS |
-| `valkey` | redis | kubernetes | none | StatefulSet ready, `valkey-cli ping` answers `PONG` |
 | `kafka` | kafka | strimzi, mutate | Strimzi (chart) | Kafka `Ready`, a message produced and consumed |
 | `rabbitmq` | rabbitmq | rabbitmq | RabbitMQ Cluster Operator (release manifest), cert-manager (chart) | RabbitmqCluster `AllReplicasReady` |
 | `external-dns-powerdns` | external-dns | kubernetes | none | a Service hostname resolves through PowerDNS |

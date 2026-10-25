@@ -3,8 +3,9 @@
 # example.internal on a PowerDNS Authoritative Server, which keeps its zones
 # in SQLite on a persistent volume. The init containers seed the database
 # from the image and create the zone once. The API key is a Kapitan ref,
-# generated on the first compile into refs/powerdns/api-key (see the valkey
-# recipe for the backend). No operator needed.
+# generated on the first compile into refs/powerdns/api-key. The base64
+# backend encrypts nothing: in a real project use gpg or a KMS backend. No
+# operator needed.
 classes:
   - recipes.lib.kubernetes
 
