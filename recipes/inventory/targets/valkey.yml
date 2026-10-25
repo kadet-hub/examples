@@ -1,8 +1,0 @@
-classes:
-  - generators
-  - recipes.valkey
-
-parameters:
-  kapitan:
-    vars:
-      target: valkey
