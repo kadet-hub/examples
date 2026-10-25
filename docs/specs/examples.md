@@ -464,19 +464,14 @@ under Inventory names.
   BSD-3-Clause and speaks the same protocol. `mysql` moved to
   [kadet-hub/recipes `mysql`](https://github.com/kadet-hub/recipes/tree/main/mysql),
   designed on Oracle's image, because MySQL ships no chart for a single
-  server.
-
-  MongoDB Community Server is licensed SSPLv1, which the OSI does not count
-  as open source; its image `mongodb/mongodb-community-server` is MongoDB
-  Inc's, and the recipe states the license in its class. MongoDB's
-  Controllers for Kubernetes (Apache-2.0 for Community deployments) have no
-  kadet-hub generator, so the recipe uses the kubernetes generator and its
-  class names the operator as the option for replication.
+  server. `mongodb` moved to
+  [kadet-hub/recipes `mongodb`](https://github.com/kadet-hub/recipes/tree/main/mongodb)
+  for the same reason, designed on MongoDB Inc's image.
 
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
   - Since: #8, #20; images by tag and digest: #32; valkey moved: #66;
-    mysql moved: #68
+    mysql moved: #68; mongodb moved: #70
 
 - EX-5a: A recipe whose resources need an operator MUST install it from
   the project's Helm chart through an operator class
@@ -1151,4 +1146,3 @@ Recipes and their checks:
 | `kafka` | kafka | strimzi, mutate | Strimzi (chart) | Kafka `Ready`, a message produced and consumed |
 | `rabbitmq` | rabbitmq | rabbitmq | RabbitMQ Cluster Operator (release manifest), cert-manager (chart) | RabbitmqCluster `AllReplicasReady` |
 | `external-dns-powerdns` | external-dns | kubernetes | none | a Service hostname resolves through PowerDNS |
-| `mongodb` | mongodb | kubernetes | none | StatefulSet ready, `mongosh` authenticates and `ping` answers `ok: 1` |
