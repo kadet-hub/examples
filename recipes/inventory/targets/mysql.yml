@@ -1,8 +1,0 @@
-classes:
-  - generators
-  - recipes.mysql
-
-parameters:
-  kapitan:
-    vars:
-      target: mysql

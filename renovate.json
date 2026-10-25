@@ -222,13 +222,6 @@
       "allowedVersions": "<6"
     },
     {
-      "description": "EX-5b: the mysql recipe stays on the 9.7 LTS line; from 26.7 the Innovation releases use calendar versions",
-      "matchPackageNames": [
-        "container-registry.oracle.com/mysql/community-server"
-      ],
-      "allowedVersions": "<10"
-    },
-    {
       "description": "EX-3a: gvisor-ci/run also runs the escape scripts on the host's Python 3.13, so its rootfs image stays on 3.13",
       "matchFileNames": [
         "gvisor-ci/run"
