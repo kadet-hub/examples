@@ -160,9 +160,9 @@ schedule instead of trusting the state on the publishing day.
 
   - Release asset: uv, oras, kubeconform, Helmfile, Pulumi and its
     Kubernetes plugin, etcd, tk, jb, kind, chainsaw, talosctl, tofu and
-    gVisor are GitHub release assets, and so are the install manifests of
-    Flux and of the RabbitMQ Cluster Operator and the CRDs of cert-manager
-    and Prometheus Operator in `chart-vs-kapitan`. In `kubevirt-csi` the
+    gVisor are GitHub release assets, and so are the install manifest of
+    Flux and the CRDs of cert-manager and Prometheus Operator in
+    `chart-vs-kapitan`. In `kubevirt-csi` the
     operator manifests of KubeVirt and CDI, virtctl and the k3s binary are
     release assets too. The k3s pin sits in the cloud-init script of
     `kubevirt-csi/inventory/targets/infra.yml`, which the comment manager
@@ -476,12 +476,17 @@ under Inventory names.
   [kadet-hub/recipes `kafka`](https://github.com/kadet-hub/recipes/tree/main/kafka),
   designed on Strimzi's image, with the Strimzi operator as
   [`strimzi`](https://github.com/kadet-hub/recipes/tree/main/strimzi),
-  rebuilt from Strimzi's chart.
+  rebuilt from Strimzi's chart. `rabbitmq` moved to
+  [kadet-hub/recipes `rabbitmq`](https://github.com/kadet-hub/recipes/tree/main/rabbitmq),
+  designed on RabbitMQ's image, with the RabbitMQ Cluster Operator as
+  [`rabbitmq-cluster-operator`](https://github.com/kadet-hub/recipes/tree/main/rabbitmq-cluster-operator),
+  rebuilt from its release manifest.
 
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
   - Since: #8, #20; images by tag and digest: #32; valkey moved: #66;
-    mysql moved: #68; mongodb moved: #70; external-dns-powerdns moved: #74; kafka moved: #77
+    mysql moved: #68; mongodb moved: #70; external-dns-powerdns moved: #74; kafka moved: #77;
+    rabbitmq moved: #79
 
 - EX-5a: A recipe whose resources need an operator MUST install it from
   the project's Helm chart through an operator class
@@ -531,18 +536,6 @@ under Inventory names.
   date of the base image changed. Keycloak signs neither charts nor images,
   so such a digest change is checked by hand against the commit ID (OQ-7).
 
-  The RabbitMQ Cluster Operator has no Helm chart from its project (checked
-  2026-10-19): rabbitmq/cluster-operator publishes release manifests and
-  Kustomize bases, and Bitnami's `rabbitmq-cluster-operator` chart is
-  excluded by EX-5. `recipes/check` installs it from its pinned release
-  manifest, which the recipe class names; cert-manager, which issues its
-  webhook certificate, comes with the recipe from its chart.
-
-  Decided in #22 (OQ-4): the operator stays installed by `check`
-  rather than compiled with the recipe. A Kapitan `https` dependency with a
-  `copy` entry could bring the manifest into the target, but fetches it
-  without a checksum.
-
   `check` fetches the charts with `kapitan compile --fetch -t charts`:
   target `charts` includes every operator class and no generator, so EX-4
   holds as for `helm-mutate`'s target `helm`; it is not a recipe. The
@@ -553,10 +546,10 @@ under Inventory names.
   and validates the rest of the chart output.
 
   - Test: `recipes/check` via the `examples` workflow, job `recipe` for
-    `postgresql`, `keycloak` and `rabbitmq` (fails when helm rejects a chart's
+    `postgresql` and `keycloak` (fails when helm rejects a chart's
     digest, a mutation matches nothing, or the operator does not come up)
   - Since: #21; OQ-4 decided: #22; Keycloak 26.8.1 re-push: #61;
-    kafka moved: #77
+    kafka moved: #77; rabbitmq moved: #79
 
 - EX-5b: Withdrawn. The `mysql` recipe moved to kadet-hub/recipes, whose
   RCP-16 keeps it on MySQL's 9.7 LTS line with the same package rule.
@@ -564,8 +557,7 @@ under Inventory names.
   - Since: #32; withdrawn: #68
 
 - EX-6: CI MUST, for every recipe, apply the operators the recipe compiled
-  (EX-5a), and install those without a Helm chart from their pinned release
-  manifests, into a new kind cluster, apply the compiled target and fail
+  (EX-5a), into a new kind cluster, apply the compiled target and fail
   unless the recipe's check passes within its time limit. It MUST fail
   within about a minute once a pod is broken.
 
@@ -591,7 +583,7 @@ under Inventory names.
   description and logs of every pod that is not ready. Without them the
   timeout names only the Deployments that did not become available.
 
-  Every apply, of an operator's release manifest as of the compiled output,
+  Every apply, of an operator as of the compiled output,
   is repeated for up to a minute until the API server accepts it. A webhook
   can refuse connections for a few seconds after its rollout reports done,
   because the deployment's readiness probe checks another port: the
@@ -621,9 +613,9 @@ under Inventory names.
   waited for, which a timeout of `kubectl wait` does not.
 
   - Test: `examples` workflow, job `recipe` per recipe; the fail-fast path
-    by hand, with a non-existent image tag in a recipe class or in an
-    operator's release manifest
-  - Since: #8, #10, #13, #16, #17, #20, #31; operators from the compiled target: #21
+    by hand, with a non-existent image tag in a recipe class
+  - Since: #8, #10, #13, #16, #17, #20, #31; operators from the compiled target: #21;
+    rabbitmq moved: #79
 
 ## Argo CD and Flux
 
@@ -1145,4 +1137,3 @@ Recipes and their checks:
 |---|---|---|---|---|
 | `postgresql` | postgresql, postgresql-ha | cloudnative-pg, mutate | CloudNativePG (chart) | Cluster `Ready`, `select 1` as the app user through the pooler |
 | `keycloak` | keycloak | keycloak, cloudnative-pg, certmanager, mutate | Keycloak Operator, CloudNativePG, cert-manager (charts) | Keycloak `Ready`, `/realms/master` answers 200 over TLS |
-| `rabbitmq` | rabbitmq | rabbitmq | RabbitMQ Cluster Operator (release manifest), cert-manager (chart) | RabbitmqCluster `AllReplicasReady` |
