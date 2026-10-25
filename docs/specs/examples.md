@@ -471,7 +471,7 @@ under Inventory names.
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
   - Since: #8, #20; images by tag and digest: #32; valkey moved: #66;
-    mysql moved: #68; mongodb moved: this change
+    mysql moved: #68; mongodb moved: #70
 
 - EX-5a: A recipe whose resources need an operator MUST install it from
   the project's Helm chart through an operator class
