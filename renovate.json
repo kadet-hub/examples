@@ -86,13 +86,6 @@
       "groupName": "keycloak operator"
     },
     {
-      "description": "EX-3: Strimzi's Kafka client image with the Strimzi operator",
-      "matchPackageNames": [
-        "quay.io/strimzi/kafka"
-      ],
-      "groupName": "strimzi operator"
-    },
-    {
       "description": "EX-3: the Kapitan side of chart-vs-kapitan runs the image tags of the chart it rebuilds, which the chart's pull request sets; Renovate updates only the digest of a pinned tag. cert-manager has its group below",
       "matchFileNames": [
         "chart-vs-kapitan/kapitan/inventory/targets/*.yml",

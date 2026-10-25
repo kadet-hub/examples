@@ -3,7 +3,6 @@
 classes:
   - recipes.operators.cloudnative-pg
   - recipes.operators.cert-manager
-  - recipes.operators.strimzi
   - recipes.operators.keycloak
 
 parameters:
