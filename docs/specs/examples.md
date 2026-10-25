@@ -454,9 +454,7 @@ under Inventory names.
   chart.
 
   Images come from the project that builds the software, pinned by tag and
-  digest in the class (EX-3a). Secrets a recipe generates, such as the PowerDNS API key, are
-  Kapitan refs created on the first compile; the recipes use the base64
-  backend so they run anywhere, which encrypts nothing.
+  digest in the class (EX-3a).
 
   A recipe moves to kadet-hub/recipes once it can be proven there, with
   its project's own chart as source or, where the project ships none,
@@ -472,11 +470,16 @@ under Inventory names.
   server. `mongodb` moved to
   [kadet-hub/recipes `mongodb`](https://github.com/kadet-hub/recipes/tree/main/mongodb)
   for the same reason, designed on MongoDB Inc's image.
+  `external-dns-powerdns` moved to
+  [kadet-hub/recipes `external-dns-powerdns`](https://github.com/kadet-hub/recipes/tree/main/external-dns-powerdns),
+  rebuilt from external-dns's own chart, with PowerDNS as
+  [`powerdns`](https://github.com/kadet-hub/recipes/tree/main/powerdns),
+  designed on PowerDNS's image.
 
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
   - Since: #8, #20; images by tag and digest: #32; valkey moved: #66;
-    mysql moved: #68; mongodb moved: #70
+    mysql moved: #68; mongodb moved: #70; external-dns-powerdns moved: #74
 
 - EX-5a: A recipe whose resources need an operator MUST install it from
   the project's Helm chart through an operator class
@@ -560,11 +563,6 @@ under Inventory names.
   RCP-16 keeps it on MySQL's 9.7 LTS line with the same package rule.
 
   - Since: #32; withdrawn: #68
-
-PowerDNS keeps its zones in SQLite on a volume rather than in PostgreSQL:
-the image ships the SQLite schema, while the PostgreSQL backend would need
-the schema loaded through CloudNativePG's post-init SQL, one more moving
-part in a recipe whose subject is external-dns.
 
 - EX-6: CI MUST, for every recipe, apply the operators the recipe compiled
   (EX-5a), and install those without a Helm chart from their pinned release
@@ -1150,4 +1148,3 @@ Recipes and their checks:
 | `keycloak` | keycloak | keycloak, cloudnative-pg, certmanager, mutate | Keycloak Operator, CloudNativePG, cert-manager (charts) | Keycloak `Ready`, `/realms/master` answers 200 over TLS |
 | `kafka` | kafka | strimzi, mutate | Strimzi (chart) | Kafka `Ready`, a message produced and consumed |
 | `rabbitmq` | rabbitmq | rabbitmq | RabbitMQ Cluster Operator (release manifest), cert-manager (chart) | RabbitmqCluster `AllReplicasReady` |
-| `external-dns-powerdns` | external-dns | kubernetes | none | a Service hostname resolves through PowerDNS |
