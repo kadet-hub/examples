@@ -415,18 +415,21 @@ schedule instead of trusting the state on the publishing day.
   - Since: tbd; `chart-vs-kapitan` pulls again on a changed pin: #50;
     `same-app` and `config-tools`: #51
 
-- EX-15: Every pull request MUST request a review from `neat-bot`. That
-  review MUST NOT be a condition for merging.
+- EX-15: Every pull request MUST request a review from the team
+  `kadet-hub/reviewers`. That review MUST NOT be a condition for merging.
 
-  `.github/CODEOWNERS` names `@neat-bot` for every path. GitHub requests a
-  code owner only when it has write access, and never the author of the
-  pull request. The `main` ruleset leaves code owner review off.
+  `.github/CODEOWNERS` names `@kadet-hub/reviewers` for every path. GitHub
+  requests a code owner team only when the team is visible and has write
+  access, and never requests the author of the pull request. The team's
+  only member today is `neat-bot`. The `main` ruleset leaves code owner
+  review off.
 
   - Test: `manual:` `gh pr view <n> --json reviewRequests` on a new pull
-    request; `gh api repos/kadet-hub/examples/codeowners/errors` lists no
-    errors; the `main` ruleset in `gh api repos/kadet-hub/examples/rulesets`
-    has `require_code_owner_review: false`
-  - Since: #67
+    request lists the team; `gh api repos/kadet-hub/examples/codeowners/errors`
+    lists no errors; the `main` ruleset in
+    `gh api repos/kadet-hub/examples/rulesets` has
+    `require_code_owner_review: false`
+  - Since: #67, #69
 
 ## Recipes
 
@@ -1126,7 +1129,7 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
 
 | Path | Content |
 |---|---|
-| `.github/CODEOWNERS` | `@neat-bot` for every path (EX-15) |
+| `.github/CODEOWNERS` | `@kadet-hub/reviewers` for every path (EX-15) |
 | `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3) |
 | `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins, cert-manager's in `chart-vs-kapitan` included, and leave the rest of its Kapitan side to the chart (EX-3), keep the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
