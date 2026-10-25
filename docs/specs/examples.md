@@ -216,16 +216,15 @@ schedule instead of trusting the state on the publishing day.
   `tests/` and with it the image pins of the Chainsaw tests. Package rules put what has to change together
   into one pull request: an operator class's chart and images, so that a
   chart's CRDs never run with another operator version, together with the
-  Keycloak image and Strimzi's Kafka client image (EX-5a), and the same
+  Keycloak image (EX-5a), and the same
   for the cert-manager and trust-manager classes of `cert-manager-mutate`,
   so that one pull request moves both cert-manager pins; kind and its
   node image; podinfo's chart and image; `@pulumi/kubernetes` and its
   plugin.
 
-  Three values follow another pin, and the pull request that changes that
+  Two values follow another pin, and the pull request that changes that
   pin has to change them: the redis tag follows Argo CD's manifest (EX-7),
-  so Renovate updates only the digest of the pinned tag, the Kafka
-  version of the `kafka` recipe follows the versions Strimzi supports, and
+  so Renovate updates only the digest of the pinned tag, and
   the jsonnet sources of kube-prometheus-stack in `chart-vs-kapitan` follow
   the chart (EX-13a). CI fails when one no longer fits.
 
@@ -309,7 +308,7 @@ schedule instead of trusting the state on the publishing day.
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
-    `chart-vs-kapitan`: #51
+    `chart-vs-kapitan`: #51; kafka moved: #77
 
 - EX-3a: Every image that an inventory, a Chainsaw test, a script or a
   workflow names MUST be pinned as `tag@sha256:digest`.
@@ -333,8 +332,7 @@ schedule instead of trusting the state on the publishing day.
   Renovate skips them. The documents in `apiserver-dry-run/manifests/` only
   reach kubeconform and an API server without a kubelet, so nothing pulls
   their images. Images that a chart or a release
-  manifest names itself keep the publisher's reference: Strimzi's chart
-  maps each Kafka version to a tag in `STRIMZI_KAFKA_IMAGES`. The chart
+  manifest names itself keep the publisher's reference. The chart
   digest or the manifest's sha256 fixes such a reference, not the image
   behind it.
 
@@ -343,7 +341,7 @@ schedule instead of trusting the state on the publishing day.
     reports every image with its current digest, and with the digest of
     `gvisor-ci/run` set back proposes the current `3.13-slim` digest and
     no 3.14
-  - Since: #32; `gvisor-ci/run`: #33; `chart-vs-kapitan`: #50
+  - Since: #32; `gvisor-ci/run`: #33; `chart-vs-kapitan`: #50; kafka moved: #77
 
 - EX-3b: Renovate MUST propose a version only once it has been published
   for three days.
@@ -474,12 +472,16 @@ under Inventory names.
   [kadet-hub/recipes `external-dns-powerdns`](https://github.com/kadet-hub/recipes/tree/main/external-dns-powerdns),
   rebuilt from external-dns's own chart, with PowerDNS as
   [`powerdns`](https://github.com/kadet-hub/recipes/tree/main/powerdns),
-  designed on PowerDNS's image.
+  designed on PowerDNS's image. `kafka` moved to
+  [kadet-hub/recipes `kafka`](https://github.com/kadet-hub/recipes/tree/main/kafka),
+  designed on Strimzi's image, with the Strimzi operator as
+  [`strimzi`](https://github.com/kadet-hub/recipes/tree/main/strimzi),
+  rebuilt from Strimzi's chart.
 
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
   - Since: #8, #20; images by tag and digest: #32; valkey moved: #66;
-    mysql moved: #68; mongodb moved: #70; external-dns-powerdns moved: #74
+    mysql moved: #68; mongodb moved: #70; external-dns-powerdns moved: #74; kafka moved: #77
 
 - EX-5a: A recipe whose resources need an operator MUST install it from
   the project's Helm chart through an operator class
@@ -492,17 +494,14 @@ under Inventory names.
   make, the mutate generator runs as a second compile entry on the same
   `output_path` with `output_type: plain`, as in `helm-mutate`. The class
   adds the operator's namespace to the kubernetes generator's namespaces.
-  CloudNativePG, cert-manager and Strimzi run in their own namespaces and
+  CloudNativePG and cert-manager run in their own namespaces and
   watch every namespace, so a target that combines recipes installs each
   once, as it compiles a generator once.
 
   The operator image is pinned as `tag@sha256:digest`. CloudNativePG's
   values take a tag only, so mutate sets the reference in the container
   and in `OPERATOR_IMAGE_NAME`, which the operator gives the instance
-  pods. Strimzi's values take a digest but then drop the tag, so mutate
-  sets the reference in the container and in the three variables that run
-  the same image for the entity operator and the Kafka init container.
-  cert-manager's values take tag and digest for each image, so its class
+  pods. cert-manager's values take tag and digest for each image, so its class
   has no mutate entry. The Keycloak Operator's take the whole reference;
   its mutate entry sets the namespace of the Deployment, the Service, the
   ServiceAccount and one RoleBinding, which the chart leaves to `helm
@@ -511,8 +510,7 @@ under Inventory names.
   The cert-manager class sets `crds.enabled` and leaves out
   `startupapicheck`, a Helm hook that waits for the webhook during `helm
   install`. The recipe classes pin the PostgreSQL and Keycloak images that
-  the operators start by tag and digest (EX-3a); Strimzi starts the Kafka
-  image its chart maps to the recipe's Kafka `version`.
+  the operators start by tag and digest (EX-3a).
 
   The Keycloak Operator's chart, `oci://quay.io/keycloak/keycloak-operator-helm`,
   is marked experimental by the project and defaults to watching every
@@ -555,9 +553,10 @@ under Inventory names.
   and validates the rest of the chart output.
 
   - Test: `recipes/check` via the `examples` workflow, job `recipe` for
-    `postgresql`, `keycloak`, `kafka` and `rabbitmq` (fails when helm rejects a chart's
+    `postgresql`, `keycloak` and `rabbitmq` (fails when helm rejects a chart's
     digest, a mutation matches nothing, or the operator does not come up)
-  - Since: #21; OQ-4 decided: #22; Keycloak 26.8.1 re-push: #61
+  - Since: #21; OQ-4 decided: #22; Keycloak 26.8.1 re-push: #61;
+    kafka moved: #77
 
 - EX-5b: Withdrawn. The `mysql` recipe moved to kadet-hub/recipes, whose
   RCP-16 keeps it on MySQL's 9.7 LTS line with the same package rule.
@@ -1146,5 +1145,4 @@ Recipes and their checks:
 |---|---|---|---|---|
 | `postgresql` | postgresql, postgresql-ha | cloudnative-pg, mutate | CloudNativePG (chart) | Cluster `Ready`, `select 1` as the app user through the pooler |
 | `keycloak` | keycloak | keycloak, cloudnative-pg, certmanager, mutate | Keycloak Operator, CloudNativePG, cert-manager (charts) | Keycloak `Ready`, `/realms/master` answers 200 over TLS |
-| `kafka` | kafka | strimzi, mutate | Strimzi (chart) | Kafka `Ready`, a message produced and consumed |
 | `rabbitmq` | rabbitmq | rabbitmq | RabbitMQ Cluster Operator (release manifest), cert-manager (chart) | RabbitmqCluster `AllReplicasReady` |
