@@ -1,6 +1,0 @@
-# Compiles the cloudnative-pg generator; recipes include this class, so a target that
-# combines several recipes compiles it once.
-parameters:
-  kapitan:
-    compile:
-      - {input_type: kadet, output_type: yml, input_paths: [lib/cloudnative-pg], output_path: cloudnative-pg/}

@@ -70,20 +70,12 @@
   },
   "packageRules": [
     {
-      "description": "EX-3: an operator's chart and images in one pull request, so that the chart's CRDs run with the operator version they belong to; cert-manager in the recipes and in cert-manager-mutate together",
+      "description": "EX-3: an operator's chart and images in one pull request, so that the chart's CRDs run with the operator version they belong to",
       "matchFileNames": [
-        "recipes/inventory/classes/recipes/operators/*.yml",
         "cert-manager-mutate/inventory/classes/cert-manager.yml",
         "cert-manager-mutate/inventory/classes/trust-manager.yml"
       ],
       "groupName": "{{replace '^.+/([^/]+)\\.yml$' '$1' packageFile}} operator"
-    },
-    {
-      "description": "EX-3: the Keycloak image with the Keycloak Operator",
-      "matchPackageNames": [
-        "quay.io/keycloak/keycloak"
-      ],
-      "groupName": "keycloak operator"
     },
     {
       "description": "EX-3: the Kapitan side of chart-vs-kapitan runs the image tags of the chart it rebuilds, which the chart's pull request sets; Renovate updates only the digest of a pinned tag. cert-manager has its group below",

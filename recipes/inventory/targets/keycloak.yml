@@ -1,8 +1,0 @@
-classes:
-  - generators
-  - recipes.keycloak
-
-parameters:
-  kapitan:
-    vars:
-      target: keycloak

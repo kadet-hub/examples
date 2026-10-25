@@ -376,53 +376,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: helm-vs-terraform/check
 
-  # EX-6: each recipe deployed to its own kind cluster and checked.
-  recipe:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        recipe: [keycloak]
-    permissions:
-      contents: read
-      attestations: read # gh attestation verify
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install helm, oras, kubeconform, uv, kubectl, kind and chainsaw
-        run: |
-          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
-          curl -fsSLo chainsaw.tgz "https://github.com/kyverno/chainsaw/releases/download/$CHAINSAW_VERSION/chainsaw_linux_amd64.tar.gz"
-          sha256sum -c <<EOF
-          $HELM_SHA256  helm.tgz
-          $ORAS_SHA256  oras.tgz
-          $KUBECONFORM_SHA256  kubeconform.tgz
-          $UV_SHA256  uv.tgz
-          $KIND_SHA256  kind
-          $CHAINSAW_SHA256  chainsaw.tgz
-          EOF
-          tar -xzf helm.tgz --strip-components=1 linux-amd64/helm
-          tar -xzf oras.tgz oras
-          tar -xzf kubeconform.tgz kubeconform
-          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
-          tar -xzf chainsaw.tgz chainsaw
-          chmod +x kind
-          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
-          rm ./*.tgz
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - name: recipes/check ${{ matrix.recipe }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RECIPE: ${{ matrix.recipe }}
-        run: recipes/check "$RECIPE"
-
   # EX-7, EX-8: the same app delivered by Argo CD and by Flux, one kind cluster each.
   argocd-vs-flux:
     runs-on: ubuntu-24.04
