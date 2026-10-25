@@ -322,11 +322,6 @@ schedule instead of trusting the state on the publishing day.
   points to a multi-arch index, the digest is the index's, which
   `crane digest` and Renovate's docker datasource both return.
 
-  Oracle publishes no index for MySQL: `community-server:9.7.3` is a
-  linux/amd64 image and the arm64 build has its own tag, `9.7.3-aarch64`.
-  The recipe pins the digest of the amd64 image, the one the tag alone
-  pulled before.
-
   The rootfs image of `gvisor-ci/run` stays on Python 3.13, the version
   `run` also uses on the host through `uv run --python 3.13`, so that the
   escape scripts run on the same minor version inside and outside the
@@ -458,28 +453,30 @@ under Inventory names.
   Kapitan refs created on the first compile; the recipes use the base64
   backend so they run anywhere, which encrypts nothing.
 
-  A recipe moves to kadet-hub/recipes once its project's own chart can be
-  its source there, and is then removed here. `valkey`, the replacement
-  for Bitnami's redis chart, moved to
+  A recipe moves to kadet-hub/recipes once it can be proven there, with
+  its project's own chart as source or, where the project ships none,
+  designed on the project's image (DEC-10 and DEC-11 in kadet-hub/recipes),
+  and is then removed here. `valkey`, the replacement for Bitnami's redis
+  chart, moved to
   [kadet-hub/recipes `valkey`](https://github.com/kadet-hub/recipes/tree/main/valkey),
   built on valkey-io's chart. Valkey stands in for Redis because Redis 8
   and later are licensed RSALv2, SSPLv1 or AGPLv3, while Valkey stays
-  BSD-3-Clause and speaks the same protocol.
+  BSD-3-Clause and speaks the same protocol. `mysql` moved to
+  [kadet-hub/recipes `mysql`](https://github.com/kadet-hub/recipes/tree/main/mysql),
+  designed on Oracle's image, because MySQL ships no chart for a single
+  server.
 
-  The MySQL image is Oracle's `container-registry.oracle.com/mysql/community-server`,
-  built by the MySQL team, rather than the Docker Official Image `mysql`,
-  which docker-library builds from Oracle's packages. MongoDB Community
-  Server is licensed SSPLv1, which the OSI does not count as open source;
-  its image `mongodb/mongodb-community-server` is MongoDB Inc's, and the
-  recipe states the license in its class. Oracle's MySQL Operator (UPL-1.0)
-  and MongoDB's Controllers for Kubernetes (Apache-2.0 for Community
-  deployments) have no kadet-hub generator, so both recipes use the
-  kubernetes generator and their class names the operator as the option
-  for replication.
+  MongoDB Community Server is licensed SSPLv1, which the OSI does not count
+  as open source; its image `mongodb/mongodb-community-server` is MongoDB
+  Inc's, and the recipe states the license in its class. MongoDB's
+  Controllers for Kubernetes (Apache-2.0 for Community deployments) have no
+  kadet-hub generator, so the recipe uses the kubernetes generator and its
+  class names the operator as the option for replication.
 
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
-  - Since: #8, #20; images by tag and digest: #32; valkey moved: #66
+  - Since: #8, #20; images by tag and digest: #32; valkey moved: #66;
+    mysql moved: this change
 
 - EX-5a: A recipe whose resources need an operator MUST install it from
   the project's Helm chart through an operator class
@@ -559,20 +556,10 @@ under Inventory names.
     digest, a mutation matches nothing, or the operator does not come up)
   - Since: #21; OQ-4 decided: #22; Keycloak 26.8.1 re-push: #61
 
-- EX-5b: The `mysql` recipe MUST stay on MySQL's 9.7 LTS release line.
+- EX-5b: Withdrawn. The `mysql` recipe moved to kadet-hub/recipes, whose
+  RCP-16 keeps it on MySQL's 9.7 LTS line with the same package rule.
 
-  From 26.7 on, Oracle numbers the MySQL Innovation releases by calendar,
-  YY.M.P; 9.7 is the LTS release. Readers copy a recipe into their own
-  projects, so it follows the LTS line, which takes bug and security fixes,
-  rather than the Innovation releases, which add features. A package rule
-  allows only versions below 10 for
-  `container-registry.oracle.com/mysql/community-server`: Renovate proposes
-  9.7 patch releases and new digests, no 26.x. Moving the recipe to the
-  next LTS line changes this requirement and the rule together.
-
-  - Test: `renovate --platform=local --dry-run=lookup` with the pin one
-    patch release back proposes the next 9.7 release, not 26.x
-  - Since: #32
+  - Since: #32; withdrawn: this change
 
 PowerDNS keeps its zones in SQLite on a volume rather than in PostgreSQL:
 the image ships the SQLite schema, while the PostgreSQL backend would need
@@ -1141,7 +1128,7 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
 |---|---|
 | `.github/CODEOWNERS` | `@neat-bot` for every path (EX-15) |
 | `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3) |
-| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins, cert-manager's in `chart-vs-kapitan` included, and leave the rest of its Kapitan side to the chart (EX-3), keep MySQL on 9.7 (EX-5b) and the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
+| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins, cert-manager's in `chart-vs-kapitan` included, and leave the rest of its Kapitan side to the chart (EX-3), keep the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
 | `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |
@@ -1164,5 +1151,4 @@ Recipes and their checks:
 | `kafka` | kafka | strimzi, mutate | Strimzi (chart) | Kafka `Ready`, a message produced and consumed |
 | `rabbitmq` | rabbitmq | rabbitmq | RabbitMQ Cluster Operator (release manifest), cert-manager (chart) | RabbitmqCluster `AllReplicasReady` |
 | `external-dns-powerdns` | external-dns | kubernetes | none | a Service hostname resolves through PowerDNS |
-| `mysql` | mysql | kubernetes | none | StatefulSet ready, `select 1` as the app user in its own database |
 | `mongodb` | mongodb | kubernetes | none | StatefulSet ready, `mongosh` authenticates and `ping` answers `ok: 1` |
