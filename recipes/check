@@ -167,7 +167,6 @@ watch_pods &
 watcher=$!
 kubectl apply -f "$out/kubernetes"  # the Namespaces, which the kubernetes generator writes at its top level
 case $recipe in
-  postgresql) operator cloudnative-pg cnpg-system ;;
   rabbitmq) operator cert-manager cert-manager; rabbitmq_operator ;;
   keycloak) operator cert-manager cert-manager; operator cloudnative-pg cnpg-system; operator keycloak keycloak ;;
 esac
