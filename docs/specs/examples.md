@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `.github/workflows/examples.yml`, `.github/CODEOWNERS`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -418,15 +418,20 @@ schedule instead of trusting the state on the publishing day.
 - EX-15: Every pull request MUST request a review from `neat-bot`. That
   review MUST NOT be a condition for merging.
 
-  `.github/CODEOWNERS` names `@neat-bot` for every path. GitHub requests a
-  code owner only when it has write access, and never the author of the
-  pull request. The `main` ruleset leaves code owner review off.
+  The `request review` workflow requests `neat-bot` with the repository's
+  own token when a pull request is opened, reopened or marked ready. It skips
+  drafts, pull requests opened by bots, and pull requests from forks, whose
+  token is read-only; on a fork the bot is requested by hand after a look at
+  the pull request. `neat-bot` has read access only (terraform-homezone
+  GHO-6a), so CODEOWNERS, which requests a code owner only with write access,
+  cannot do it, and an approval by `neat-bot` counts toward no approval a
+  ruleset requires.
 
-  - Test: `manual:` `gh pr view <n> --json reviewRequests` on a new pull
-    request; `gh api repos/kadet-hub/examples/codeowners/errors` lists no
-    errors; the `main` ruleset in `gh api repos/kadet-hub/examples/rulesets`
-    has `require_code_owner_review: false`
-  - Since: #67
+  - Test: manual: on a new pull request the `request review` run succeeds and
+    `gh pr view <n> --json reviewRequests` lists `neat-bot`;
+    `gh api repos/kadet-hub/examples/collaborators/neat-bot/permission` reports
+    `read`
+  - Since: #67 (CODEOWNERS), #71, #72 (workflow)
 
 ## Recipes
 
@@ -1121,7 +1126,7 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
 
 | Path | Content |
 |---|---|
-| `.github/CODEOWNERS` | `@neat-bot` for every path (EX-15) |
+| `.github/workflows/request-review.yml` | requests `neat-bot` (EX-15) |
 | `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3) |
 | `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins, cert-manager's in `chart-vs-kapitan` included, and leave the rest of its Kapitan side to the chart (EX-3), keep the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
