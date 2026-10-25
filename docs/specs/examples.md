@@ -476,7 +476,7 @@ under Inventory names.
   - Test: `recipes/check` (fails on a dependency without a digest and on
     `bitnami` in a class or the compiled output)
   - Since: #8, #20; images by tag and digest: #32; valkey moved: #66;
-    mysql moved: this change
+    mysql moved: #68
 
 - EX-5a: A recipe whose resources need an operator MUST install it from
   the project's Helm chart through an operator class
@@ -559,7 +559,7 @@ under Inventory names.
 - EX-5b: Withdrawn. The `mysql` recipe moved to kadet-hub/recipes, whose
   RCP-16 keeps it on MySQL's 9.7 LTS line with the same package rule.
 
-  - Since: #32; withdrawn: this change
+  - Since: #32; withdrawn: #68
 
 PowerDNS keeps its zones in SQLite on a volume rather than in PostgreSQL:
 the image ships the SQLite schema, while the PostgreSQL backend would need
