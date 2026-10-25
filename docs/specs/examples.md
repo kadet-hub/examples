@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `recipes/`, `recipes/tests/`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -103,8 +103,8 @@ schedule instead of trusting the state on the publishing day.
 
   kubeconform and an API server accept manifests that the kubelet cannot
   run, such as a readiness probe on a port the app does not listen on.
-  `recipes`, `argocd-vs-flux`, `helm-mutate`, `cert-manager-mutate` and
-  `kubevirt-csi` deploy their workloads under EX-6, EX-7, EX-10, EX-11 and
+  `argocd-vs-flux`, `helm-mutate`, `cert-manager-mutate` and
+  `kubevirt-csi` deploy their workloads under EX-7, EX-10, EX-11 and
   EX-14.
   `first-platform/check` deploys `compiled/prod/apps` (Namespace,
   Deployment, Service, PodDisruptionBudget), `helm-vs-terraform/check`
@@ -143,7 +143,7 @@ schedule instead of trusting the state on the publishing day.
   Related: EX-6
 
   - Test: `examples` workflow, jobs `first-platform` and
-    `helm-vs-terraform`; the other deploys as in EX-6, EX-7, EX-10 and
+    `helm-vs-terraform`; the other deploys as in EX-7, EX-10 and
     EX-11; `manual:` `docker run --rm nginx:1.29 grep listen
     /etc/nginx/conf.d/default.conf` prints the port of
     `apiserver-dry-run/manifests/web.yaml`
@@ -203,9 +203,8 @@ schedule instead of trusting the state on the publishing day.
 
   Pins in Kapitan inventories and Kubernetes manifests are updated with
   `datasource=docker` by regex managers: generators through the org preset;
-  charts by version and the digest of their OCI artifact (the operator
-  classes, podinfo in `helm-mutate`, cert-manager and trust-manager in
-  `cert-manager-mutate`); images wherever an `image:` or
+  charts by version and the digest of their OCI artifact (podinfo in
+  `helm-mutate`, cert-manager and trust-manager in `cert-manager-mutate`); images wherever an `image:` or
   `image_name:` key or an `-image=` argument names one, by tag or by
   `tag@sha256:digest`, as
   `repository`, `tag` and `digest` values, or as a mutate `images` entry
@@ -214,11 +213,9 @@ schedule instead of trusting the state on the publishing day.
   number otherwise. `renovate.json` keeps only `**/node_modules/**`
   of the `ignorePaths` that `config:recommended` sets, because those skip
   `tests/` and with it the image pins of the Chainsaw tests. Package rules put what has to change together
-  into one pull request: an operator class's chart and images, so that a
-  chart's CRDs never run with another operator version, together with the
-  Keycloak image (EX-5a), and the same
-  for the cert-manager and trust-manager classes of `cert-manager-mutate`,
-  so that one pull request moves both cert-manager pins; kind and its
+  into one pull request: the chart and images of the cert-manager and
+  trust-manager classes of `cert-manager-mutate`, so that a chart's CRDs
+  never run with another operator version; kind and its
   node image; podinfo's chart and image; `@pulumi/kubernetes` and its
   plugin.
 
@@ -308,7 +305,7 @@ schedule instead of trusting the state on the publishing day.
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
-    `chart-vs-kapitan`: #51; kafka moved: #77
+    `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81
 
 - EX-3a: Every image that an inventory, a Chainsaw test, a script or a
   workflow names MUST be pinned as `tag@sha256:digest`.
@@ -316,8 +313,7 @@ schedule instead of trusting the state on the publishing day.
   The tag tells the reader which release runs, the digest makes every run
   pull the image CI checked. Renovate updates tag and digest in one pull
   request, and opens a digest-only one when the publisher rebuilds a tag,
-  as CloudNativePG does with `postgresql:18.6-system-trixie` and Keycloak
-  with a whole release (EX-5a). Where the tag
+  as CloudNativePG does with `postgresql:18.6-system-trixie`. Where the tag
   points to a multi-arch index, the digest is the index's, which
   `crane digest` and Renovate's docker datasource both return.
 
@@ -433,31 +429,15 @@ schedule instead of trusting the state on the publishing day.
 
 ## Recipes
 
-`recipes/` replaces the most-starred Bitnami charts with inventory classes
-for kadet-hub generators: the kubernetes generator for plain workloads, an
-operator's generator where the project maintains an operator, or both. A
-recipe is what a reader copies into a Kapitan project; kadet-hub.org shows
-each one under `/recipes/`, read from this repository's `main` at build
-time, so the page shows what this CI last checked.
+`recipes/` replaced the most-starred Bitnami charts with inventory classes
+for kadet-hub generators, each deployed to a kind cluster by CI. All of
+them moved to kadet-hub/recipes, which proves them and which kadet-hub.org
+shows under `/recipes/`.
 
-A Bitnami chart's promise is that it deploys and comes up. Rendering and a
-dry run prove that the YAML is valid, not that the app starts, so each
-recipe is deployed to a kind cluster and checked for the state the table
-under Inventory names.
-
-- EX-5: Every recipe MUST be one class `recipes/inventory/classes/recipes/<name>.yml`
-  and one target `recipes/inventory/targets/<name>.yml`, use only
-  generators pinned by version and digest in
-  `recipes/inventory/classes/generators.yml`, and use no Bitnami image or
-  chart.
-
-  Images come from the project that builds the software, pinned by tag and
-  digest in the class (EX-3a).
-
-  A recipe moves to kadet-hub/recipes once it can be proven there, with
-  its project's own chart as source or, where the project ships none,
-  designed on the project's image (DEC-10 and DEC-11 in kadet-hub/recipes),
-  and is then removed here. `valkey`, the replacement for Bitnami's redis
+- EX-5: Withdrawn. A recipe moved to kadet-hub/recipes once it could be
+  proven there, with its project's own chart as source or, where the
+  project ships none, designed on the project's image (DEC-10 and DEC-11
+  in kadet-hub/recipes), and was then removed here. `valkey`, the replacement for Bitnami's redis
   chart, moved to
   [kadet-hub/recipes `valkey`](https://github.com/kadet-hub/recipes/tree/main/valkey),
   built on valkey-io's chart. Valkey stands in for Redis because Redis 8
@@ -485,86 +465,32 @@ under Inventory names.
   [kadet-hub/recipes `rabbitmq`](https://github.com/kadet-hub/recipes/tree/main/rabbitmq),
   designed on RabbitMQ's image, with the RabbitMQ Cluster Operator as
   [`rabbitmq-cluster-operator`](https://github.com/kadet-hub/recipes/tree/main/rabbitmq-cluster-operator),
-  rebuilt from its release manifest.
+  rebuilt from its release manifest. `keycloak` moved to
+  [kadet-hub/recipes `keycloak`](https://github.com/kadet-hub/recipes/tree/main/keycloak),
+  designed on Keycloak's image, with the Keycloak Operator as
+  [`keycloak-operator`](https://github.com/kadet-hub/recipes/tree/main/keycloak-operator),
+  rebuilt from the project's chart.
 
-  - Test: `recipes/check` (fails on a dependency without a digest and on
-    `bitnami` in a class or the compiled output)
   - Since: #8, #20; images by tag and digest: #32; valkey moved: #66;
     mysql moved: #68; mongodb moved: #70; external-dns-powerdns moved: #74; kafka moved: #77;
-    postgresql moved: #78; rabbitmq moved: #79
+    postgresql moved: #78; rabbitmq moved: #79; keycloak moved and withdrawn: #81
 
-- EX-5a: A recipe whose resources need an operator MUST install it from
-  the project's Helm chart through an operator class
-  `recipes/inventory/classes/recipes/operators/<operator>.yml`, where the
-  project publishes one.
+- EX-5a: Withdrawn. The operators are prerequisites of the recipes that
+  need them in kadet-hub/recipes (DEC-13 there), each a recipe of its own.
+  OQ-7, on verifying Keycloak's signatures in the operator class and in
+  `recipes/check`, went with them.
 
-  An operator class pins the chart's OCI artifact by version and digest in
-  a Kapitan `helm` dependency and renders it with the `helm` input into
-  `operators/<operator>`. Where the chart needs a change its values cannot
-  make, the mutate generator runs as a second compile entry on the same
-  `output_path` with `output_type: plain`, as in `helm-mutate`. The class
-  adds the operator's namespace to the kubernetes generator's namespaces.
-  CloudNativePG and cert-manager run in their own namespaces and
-  watch every namespace, so a target that combines recipes installs each
-  once, as it compiles a generator once.
-
-  The operator image is pinned as `tag@sha256:digest`. CloudNativePG's
-  values take a tag only, so mutate sets the reference in the container
-  and in `OPERATOR_IMAGE_NAME`, which the operator gives the instance
-  pods. cert-manager's values take tag and digest for each image, so its class
-  has no mutate entry. The Keycloak Operator's take the whole reference;
-  its mutate entry sets the namespace of the Deployment, the Service, the
-  ServiceAccount and one RoleBinding, which the chart leaves to `helm
-  install --namespace`, so that `kubectl apply` does not put them into
-  `default`.
-  The cert-manager class sets `crds.enabled` and leaves out
-  `startupapicheck`, a Helm hook that waits for the webhook during `helm
-  install`. The recipe classes pin the PostgreSQL and Keycloak images that
-  the operators start by tag and digest (EX-3a).
-
-  The Keycloak Operator's chart, `oci://quay.io/keycloak/keycloak-operator-helm`,
-  is marked experimental by the project and defaults to watching every
-  namespace, which the project calls a preview. The class keeps the chart
-  and sets the four controllers to `JOSDK_WATCH_CURRENT`, so the operator
-  runs in `keycloak` and watches that namespace only, as its release
-  manifests install it.
-
-  Keycloak re-pushes release tags with new digests and deletes the old
-  chart digest. Between 09:47 and 09:49 UTC on 2026-10-23 it published
-  26.8.1 again: the chart, `keycloak` and `keycloak-operator` got new
-  digests, and quay answered the chart's old digest with `manifest
-  unknown`, so job `recipe` failed on the chart digest until the class
-  moved to the new one. The old image digests still resolved that day.
-  The rebuild came from the same source commit. The new chart's templates
-  carry `app.quarkus.io/commit-id` 24ed1dadf3f246a555adb6d3d4a99e9b3003fb3b,
-  the commit of the public 26.8.1 tag, and in the images only the build
-  date of the base image changed. Keycloak signs neither charts nor images,
-  so such a digest change is checked by hand against the commit ID (OQ-7).
-
-  `check` fetches the charts with `kapitan compile --fetch -t charts`:
-  target `charts` includes every operator class and no generator, so EX-4
-  holds as for `helm-mutate`'s target `helm`; it is not a recipe. The
-  operators are applied server-side, because their CRDs exceed the
-  annotation size of a client-side apply, and before the generators'
-  output, which needs their CRDs and webhooks. kubeconform skips
-  `CustomResourceDefinition`, for which the generators carry no schema,
-  and validates the rest of the chart output.
-
-  - Test: `recipes/check` via the `examples` workflow, job `recipe` for
-    `keycloak` (fails when helm rejects a chart's
-    digest, a mutation matches nothing, or the operator does not come up)
   - Since: #21; OQ-4 decided: #22; Keycloak 26.8.1 re-push: #61;
-    kafka moved: #77; postgresql moved: #78; rabbitmq moved: #79
+    kafka moved: #77; postgresql moved: #78; rabbitmq moved: #79;
+    keycloak moved and withdrawn: #81
 
 - EX-5b: Withdrawn. The `mysql` recipe moved to kadet-hub/recipes, whose
   RCP-16 keeps it on MySQL's 9.7 LTS line with the same package rule.
 
   - Since: #32; withdrawn: #68
 
-- EX-6: CI MUST, for every recipe, apply the operators the recipe compiled
-  (EX-5a), into a new kind cluster, apply the compiled target and fail
-  unless the recipe's check passes within its time limit. It MUST fail
-  within about a minute once a pod is broken.
+- EX-6: A check that deploys to a kind cluster MUST fail within about a
+  minute once a pod is broken.
 
   A pod is broken when one of its containers waits with
   `CrashLoopBackOff`, `ImagePullBackOff`, `CreateContainerConfigError` or
@@ -574,12 +500,12 @@ under Inventory names.
   `argocd-redis` Secret until the redis pod's init container has created
   it, and the watcher stopped a healthy install on that in CI. Two polls
   did not always cover that wait; EX-7 therefore starts those pods only
-  once the Secret exists. `recipes/check` polls the pods of all namespaces every
-  10 seconds from the creation of the kind cluster until Chainsaw ends, so
-  a broken pod also stops the operator installs. On the first broken pod
-  it prints the pod's description and its containers' logs and stops the
-  command `check` waits for, an operator's `rollout status` or `wait`, or
-  Chainsaw.
+  once the Secret exists. Each such `check` polls the pods of all
+  namespaces every 10 seconds from the creation of the kind cluster until
+  Chainsaw ends, so a broken pod also stops the operator installs. On the
+  first broken pod it prints the pod's description and its containers'
+  logs and stops the command `check` waits for, an operator's `rollout
+  status` or `wait`, or Chainsaw.
   The watch sits in `check` because Chainsaw runs the operations of a test
   one after another and has none that runs beside an assert.
 
@@ -604,23 +530,11 @@ under Inventory names.
   it once, and a pull that keeps failing turns into `ImagePullBackOff`
   seconds later.
 
-  Each test sets `spec.timeouts.assert` to three times the recipe's
-  measured Chainsaw duration, at least 3 minutes. The `recipe` job's
-  `timeout-minutes` of 15 covers the slowest recipe, about 3.5 minutes in
-  CI, with room for image pulls on a cold runner.
-
-  The generators are verified and fetched as in EX-4 before the compile.
-  `recipes/check` owns the supply chain, the compile, the cluster and the
-  operators; `recipes/tests/<recipe>/chainsaw-test.yaml` owns what is
-  checked once the recipe is applied: assertions on the resources' status
-  and a probe that uses the software, run by Chainsaw. On a failure
-  Chainsaw prints the namespace's events, pod logs and the resources it
-  waited for, which a timeout of `kubectl wait` does not.
-
-  - Test: `examples` workflow, job `recipe` per recipe; the fail-fast path
-    by hand, with a non-existent image tag in a recipe class
+  - Test: `examples` workflow, the jobs that deploy to kind; the
+    fail-fast path by hand, with a non-existent image tag in one of their
+    classes
   - Since: #8, #10, #13, #16, #17, #20, #31; operators from the compiled target: #21;
-    rabbitmq moved: #79
+    rabbitmq moved: #79; recipes moved: #81
 
 ## Argo CD and Flux
 
@@ -1111,10 +1025,6 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
   sides do, not their versions. A chart pull request that leaves an image
   tag or the CRDs of the Kapitan side behind passes CI. Should `check` also
   compare the image tags of both sides?
-- OQ-7: Keycloak publishes its chart and images unsigned, and
-  keycloak/keycloak#54273 asks for signatures. Once Keycloak signs charts
-  and images, should the Keycloak Operator class and `recipes/check` verify
-  signatures instead of a re-pushed digest being checked by hand (EX-5a)?
 
 ## Inventory
 
@@ -1126,18 +1036,9 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
 | `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |
-| `recipes/` | One Kapitan project; `check <recipe>` verifies the generators, compiles, deploys to kind and runs the recipe's check |
-| `recipes/inventory/classes/recipes/operators/` | One class per operator with a Helm chart: chart pin, `helm` and `mutate` entries, image pins (EX-5a) |
-| `recipes/inventory/targets/charts.yml` | Every operator class and no generator, for `check` to fetch the charts (EX-4, EX-5a) |
 | `argocd-vs-flux/` | One Kapitan project (targets `web`, `argocd`, `flux`), the Gitea manifest and a Chainsaw test per tool; `check <argocd\|flux>` |
 | `helm-mutate/` | One Kapitan project (targets `helm`, `podinfo`, `argocd`, `flux`), the podinfo chart pinned in `inventory/classes/podinfo.yml`, the mutations in `inventory/targets/podinfo.yml`, a Chainsaw test per tool; `check <kubectl\|argocd\|flux>` |
 | `chart-vs-kapitan/` | One Kapitan project on the omegaconf backend, one target per chart, chart values in `values/`, CRDs and jsonnet libraries fetched by `check` into `kapitan/vendor/`; `check <chart>` (EX-13, EX-13a) |
 | `chart-vs-kapitan/kapitan/components/kube-prometheus-stack.jsonnet`, `chart-vs-kapitan/kapitan/jsonnetfile.json`, `chart-vs-kapitan/kapitan/jsonnetfile.lock.json` | Rules and dashboards of kube-prometheus-stack and the pins of their sources (EX-13a) |
 | `kubevirt-csi/` | One Kapitan project (targets `infra`, `tenant`) with the kubevirt generator pinned in `inventory/classes/generators.yml`, `infra.yaml`, the tenant workload in `tests/pvc.yaml`, the negative case's claim in `tests/static-pvc.yaml`; `check` (EX-14, EX-14a) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
-
-Recipes and their checks:
-
-| Recipe | Replaces (Bitnami) | Generators | Operators | Check |
-|---|---|---|---|---|
-| `keycloak` | keycloak | keycloak, cloudnative-pg, certmanager, mutate | Keycloak Operator, CloudNativePG, cert-manager (charts) | Keycloak `Ready`, `/realms/master` answers 200 over TLS |

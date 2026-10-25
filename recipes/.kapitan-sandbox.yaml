@@ -1,4 +1,0 @@
-index_serial: 48
-inventory_backend: reclass-rs
-hosts:
-  oci: [ghcr.io]
