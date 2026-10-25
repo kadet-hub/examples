@@ -383,7 +383,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        recipe: [postgresql, keycloak, kafka, rabbitmq]
+        recipe: [postgresql, keycloak, rabbitmq]
     permissions:
       contents: read
       attestations: read # gh attestation verify

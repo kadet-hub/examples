@@ -1,8 +1,0 @@
-classes:
-  - generators
-  - recipes.kafka
-
-parameters:
-  kapitan:
-    vars:
-      target: kafka

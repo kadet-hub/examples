@@ -9,9 +9,6 @@ parameters:
         source: ghcr.io/kadet-hub/keycloak:1.0.3@sha256:0902cc8a796e2a1d1708c7f9975e41e8422d0d1edff7f873faa5ecaeced13dfd
         output_path: lib/keycloak
       - type: oci
-        source: ghcr.io/kadet-hub/strimzi:1.0.1@sha256:2efec7979887658e10ec0c99d727cb935bcfc6a63cee51e3a24d336eaaa40de5
-        output_path: lib/strimzi
-      - type: oci
         source: ghcr.io/kadet-hub/rabbitmq:1.0.3@sha256:7d7586b162faa9105d8d7dd5d330ec150fa66c5870925bb7857f4deb6e335aeb
         output_path: lib/rabbitmq
       - type: oci

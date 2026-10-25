@@ -169,7 +169,6 @@ kubectl apply -f "$out/kubernetes"  # the Namespaces, which the kubernetes gener
 case $recipe in
   postgresql) operator cloudnative-pg cnpg-system ;;
   rabbitmq) operator cert-manager cert-manager; rabbitmq_operator ;;
-  kafka) operator strimzi strimzi ;;
   keycloak) operator cert-manager cert-manager; operator cloudnative-pg cnpg-system; operator keycloak keycloak ;;
 esac
 # The generators' output; the operators were applied above.
