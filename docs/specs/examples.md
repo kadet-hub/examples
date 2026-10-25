@@ -124,9 +124,9 @@ schedule instead of trusting the state on the publishing day.
   (EX-3a), `apiserver-dry-run` sends its documents to an API server
   without a kubelet, `talos-machine-config` renders node configs, and
   `verify-oci` and `gvisor-ci` render no manifests. `bitnami` renders a
-  CloudNativePG Cluster with the same generator digest, name, namespace,
-  image, instances, storage and bootstrap as the `postgresql` recipe,
-  whose Cluster the `recipe` job deploys.
+  CloudNativePG Cluster with the name, namespace, image, instances,
+  storage and bootstrap that the `postgresql` recipe had before it moved
+  to kadet-hub/recipes (EX-5).
 
   podinfo listens on 9898 unless `--port` is set. Both classes start it
   as its chart does, `command: [./podinfo, --port=8080]`, on the
@@ -476,7 +476,12 @@ under Inventory names.
   [kadet-hub/recipes `kafka`](https://github.com/kadet-hub/recipes/tree/main/kafka),
   designed on Strimzi's image, with the Strimzi operator as
   [`strimzi`](https://github.com/kadet-hub/recipes/tree/main/strimzi),
-  rebuilt from Strimzi's chart. `rabbitmq` moved to
+  rebuilt from Strimzi's chart. `postgresql` moved to
+  [kadet-hub/recipes `postgresql`](https://github.com/kadet-hub/recipes/tree/main/postgresql),
+  rebuilt from CloudNativePG's chart `cluster`, with the CloudNativePG
+  operator as
+  [`cnpg`](https://github.com/kadet-hub/recipes/tree/main/cnpg),
+  rebuilt from the project's chart. `rabbitmq` moved to
   [kadet-hub/recipes `rabbitmq`](https://github.com/kadet-hub/recipes/tree/main/rabbitmq),
   designed on RabbitMQ's image, with the RabbitMQ Cluster Operator as
   [`rabbitmq-cluster-operator`](https://github.com/kadet-hub/recipes/tree/main/rabbitmq-cluster-operator),
@@ -486,7 +491,7 @@ under Inventory names.
     `bitnami` in a class or the compiled output)
   - Since: #8, #20; images by tag and digest: #32; valkey moved: #66;
     mysql moved: #68; mongodb moved: #70; external-dns-powerdns moved: #74; kafka moved: #77;
-    rabbitmq moved: #79
+    postgresql moved: #78; rabbitmq moved: #79
 
 - EX-5a: A recipe whose resources need an operator MUST install it from
   the project's Helm chart through an operator class
@@ -546,10 +551,10 @@ under Inventory names.
   and validates the rest of the chart output.
 
   - Test: `recipes/check` via the `examples` workflow, job `recipe` for
-    `postgresql` and `keycloak` (fails when helm rejects a chart's
+    `keycloak` (fails when helm rejects a chart's
     digest, a mutation matches nothing, or the operator does not come up)
   - Since: #21; OQ-4 decided: #22; Keycloak 26.8.1 re-push: #61;
-    kafka moved: #77; rabbitmq moved: #79
+    kafka moved: #77; postgresql moved: #78; rabbitmq moved: #79
 
 - EX-5b: Withdrawn. The `mysql` recipe moved to kadet-hub/recipes, whose
   RCP-16 keeps it on MySQL's 9.7 LTS line with the same package rule.
@@ -1135,5 +1140,4 @@ Recipes and their checks:
 
 | Recipe | Replaces (Bitnami) | Generators | Operators | Check |
 |---|---|---|---|---|
-| `postgresql` | postgresql, postgresql-ha | cloudnative-pg, mutate | CloudNativePG (chart) | Cluster `Ready`, `select 1` as the app user through the pooler |
 | `keycloak` | keycloak | keycloak, cloudnative-pg, certmanager, mutate | Keycloak Operator, CloudNativePG, cert-manager (charts) | Keycloak `Ready`, `/realms/master` answers 200 over TLS |
