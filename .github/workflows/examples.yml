@@ -48,8 +48,8 @@ env:
   ETCD_VERSION: v3.7.2
   ETCD_SHA256: 3a3679bc51a4ee9d30bccea1da7cd4fe62c6fc1d2ca1255068d2c53bf3026135
   # renovate: datasource=github-release-attachments depName=grafana/tanka
-  TANKA_VERSION: v0.39.4
-  TANKA_SHA256: 71961ae30b65097c24ad481dca599116aea6b01bfe0e2ec03ab643884076443a
+  TANKA_VERSION: v0.39.5
+  TANKA_SHA256: 80ae1e1972c5a16e21fc6b62801d1e06edad5dc7bc0635e44ecb2476839ac04a
   # renovate: datasource=github-release-attachments depName=jsonnet-bundler/jsonnet-bundler
   JB_VERSION: v0.6.0
   JB_SHA256: 78e54afbbc3ff3e0942b1576b4992277df4f6beb64cddd58528a76f0cd70db54
