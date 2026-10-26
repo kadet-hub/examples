@@ -4,7 +4,7 @@ parameters:
       target: app-db
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/cloudnative-pg:1.0.1@sha256:281417a421b0053070fbdc552f9032a3f8d564c0ca2047ec500842a0d060a8f7
+        source: ghcr.io/kadet-hub/cloudnative-pg:1.1.1@sha256:5881e6c467ab214158b816a1e5f582be1cb9a5c048c216f9c01111551cc048dc
         output_path: lib/cloudnative-pg
     compile:
       - output_path: manifests/
