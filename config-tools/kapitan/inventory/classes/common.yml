@@ -5,7 +5,7 @@ parameters:
       target: ${_reclass_:name:short}
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/kubernetes:1.6.0@sha256:bdd38ce351fc448440a52991e775b723265e3aa52c1ba9deb8fe5e086d35125d
+        source: ghcr.io/kadet-hub/kubernetes:1.9.1@sha256:9e428f838c4bed6f1e571a90c256cdc3fc2f95743a3291245dcc776103022f19
         output_path: lib/kubernetes
     compile:
       - input_type: kadet
