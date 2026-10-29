@@ -105,9 +105,9 @@ schedule instead of trusting the state on the publishing day.
   `main` ruleset requires, so the ruleset need not change when a job is
   added. A job left out of its `needs` is not gated.
 
-  - Test: `examples` workflow, job `ci`; `manual:` it failed on this
-    change's pull request while `advisories` failed
-  - Since: this change
+  - Test: `examples` workflow, job `ci`; `manual:` it failed on #88 while
+    `advisories` failed
+  - Since: #88
 
 - EX-12: CI MUST deploy every workload that an example renders to run to
   a new kind cluster and fail unless the workload becomes ready.
@@ -455,7 +455,7 @@ schedule instead of trusting the state on the publishing day.
   - Test: `examples` workflow, job `advisories`; `manual:` on `main` before
     #86 it exits 1 with the 8 advisories of certifi, cryptography and
     fast-uri, after #86 it exits 0
-  - Since: this change
+  - Since: #88
 
 ## Recipes
 
