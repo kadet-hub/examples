@@ -271,6 +271,15 @@ schedule instead of trusting the state on the publishing day.
   extra MUST be installed with `omegaconf==2.4.0.dev4`: omegaconf 2.4.0
   breaks its OmegaConf backend (kapicorp/kapitan#1621).
 
+  Kapitan 0.36.3 requires `cryptography<49`. `first-platform/pyproject.toml`
+  lifts that to `cryptography>=50.0.0` with uv's `override-dependencies`,
+  for GHSA-g6cj-pr64-35w5, GHSA-jwv3-5hgf-82ww and GHSA-m2h6-j472-rp4c, as
+  the registry's gate does (registry GI-16). The override goes once a
+  Kapitan release allows 50 (kapicorp/kapitan#1632). Kapitan uses
+  cryptography only for the key pairs of its ref functions. A reader who
+  copies `first-platform` copies the override with it. The scripts'
+  `uv run --with kapitan==0.36.3` resolve without it and stay below 49.
+
   Pulumi's Kubernetes provider plugin is pinned by the `@pulumi/kubernetes`
   version in `same-app/pulumi/package-lock.json` and by version and sha256
   of its linux-amd64 archive in the workflow; `same-app/check` passes the
@@ -305,7 +314,8 @@ schedule instead of trusting the state on the publishing day.
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
-    `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81
+    `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
+    cryptography override: this change
 
 - EX-3a: Every image that an inventory, a Chainsaw test, a script or a
   workflow names MUST be pinned as `tag@sha256:digest`.
