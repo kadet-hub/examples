@@ -98,6 +98,17 @@ schedule instead of trusting the state on the publishing day.
   - Test: `examples` workflow, `schedule` trigger
   - Since: tbd
 
+- EX-16: The `ci` job of the `examples` workflow MUST fail unless every
+  other job of the run succeeded or was skipped.
+
+  It runs on every trigger with `if: always()` and is the one check the
+  `main` ruleset requires, so the ruleset need not change when a job is
+  added. A job left out of its `needs` is not gated.
+
+  - Test: `examples` workflow, job `ci`; `manual:` it failed on #88 while
+    `advisories` failed
+  - Since: #88
+
 - EX-12: CI MUST deploy every workload that an example renders to run to
   a new kind cluster and fail unless the workload becomes ready.
 
@@ -486,6 +497,25 @@ schedule instead of trusting the state on the publishing day.
     `gh api repos/kadet-hub/examples/collaborators/neat-bot/permission` reports
     `read`
   - Since: #67 (CODEOWNERS), #71, #72 (workflow)
+
+- EX-3f: CI MUST fail when osv-scanner reports a published advisory for a
+  package in a lock file of the repository.
+
+  The `advisories` job runs `osv-scanner scan source -r .` on every pull
+  request and in the weekly run (EX-2). It reads `uv.lock` and both
+  `package-lock.json`, dev dependencies included, since a reader copies them
+  whole. osv-scanner matches versions; it does not check whether an example
+  reaches the vulnerable code. An advisory without a usable fix is accepted
+  in `osv-scanner.toml` next to the lock file, with a reason, the date it
+  was checked and an `ignoreUntil`. osv-scanner reads no
+  `.terraform.lock.hcl`, `jsonnetfile.lock.json`, image or downloaded tool,
+  and not the packages the scripts' `uv run --with` resolve at run time.
+  osv-scanner itself is a release asset pinned by version and sha256 (EX-3).
+
+  - Test: `examples` workflow, job `advisories`; `manual:` on `main` before
+    #86 it exits 1 with the 8 advisories of certifi, cryptography and
+    fast-uri, after #86 it exits 0
+  - Since: #88
 
 ## Recipes
 
@@ -1091,7 +1121,7 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
 | Path | Content |
 |---|---|
 | `.github/workflows/request-review.yml` | requests `neat-bot` (EX-15) |
-| `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3) |
+| `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3), `advisories` (EX-3f), `ci` (EX-16) |
 | `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins, cert-manager's in `chart-vs-kapitan` included, and leave the rest of its Kapitan side to the chart (EX-3), keep the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
