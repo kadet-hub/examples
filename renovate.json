@@ -11,10 +11,11 @@
   "ignorePaths": [
     "**/node_modules/**"
   ],
-  "jsonnet-bundler": {
-    "lockFileMaintenance": {
-      "enabled": true
-    }
+  "vulnerabilityAlerts": {
+    "enabled": true
+  },
+  "lockFileMaintenance": {
+    "enabled": true
   },
   "customManagers": [
     {
@@ -237,6 +238,16 @@
         "!/^(docker\\.io|index\\.docker\\.io)//"
       ],
       "minimumReleaseAgeBehaviour": "timestamp-optional"
+    },
+    {
+      "description": "EX-3e: a rebuilt tag's new digest goes through at once; Docker Hub dates it by the push",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "minimumReleaseAge": "0 days"
     },
     {
       "description": "EX-3b: Node.js release dates have day precision",
