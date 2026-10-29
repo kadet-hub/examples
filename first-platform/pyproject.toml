@@ -7,3 +7,7 @@ dependencies = ["kapitan[omegaconf,reclass-rs]==0.36.3", "omegaconf==2.4.0.dev4"
 
 [tool.uv]
 package = false
+# Kapitan 0.36.3 caps cryptography below 49; 50 fixes GHSA-g6cj-pr64-35w5,
+# GHSA-jwv3-5hgf-82ww and GHSA-m2h6-j472-rp4c. Remove once a Kapitan release
+# allows it (kapicorp/kapitan#1632).
+override-dependencies = ["cryptography>=50.0.0"]
