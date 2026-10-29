@@ -272,7 +272,7 @@ schedule instead of trusting the state on the publishing day.
   `==` in the scripts' `uv run --with` and `uvx`, which a regex manager
   updates with `datasource=pypi`; npm packages through `package-lock.json`;
   jsonnet libraries through `jsonnetfile.lock.json`, whose entry follows a
-  branch and which Renovate's lock file maintenance refreshes with
+  branch and which Renovate's lock file maintenance (EX-3d) refreshes with
   `jb update`. `talosctl` is pinned by the sha256 that the Siderolabs
   release lists in `sha256sum.txt`. The `first-platform` workflow template
   pins the registry's reusable workflow by the commit of `main`, for which
@@ -281,6 +281,15 @@ schedule instead of trusting the state on the publishing day.
   `docker` come from the runner image. Kapitan 0.36.3 with the `omegaconf`
   extra MUST be installed with `omegaconf==2.4.0.dev4`: omegaconf 2.4.0
   breaks its OmegaConf backend (kapicorp/kapitan#1621).
+
+  Kapitan 0.36.3 requires `cryptography<49`. `first-platform/pyproject.toml`
+  lifts that to `cryptography>=50.0.0` with uv's `override-dependencies`,
+  for GHSA-g6cj-pr64-35w5, GHSA-jwv3-5hgf-82ww and GHSA-m2h6-j472-rp4c, as
+  the registry's gate does (registry GI-16). The override goes once a
+  Kapitan release allows 50 (kapicorp/kapitan#1632). Kapitan uses
+  cryptography only for the key pairs of its ref functions. A reader who
+  copies `first-platform` copies the override with it. The scripts'
+  `uv run --with kapitan==0.36.3` resolve without it and stay below 49.
 
   Pulumi's Kubernetes provider plugin is pinned by the `@pulumi/kubernetes`
   version in `same-app/pulumi/package-lock.json` and by version and sha256
@@ -316,7 +325,8 @@ schedule instead of trusting the state on the publishing day.
   - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
-    `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81
+    `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
+    cryptography override: #86
 
 - EX-3a: Every image that an inventory, a Chainsaw test, a script or a
   workflow names MUST be pinned as `tag@sha256:digest`.
@@ -352,6 +362,9 @@ schedule instead of trusting the state on the publishing day.
 
 - EX-3b: Renovate MUST propose a version only once it has been published
   for three days.
+
+  Security fixes (EX-3c), lock file maintenance (EX-3d) and rebuilt tags
+  (EX-3e) are exempt.
 
   `minimumReleaseAge` counts from the release timestamp the datasource
   reports, and `internalChecksFilter: strict` holds back branch and pull
@@ -397,6 +410,53 @@ schedule instead of trusting the state on the publishing day.
     2026-10-16T16:43:56Z and proposed it (partial: the lookup does not
     update the lock file; the next provider pull request does)
   - Since: #35
+
+- EX-3c: Renovate MUST propose the fix for a dependency with an open
+  Dependabot alert at once, outside any schedule and without a release age.
+
+  `vulnerabilityAlerts` is enabled in `renovate.json`. Renovate's defaults
+  for it drop `schedule` and `minimumReleaseAge` and create the pull request
+  immediately, with `[SECURITY]` in its title. The alerts come from GitHub's
+  dependency graph, which reads `uv.lock` and both `package-lock.json`,
+  transitive entries included. A fix that needs a lifted upstream
+  constraint, as cryptography in `first-platform` did, gets no pull request
+  and needs a person (EX-3).
+
+  - Test: `manual:` the Dependency Dashboard lists the open alerts, and an
+    alert with a fixed version gets a `[SECURITY]` pull request within a day
+  - Since: #87
+
+- EX-3d: Renovate MUST refresh every lock file once a week.
+
+  `lockFileMaintenance` regenerates `uv.lock`, both `package-lock.json`,
+  both `jsonnetfile.lock.json` and the `.terraform.lock.hcl` of
+  `helm-vs-terraform/terraform-only` in one pull request, on Renovate's
+  default schedule (Monday before 4 am UTC).
+  Before, only the jsonnet locks were refreshed, and transitive npm and uv
+  entries stayed at the version they were first locked at. The maintenance
+  takes the newest version each lock allows and no release age applies to
+  it: Renovate checks the age of the versions it proposes, not of what the
+  package manager resolves.
+
+  - Test: `manual:` the Dependency Dashboard lists "Lock file maintenance"
+    with its schedule
+  - Since: #87
+
+- EX-3e: Renovate MUST propose a new digest of a pinned tag without a
+  release age.
+
+  This covers images and OCI charts (`datasource=docker`). A rebuilt tag
+  usually carries base image fixes. Registries other than Docker Hub report
+  no timestamp and pass at once already (EX-3b); Docker Hub dates the
+  rebuild by its push, which held it three days. Digest updates of the
+  registry workflow (`github-digest`) and of actions keep the release age.
+
+  - Test: `manual:` `renovate --platform=local --dry-run=lookup` on a pin
+    whose Docker Hub tag was rebuilt within three days. On 2026-10-29
+    Renovate 44.194.0 got busybox 1.38.0, pushed again 2026-10-28T22:58Z,
+    in `kubevirt-csi/tests/pvc.yaml`: the new digest was pending with the
+    previous configuration and proposed with this one
+  - Since: #87
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
