@@ -74,6 +74,9 @@ env:
   # renovate: datasource=github-release-attachments depName=kubevirt/kubevirt
   VIRTCTL_VERSION: v1.9.1
   VIRTCTL_SHA256: c289393c8186a258653594605f5199b4c171a3131e6e409ed204a96b491b782a
+  # renovate: datasource=github-release-attachments depName=google/osv-scanner
+  OSV_SCANNER_VERSION: v2.7.0
+  OSV_SCANNER_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
 
 jobs:
   same-app:
@@ -586,6 +589,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: kubevirt-csi/check
 
+  # EX-3f: published advisories for the packages in the lock files.
+  advisories:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install osv-scanner
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo osv-scanner "https://github.com/google/osv-scanner/releases/download/$OSV_SCANNER_VERSION/osv-scanner_linux_amd64"
+          echo "$OSV_SCANNER_SHA256  osv-scanner" | sha256sum -c -
+          chmod +x osv-scanner
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: osv-scanner scan source -r .
+
   # EX-3: Renovate bumps these versions only; the checksum comes from the
   # publisher, and the failure names the line to paste.
   pins:
@@ -627,3 +649,33 @@ jobs:
           check "$f" "      KUBECTL_SHA256: " "$(sed -n 's/^ *KUBECTL_SHA256: //p' "$f")" \
             "https://dl.k8s.io/release/$v/bin/linux/amd64/kubectl"
           exit "$status"
+
+  # EX-16: the one required check. Every other job goes into needs.
+  ci:
+    needs:
+      - same-app
+      - apiserver-dry-run
+      - first-platform
+      - bitnami
+      - verify-oci
+      - gvisor-ci
+      - config-tools
+      - talos-machine-config
+      - helm-vs-terraform
+      - argocd-vs-flux
+      - helm-mutate
+      - chart-vs-kapitan
+      - cert-manager-mutate
+      - kubevirt-csi
+      - advisories
+      - pins
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          ! grep -qwE 'failure|cancelled' <<<"$RESULTS"
