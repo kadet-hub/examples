@@ -403,7 +403,7 @@ schedule instead of trusting the state on the publishing day.
 
   - Test: `manual:` the Dependency Dashboard lists the open alerts, and an
     alert with a fixed version gets a `[SECURITY]` pull request within a day
-  - Since: this change
+  - Since: #87
 
 - EX-3d: Renovate MUST refresh every lock file once a week.
 
@@ -419,7 +419,7 @@ schedule instead of trusting the state on the publishing day.
 
   - Test: `manual:` the Dependency Dashboard lists "Lock file maintenance"
     with its schedule
-  - Since: this change
+  - Since: #87
 
 - EX-3e: Renovate MUST propose a new digest of a pinned tag without a
   release age.
@@ -435,7 +435,7 @@ schedule instead of trusting the state on the publishing day.
     Renovate 44.194.0 got busybox 1.38.0, pushed again 2026-10-28T22:58Z,
     in `kubevirt-csi/tests/pvc.yaml`: the new digest was pending with the
     previous configuration and proposed with this one
-  - Since: this change
+  - Since: #87
 
 - EX-4: Examples MUST NOT use `kapitan compile --fetch` unless the fetched
   generators were verified before.
