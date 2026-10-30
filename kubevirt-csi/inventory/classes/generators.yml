@@ -3,7 +3,7 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/kubevirt:1.3.1@sha256:7644a6249a6043e435a594f4bf283ea8c277a922e3cf28ca32556b29374f38eb
+        source: ghcr.io/kadet-hub/kubevirt:1.3.2@sha256:d650ba7e2daa3ea7b90392f920e99c04108db49e9ea1885c1e2d1be689db8651
         output_path: lib/kubevirt
     compile:
       - input_type: kadet
