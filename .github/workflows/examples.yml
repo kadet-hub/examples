@@ -54,7 +54,7 @@ env:
   JB_VERSION: v0.6.0
   JB_SHA256: 78e54afbbc3ff3e0942b1576b4992277df4f6beb64cddd58528a76f0cd70db54
   # renovate: datasource=node-version depName=node
-  NODE_VERSION: 26.12.0
+  NODE_VERSION: 26.12.1
   NODE_SHA256: fd47865ecd6391ebb431fc815e01b9135bf83ded5cf373247e9331e196b7aded
   # renovate: datasource=github-release-attachments depName=google/gvisor
   GVISOR_RELEASE: release-20261012.0
