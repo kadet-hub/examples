@@ -3,7 +3,7 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/cilium:1.0.3@sha256:8cee8be098798642199063b8afa5e5bbf8d717b0426df280dd718d998e116635
+        source: ghcr.io/kadet-hub/cilium:1.0.4@sha256:e98676bde7b04b60c29922eaf509c6afef5a389aa58d984fff798a555f86724d
         output_path: lib/cilium
       - type: oci
         source: ghcr.io/kadet-hub/certmanager:1.0.2@sha256:ba7632e9e06a593fbe20e9fa6774139203d7df65992adff9db94779606888ad9
