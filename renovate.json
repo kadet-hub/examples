@@ -5,6 +5,9 @@
     "helpers:pinGitHubActionDigests",
     "github>kadet-hub/renovate-config"
   ],
+  "constraints": {
+    "npm": "<12"
+  },
   "minimumReleaseAge": "3 days",
   "minimumReleaseAgeBehaviour": "timestamp-required",
   "internalChecksFilter": "strict",
