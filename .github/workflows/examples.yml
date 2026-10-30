@@ -16,8 +16,8 @@ permissions: {}
 # pins job checks the others against their publisher's checksum file.
 env:
   # renovate: datasource=github-release-attachments depName=astral-sh/uv
-  UV_VERSION: 0.13.1
-  UV_SHA256: eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220
+  UV_VERSION: 0.13.6
+  UV_SHA256: f29c3e94ffabd7e6f3ba521dba169a9b7ec12100bf3257087f0f24f6123f3645
   # renovate: datasource=github-release-attachments depName=oras-project/oras
   ORAS_VERSION: v1.3.5
   ORAS_SHA256: f48a73ea6d026a862c3919fc773da9a8c86fc259c2c737d5baed3b8b9614ad22
