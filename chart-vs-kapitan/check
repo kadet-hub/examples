@@ -37,10 +37,10 @@ case $chart in
     ;;
   cert-manager)
     # renovate: datasource=docker depName=quay.io/jetstack/charts/cert-manager
-    CHART=quay.io/jetstack/charts/cert-manager:v1.21.2@sha256:634dce9c13b56677a2c05e2ab76c312d0be2664022d5dd05815da67e1fd5f610
+    CHART=quay.io/jetstack/charts/cert-manager:v1.21.3@sha256:e482675aec32862d323a9218293ff7de81192337998615e4378c56498473f240
     # renovate: datasource=github-release-attachments depName=cert-manager/cert-manager
-    CRDS_VERSION=v1.21.2
-    CRDS_SHA256=262fef78478492cd35b73a1b227106b7802f9c056361d1f561d04b32d751337f
+    CRDS_VERSION=v1.21.3
+    CRDS_SHA256=29810b2a84c8ee0731a79679ee1dfd7e93cd750eb0244542eec47fa8700f2749
     fetch() {
       helm pull "oci://${CHART%%:*}@${CHART#*@}" -d "$out" >/dev/null 2>&1
       mv "$out"/cert-manager*.tgz "$out/chart.tgz"
