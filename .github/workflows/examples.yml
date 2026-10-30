@@ -41,7 +41,7 @@ env:
   PULUMI_KUBERNETES_VERSION: v4.34.2
   PULUMI_KUBERNETES_SHA256: b2a3471a897d8d4aa5c6f0ea2933d363dfa72bee8ed651a16246a09e3e728bb6
   # renovate: datasource=docker depName=registry.k8s.io/kube-apiserver
-  KUBE_APISERVER_IMAGE: registry.k8s.io/kube-apiserver:v1.37.1@sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732fd1061d
+  KUBE_APISERVER_IMAGE: registry.k8s.io/kube-apiserver:v1.37.2@sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4
   # renovate: datasource=docker depName=registry.k8s.io/kubectl
   KUBECTL_IMAGE: registry.k8s.io/kubectl:v1.37.1@sha256:b7cab618e281b1ee7484e7b706a96e2135fbb6e072c2a573a7dab4e87d7f2385
   # renovate: datasource=github-release-attachments depName=etcd-io/etcd
