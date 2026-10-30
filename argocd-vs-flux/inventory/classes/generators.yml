@@ -6,7 +6,7 @@ parameters:
         source: ghcr.io/kadet-hub/kubernetes:1.9.1@sha256:9e428f838c4bed6f1e571a90c256cdc3fc2f95743a3291245dcc776103022f19
         output_path: lib/kubernetes
       - type: oci
-        source: ghcr.io/kadet-hub/argocd:1.0.3@sha256:49804acaf225b3337a63ec95ae3ba001a98c53e342791e1c2b1b6ed3089638d4
+        source: ghcr.io/kadet-hub/argocd:1.0.4@sha256:8b41817b189cdc043bb1a726f0e42a827672a1eda80e8d8406b512262182feea
         output_path: lib/argocd
       - type: oci
         source: ghcr.io/kadet-hub/flux:1.0.1@sha256:2d92417b8066d3f2317e5029402bfb7a4869a4f65ab34cb4e0c68dfdf1eb4a89
