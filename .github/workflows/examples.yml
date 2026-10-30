@@ -45,8 +45,8 @@ env:
   # renovate: datasource=docker depName=registry.k8s.io/kubectl
   KUBECTL_IMAGE: registry.k8s.io/kubectl:v1.37.1@sha256:b7cab618e281b1ee7484e7b706a96e2135fbb6e072c2a573a7dab4e87d7f2385
   # renovate: datasource=github-release-attachments depName=etcd-io/etcd
-  ETCD_VERSION: v3.7.2
-  ETCD_SHA256: 3a3679bc51a4ee9d30bccea1da7cd4fe62c6fc1d2ca1255068d2c53bf3026135
+  ETCD_VERSION: v3.7.3
+  ETCD_SHA256: 5dfa9cc3b3ce3b4b491fbcc2057d3daa166bcc6676f743fcd20f8e5760cb9775
   # renovate: datasource=github-release-attachments depName=grafana/tanka
   TANKA_VERSION: v0.39.5
   TANKA_SHA256: 80ae1e1972c5a16e21fc6b62801d1e06edad5dc7bc0635e44ecb2476839ac04a
