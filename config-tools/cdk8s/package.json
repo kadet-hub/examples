@@ -5,7 +5,7 @@
     "synth": "cdk8s synth"
   },
   "dependencies": {
-    "cdk8s": "2.70.115",
+    "cdk8s": "2.70.116",
     "constructs": "10.8.1"
   },
   "devDependencies": {
