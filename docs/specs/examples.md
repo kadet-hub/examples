@@ -92,6 +92,16 @@ schedule instead of trusting the state on the publishing day.
   - Test: `examples` workflow, job `gvisor-ci`; `gvisor-ci/check`
   - Since: #39
 
+- EX-1b: The `gvisor-ci` job MUST print the runner's swap with
+  `swapon --show` before anything runs under `runsc`.
+
+  A memory limit under runsc is not enforced on a host with swap
+  (google/gvisor#15756). The rootless run sets none, so the runner's memory
+  and swap are the cap, and the log shows how much that is.
+
+  - Test: manual: the `Show swap` step in the job log
+  - Since: this change
+
 - EX-2: CI MUST run every example's script weekly, in addition to pull
   requests and pushes to `main`.
 
