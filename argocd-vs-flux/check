@@ -142,8 +142,8 @@ echo "revision: $revision" >"$tmp/values.yaml"
 # renovate: datasource=github-tags depName=argoproj/argo-cd
 ARGOCD_COMMIT=c2b1e3017e2cec86b122172e861dcd026453ae44 # v3.5.6
 # renovate: datasource=github-release-attachments depName=fluxcd/flux2
-FLUX_VERSION=v2.9.6
-FLUX_SHA256=9c1fda7e401429531ed1478f67ba06b3edff6513b75da7ee47bde9f1c4d4251c
+FLUX_VERSION=v2.10.0
+FLUX_SHA256=a8c838ccd9be5d30eba9df87cd229b7c4eb80c0049fba1bc3b9840829f267f28
 # EX-7: ECR Public throttles anonymous pulls from runners (429); the same tag
 # from the mirror, pinned by digest. The tag is the one Argo CD's manifest names.
 # renovate: datasource=docker depName=mirror.gcr.io/library/redis
