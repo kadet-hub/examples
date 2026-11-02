@@ -339,7 +339,7 @@ schedule instead of trusting the state on the publishing day.
   kadet-hub preset leaves unmerged for consumers.
 
   - Test: manual: `renovate.json` `automerge` rules
-  - Since: this change
+  - Since: #107
 
 - EX-3a: Every image that an inventory, a Chainsaw test, a script or a
   workflow names MUST be pinned as `tag@sha256:digest`.
@@ -527,7 +527,7 @@ schedule instead of trusting the state on the publishing day.
     `config-tools/cdk8s/package-lock.json` carries an updated lock file;
     `npm install --package-lock-only` in `config-tools/cdk8s` fails with
     `EALLOWREMOTE` on npm 12.2.1 and passes on npm 11.20.0
-  - Since: this change
+  - Since: #107
 
 - EX-3f: CI MUST fail when osv-scanner reports a published advisory for a
   package in a lock file of the repository.
