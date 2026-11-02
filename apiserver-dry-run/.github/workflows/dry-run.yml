@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 10
     env:
       # renovate: datasource=github-releases depName=kubernetes/kubernetes
-      KUBERNETES_VERSION: v1.37.1
+      KUBERNETES_VERSION: v1.37.2
       KUBE_APISERVER_SHA256: de9b1b43c10143f448408b3aaf15f44fd5248b97a56301417a1fe2f1fc47a691
       KUBECTL_SHA256: 65691ff77eb6fa44c908b77a1082c9f092c3b9733b5cefabec0d1104890e21a8
       # renovate: datasource=github-release-attachments depName=etcd-io/etcd
