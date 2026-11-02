@@ -328,6 +328,19 @@ schedule instead of trusting the state on the publishing day.
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
     cryptography override: #86
 
+- EX-3h: Renovate MUST merge its own pull request once every check on it
+  passed, unless it is a major update or a digest update of a GitHub Action.
+
+  Renovate merges without GitHub's auto-merge (`platformAutomerge: false`),
+  so it waits for every check, including `advisories`. The `main` ruleset
+  asks for no approval, so no bypass is needed. A digest update of an
+  action under an unchanged version is a moved tag, the pattern of a
+  hijacked action. The rule also covers the generator pins that the
+  kadet-hub preset leaves unmerged for consumers.
+
+  - Test: manual: `renovate.json` `automerge` rules
+  - Since: #107
+
 - EX-3a: Every image that an inventory, a Chainsaw test, a script or a
   workflow names MUST be pinned as `tag@sha256:digest`.
 
@@ -514,7 +527,7 @@ schedule instead of trusting the state on the publishing day.
     `config-tools/cdk8s/package-lock.json` carries an updated lock file;
     `npm install --package-lock-only` in `config-tools/cdk8s` fails with
     `EALLOWREMOTE` on npm 12.2.1 and passes on npm 11.20.0
-  - Since: this change
+  - Since: #95
 
 - EX-3f: CI MUST fail when osv-scanner reports a published advisory for a
   package in a lock file of the repository.

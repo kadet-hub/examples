@@ -258,6 +258,28 @@
         "node-version"
       ],
       "minimumReleaseAge": "4 days"
+    },
+    {
+      "description": "EX-3h: Renovate merges its own pull request once every check passed; majors wait for a maintainer",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "EX-3h: a digest update of an action under the same version is a moved tag",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "automerge": false
     }
-  ]
+  ],
+  "platformAutomerge": false
 }
