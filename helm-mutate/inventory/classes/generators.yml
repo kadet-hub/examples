@@ -9,5 +9,5 @@ parameters:
         source: ghcr.io/kadet-hub/argocd:1.0.4@sha256:8b41817b189cdc043bb1a726f0e42a827672a1eda80e8d8406b512262182feea
         output_path: lib/argocd
       - type: oci
-        source: ghcr.io/kadet-hub/flux:1.0.1@sha256:2d92417b8066d3f2317e5029402bfb7a4869a4f65ab34cb4e0c68dfdf1eb4a89
+        source: ghcr.io/kadet-hub/flux:1.1.0@sha256:530197d33c9b97a78c33c1107cd760bf43627eb9fd703ef582ef4e0b806e5b90
         output_path: lib/flux
