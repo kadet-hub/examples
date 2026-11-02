@@ -328,6 +328,19 @@ schedule instead of trusting the state on the publishing day.
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
     cryptography override: #86
 
+- EX-3h: Renovate MUST merge its own pull request once every check on it
+  passed, unless it is a major update or a digest update of a GitHub Action.
+
+  Renovate merges without GitHub's auto-merge (`platformAutomerge: false`),
+  so it waits for every check, including `advisories`. The `main` ruleset
+  asks for no approval, so no bypass is needed. A digest update of an
+  action under an unchanged version is a moved tag, the pattern of a
+  hijacked action. The rule also covers the generator pins that the
+  kadet-hub preset leaves unmerged for consumers.
+
+  - Test: manual: `renovate.json` `automerge` rules
+  - Since: this change
+
 - EX-3a: Every image that an inventory, a Chainsaw test, a script or a
   workflow names MUST be pinned as `tag@sha256:digest`.
 
