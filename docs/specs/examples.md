@@ -100,7 +100,7 @@ schedule instead of trusting the state on the publishing day.
   and swap are the cap, and the log shows how much that is.
 
   - Test: manual: the `Show swap` step in the job log
-  - Since: this change
+  - Since: #108
 
 - EX-2: CI MUST run every example's script weekly, in addition to pull
   requests and pushes to `main`.
