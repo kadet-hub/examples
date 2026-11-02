@@ -527,7 +527,7 @@ schedule instead of trusting the state on the publishing day.
     `config-tools/cdk8s/package-lock.json` carries an updated lock file;
     `npm install --package-lock-only` in `config-tools/cdk8s` fails with
     `EALLOWREMOTE` on npm 12.2.1 and passes on npm 11.20.0
-  - Since: #107
+  - Since: #95
 
 - EX-3f: CI MUST fail when osv-scanner reports a published advisory for a
   package in a lock file of the repository.
