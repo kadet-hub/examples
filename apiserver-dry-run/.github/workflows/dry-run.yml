@@ -13,8 +13,8 @@ jobs:
     env:
       # renovate: datasource=github-releases depName=kubernetes/kubernetes
       KUBERNETES_VERSION: v1.37.2
-      KUBE_APISERVER_SHA256: de9b1b43c10143f448408b3aaf15f44fd5248b97a56301417a1fe2f1fc47a691
-      KUBECTL_SHA256: 65691ff77eb6fa44c908b77a1082c9f092c3b9733b5cefabec0d1104890e21a8
+      KUBE_APISERVER_SHA256: b87e5a91107cf994bfa38c6c1b28eb39f01fc040734ec9942c22738bc8b8f34b
+      KUBECTL_SHA256: c04487523e7aa7d1493f7808174c899db93d7a9cf57531420cd76b9bd415f8f4
       # renovate: datasource=github-release-attachments depName=etcd-io/etcd
       ETCD_VERSION: v3.7.3
       ETCD_SHA256: 5dfa9cc3b3ce3b4b491fbcc2057d3daa166bcc6676f743fcd20f8e5760cb9775
