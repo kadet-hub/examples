@@ -257,6 +257,9 @@ jobs:
           tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
           rm gvisor.tar.zstd uv.tgz
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # EX-1b: runsc enforces no memory limit on a host with swap (google/gvisor#15756).
+      - name: Show swap
+        run: swapon --show
       # ubuntu-24.04 restricts unprivileged user namespaces with AppArmor, which
       # rootless runsc needs (fork/exec /proc/self/exe: permission denied).
       - name: Allow unprivileged user namespaces
