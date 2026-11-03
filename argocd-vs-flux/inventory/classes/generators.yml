@@ -3,7 +3,7 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/kubernetes:1.12.0@sha256:970bf8cafbea30fc00f3092d19133b1c9fef8249036bbaee3d66800ac1b29ffc
+        source: ghcr.io/kadet-hub/kubernetes:1.13.0@sha256:5b891d4217d74a518a8da14315a80185c763fe18bce1121c1fb24507bf23daf0
         output_path: lib/kubernetes
       - type: oci
         source: ghcr.io/kadet-hub/argocd:1.0.4@sha256:8b41817b189cdc043bb1a726f0e42a827672a1eda80e8d8406b512262182feea

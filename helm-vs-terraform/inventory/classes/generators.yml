@@ -5,7 +5,7 @@ parameters:
       target: ${_reclass_:name:short}
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/kubernetes:1.12.0@sha256:970bf8cafbea30fc00f3092d19133b1c9fef8249036bbaee3d66800ac1b29ffc
+        source: ghcr.io/kadet-hub/kubernetes:1.13.0@sha256:5b891d4217d74a518a8da14315a80185c763fe18bce1121c1fb24507bf23daf0
         output_path: lib/kubernetes
       - type: oci
         source: ghcr.io/kadet-hub/terraform-aws:0.1.2@sha256:5030e53e51c3eafc3404d6c77bbf6276ce8628894d65419917945081cf2b151f
