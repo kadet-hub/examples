@@ -341,7 +341,7 @@ schedule instead of trusting the state on the publishing day.
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
-    cryptography override: #86
+    cryptography override: #86; recipes in a fetch inventory: #132
 
 - EX-3h: Renovate MUST merge its own pull request once every check on it
   passed, unless it is a major update or a digest update of a GitHub Action.
@@ -1208,7 +1208,10 @@ Pod Security level `baseline`.
   address. `check` prints the engines that answered on success as well,
   so the job logs show how often that happens.
 
-  - Test: `examples` workflow, job `open-webui-searxng`
+  - Test: `examples` workflow, job `open-webui-searxng`; `manual:` with
+    valkey set back to 1.0.1 in the fetch inventory, Renovate 44.194.0
+    (`--platform=local --dry-run=lookup`, 2026-11-04) proposed 1.0.2 at
+    its digest on the branch `renovate/open-webui-searxng-recipes`
   - Since: #132
 
 ## Open questions
