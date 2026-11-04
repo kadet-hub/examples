@@ -1168,7 +1168,7 @@ template enables `html` only and answers `format=json`, which Open WebUI
 asks for, with 403. The target `open-webui` sets `ENABLE_WEB_SEARCH`,
 `WEB_SEARCH_ENGINE` and `SEARXNG_QUERY_URL`, the last to the Service
 `searxng` in the namespace `searxng`. The secrets are refs with the base64
-backend and a `random:str` function, which the first compile creates in a
+backend and a `random` function, which the first compile creates in a
 temporary refs path and the second writes with `--reveal`. The images of
 SearXNG, Open WebUI and Ollama run as root, so both namespaces enforce the
 Pod Security level `baseline`.
@@ -1186,13 +1186,30 @@ Pod Security level `baseline`.
   calls `/api/v1/retrieval/process/web/search` with the query
   `kubernetes`. Open WebUI sends the query to SearXNG with `format=json`,
   loads the pages of the results and embeds them with the model its image
-  ships. SearXNG is the only search engine Open WebUI is configured with,
-  and the search fails without it, so the results come from SearXNG.
+  ships. With SearXNG scaled to zero the same call must return 400, and
+  Open WebUI's log must show that it cannot connect to the host of
+  `SEARXNG_QUERY_URL`. SearXNG is the only search engine Open WebUI is
+  configured with, so the results of the first call come from SearXNG.
 
-  The results depend on search engines outside the cluster. tbd
+  Neither SearXNG nor Open WebUI has a readiness probe, so their rollouts
+  end before they listen. `check` waits for SearXNG's `/healthz` and Open
+  WebUI's `/health` through the API server, and starts the port-forward to
+  Open WebUI only then, because a port-forward ends at the first
+  connection the pod refuses. That ended the first run of #132.
+
+  The results, and the pages Open WebUI loads for them, come from outside
+  the cluster, so this step can fail without a change to the repository.
+  In the first green run of #132 on an ubuntu-24.04 runner, SearXNG got
+  results from Brave and Google CSE and a CAPTCHA from DuckDuckGo. When
+  every engine refuses the runner, Open WebUI 0.12.5 answers 404 with `No
+  results found from web search` (`process_web_search` in
+  `routers/retrieval.py`), and `check` fails and prints the engines that
+  did not answer. A rerun starts on a new runner, which may get another
+  address. `check` prints the engines that answered on success as well,
+  so the job logs show how often that happens.
 
   - Test: `examples` workflow, job `open-webui-searxng`
-  - Since: #130
+  - Since: #132
 
 ## Open questions
 
