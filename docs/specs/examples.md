@@ -346,7 +346,7 @@ schedule instead of trusting the state on the publishing day.
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
     cryptography override: #86; recipes in a fetch inventory: #132;
-    `platform-baseline`: tbd
+    `platform-baseline`: #135
 
 - EX-3h: Renovate MUST merge its own pull request once every check on it
   passed, unless it is a major update or a digest update of a GitHub Action.
@@ -1322,8 +1322,11 @@ so none of them is in the repository.
 
   Related: EX-6, EX-7, EX-12
 
-  - Test: `examples` workflow, job `platform-baseline`
-  - Since: tbd
+  - Test: `examples` workflow, job `platform-baseline`; `manual:` Renovate
+    44.194.0 (`--platform=local --dry-run=lookup`, 2026-11-05) found every
+    pin of `platform-baseline`, and with External Secrets set back to
+    v2.13.0 proposed v2.14.0 with the sha256 of its `external-secrets.yaml`
+  - Since: #135
 
 - EX-18a: `platform-baseline/check` MUST fail unless compiling a copy of
   the inventory with another `platform.domain` changes exactly
@@ -1334,7 +1337,7 @@ so none of them is in the repository.
   podinfo's DNS name in the target `podinfo`. The post shows the diff.
 
   - Test: `examples` workflow, job `platform-baseline`
-  - Since: tbd
+  - Since: #135
 
 ## Open questions
 
