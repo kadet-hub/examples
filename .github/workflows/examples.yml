@@ -57,8 +57,8 @@ env:
   NODE_VERSION: 26.12.1
   NODE_SHA256: 6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd
   # renovate: datasource=github-release-attachments depName=google/gvisor
-  GVISOR_RELEASE: release-20261012.0
-  GVISOR_SHA512: ce2e1aeb853c104e854dea6644333a1dba0fbc9dd1646af97e1d013fdf810da6d4176dd96f2139d7b055e5382117c0d7c4567ebd64ed9bef47fdd15f80fd67ab
+  GVISOR_RELEASE: release-20261026.0
+  GVISOR_SHA512: e6aa030fb8379fe92b53e9b8b696419e0dce8a3bbcc7d4c1cf76b2ea3d6569eabd7360e694deda6ccbdcd77095b3e82ca0f90a3d8fd13a3e5d6b11cd29fe4649
   # renovate: datasource=github-release-attachments depName=kubernetes-sigs/kind
   KIND_VERSION: v0.33.0
   KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
