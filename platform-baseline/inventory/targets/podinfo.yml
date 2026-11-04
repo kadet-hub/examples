@@ -26,15 +26,16 @@ parameters:
         security_profile: restricted
     certmanager:
       certs:
+        # No sync wave: the generator renders no annotations, and a missing
+        # Secret volume only holds the pod in ContainerCreating.
         podinfo-tls:
-          annotations:
-            argocd.argoproj.io/sync-wave: "-1"
           spec:
             secretName: podinfo-tls
             issuerRef: {name: "${platform.issuer}", kind: ClusterIssuer}
             dnsNames: ["podinfo.${platform.domain}"]
     external_secrets:
       externalsecrets:
+        # Before the Deployment, whose env reads the Secret.
         podinfo-message:
           annotations:
             argocd.argoproj.io/sync-wave: "-1"
