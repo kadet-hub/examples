@@ -1,0 +1,29 @@
+classes:
+  - recipes.searxng
+parameters:
+  namespace: searxng
+  kapitan:
+    vars:
+      target: searxng
+  applications:
+    searxng:
+      secret_key: ?{base64:searxng/secret-key||random:str:40}
+    valkey:
+      # Part of a URL in the recipe, so letters and digits only.
+      password: ?{base64:searxng/valkey-password||random:loweralphanum:40}
+  components:
+    searxng:
+      config_maps:
+        config:
+          data:
+            # The recipe's settings plus the json format, which Open WebUI
+            # searches with.
+            settings.yml:
+              value: |
+                use_default_settings: true
+                server:
+                  image_proxy: true
+                search:
+                  formats:
+                    - html
+                    - json

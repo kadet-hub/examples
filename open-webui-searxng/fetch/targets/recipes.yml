@@ -1,0 +1,17 @@
+# The recipes and the recipes they include, at the digests the index lists.
+# open-webui and searxng both include valkey 1.0.2 at this digest.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/open-webui:1.0.0@sha256:f44fd8d69166996694c83eeb6951e95699dc8601368d0f42259068c20a0c913c
+        output_path: inventory/classes/recipes/open-webui
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/ollama:1.0.0@sha256:5c461aa9fbfcf64a53a494d79f517ec64f2a280e36360c658bf4767d63b59bb3
+        output_path: inventory/classes/recipes/ollama
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/searxng:1.0.0@sha256:98a5e2f69b913c52ddd1a459b4f4a1409cf6d14d602e79d95c3195129b57f064
+        output_path: inventory/classes/recipes/searxng
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/valkey:1.0.2@sha256:263dfc2e41097c7c6bd016baadcc8384e79afd10910506a892e9994ee7ece918
+        output_path: inventory/classes/recipes/valkey

@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -54,7 +54,8 @@ schedule instead of trusting the state on the publishing day.
   `argocd-vs-flux` fails unless EX-7 and EX-8 hold, `helm-mutate` unless
   EX-9 and EX-10 hold, `cert-manager-mutate` unless EX-11 holds,
   `first-platform` and `helm-vs-terraform` unless EX-12 holds,
-  `kubevirt-csi` unless EX-14 and EX-14a hold.
+  `kubevirt-csi` unless EX-14 and EX-14a hold, `open-webui-searxng`
+  unless EX-17 holds.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -124,9 +125,9 @@ schedule instead of trusting the state on the publishing day.
 
   kubeconform and an API server accept manifests that the kubelet cannot
   run, such as a readiness probe on a port the app does not listen on.
-  `argocd-vs-flux`, `helm-mutate`, `cert-manager-mutate` and
-  `kubevirt-csi` deploy their workloads under EX-7, EX-10, EX-11 and
-  EX-14.
+  `argocd-vs-flux`, `helm-mutate`, `cert-manager-mutate`,
+  `kubevirt-csi` and `open-webui-searxng` deploy their workloads under
+  EX-7, EX-10, EX-11, EX-14 and EX-17.
   `first-platform/check` deploys `compiled/prod/apps` (Namespace,
   Deployment, Service, PodDisruptionBudget), `helm-vs-terraform/check`
   the Deployment, Service and ConfigMap of its first compile. Both create
@@ -224,6 +225,9 @@ schedule instead of trusting the state on the publishing day.
 
   Pins in Kapitan inventories and Kubernetes manifests are updated with
   `datasource=docker` by regex managers: generators through the org preset;
+  recipes in a fetch inventory (`open-webui-searxng`) by a manager of
+  their own, because the preset reads `**/inventory/**` only and allows no
+  `/` in a name;
   charts by version and the digest of their OCI artifact (podinfo in
   `helm-mutate`, cert-manager and trust-manager in `cert-manager-mutate`); images wherever an `image:` or
   `image_name:` key or an `-image=` argument names one, by tag or by
@@ -238,7 +242,8 @@ schedule instead of trusting the state on the publishing day.
   trust-manager classes of `cert-manager-mutate`, so that a chart's CRDs
   never run with another operator version; kind and its
   node image; podinfo's chart and image; `@pulumi/kubernetes` and its
-  plugin.
+  plugin; the four recipes of `open-webui-searxng`, whose includes must
+  be pinned at the digests the index lists (EX-17).
 
   Two values follow another pin, and the pull request that changes that
   pin has to change them: the redis tag follows Argo CD's manifest (EX-7),
@@ -336,7 +341,7 @@ schedule instead of trusting the state on the publishing day.
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
-    cryptography override: #86
+    cryptography override: #86; recipes in a fetch inventory: #132
 
 - EX-3h: Renovate MUST merge its own pull request once every check on it
   passed, unless it is a major update or a digest update of a GitHub Action.
@@ -1139,6 +1144,76 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
     case only by hand, on a host without `/dev/kvm`)
   - Since: #60
 
+## Open WebUI and SearXNG
+
+`open-webui-searxng/` backs the kadet-hub.org blog post on a self-hosted
+chat assistant with web search, put together from published recipes of
+kadet-hub/recipes. Open WebUI is the chat interface and API, Ollama runs
+the model on the CPU and SearXNG is Open WebUI's web search.
+
+The fetch inventory `fetch/targets/recipes.yml` pins `open-webui`,
+`ollama`, `searxng` and `valkey` by version and digest. `open-webui`
+includes `ollama` and `valkey`, `searxng` includes `valkey`, both at the
+digest of valkey 1.0.2, so the two share one
+`inventory/classes/recipes/valkey`. `check` does not compile the fetch
+inventory. It verifies and pulls each recipe as "Verifying a recipe by
+hand" in the registry's `docs/consumers.md` describes, and each generator
+the recipes pin as in EX-4. The recipes are written for the omegaconf
+backend, which `.kapitan` selects.
+
+Each recipe gets a target and a namespace of its own, `searxng` and
+`open-webui`, and each target runs the Valkey of its included recipe. The
+target `searxng` adds `json` to `search.formats`: SearXNG's settings
+template enables `html` only and answers `format=json`, which Open WebUI
+asks for, with 403. The target `open-webui` sets `ENABLE_WEB_SEARCH`,
+`WEB_SEARCH_ENGINE` and `SEARXNG_QUERY_URL`, the last to the Service
+`searxng` in the namespace `searxng`. The secrets are refs with the base64
+backend and a `random` function, which the first compile creates in a
+temporary refs path and the second writes with `--reveal`. The images of
+SearXNG, Open WebUI and Ollama run as root, so both namespaces enforce the
+Pod Security level `baseline`.
+
+- EX-17: `open-webui-searxng/check` MUST fail unless every recipe of the
+  fetch inventory is listed in the attested index at its version and
+  digest, is not yanked and has a valid attestation, every recipe it
+  includes is pinned at the digest its record lists, every generator the
+  recipes pin passes EX-4, and, deployed to a new kind cluster, Open WebUI's
+  web search returns at least one result, the same search fails once
+  SearXNG is scaled to zero, and `smollm:135m`, pulled into Ollama through
+  Open WebUI, answers a chat completion through Open WebUI.
+
+  `check` signs up the first account, which Open WebUI makes admin, and
+  calls `/api/v1/retrieval/process/web/search` with the query
+  `kubernetes`. Open WebUI sends the query to SearXNG with `format=json`,
+  loads the pages of the results and embeds them with the model its image
+  ships. With SearXNG scaled to zero the same call must return 400, and
+  Open WebUI's log must show that it cannot connect to the host of
+  `SEARXNG_QUERY_URL`. SearXNG is the only search engine Open WebUI is
+  configured with, so the results of the first call come from SearXNG.
+
+  Neither SearXNG nor Open WebUI has a readiness probe, so their rollouts
+  end before they listen. `check` waits for SearXNG's `/healthz` and Open
+  WebUI's `/health` through the API server, and starts the port-forward to
+  Open WebUI only then, because a port-forward ends at the first
+  connection the pod refuses. That ended the first run of #132.
+
+  The results, and the pages Open WebUI loads for them, come from outside
+  the cluster, so this step can fail without a change to the repository.
+  In the first green run of #132 on an ubuntu-24.04 runner, SearXNG got
+  results from Brave and Google CSE and a CAPTCHA from DuckDuckGo. When
+  every engine refuses the runner, Open WebUI 0.12.5 answers 404 with `No
+  results found from web search` (`process_web_search` in
+  `routers/retrieval.py`), and `check` fails and prints the engines that
+  did not answer. A rerun starts on a new runner, which may get another
+  address. `check` prints the engines that answered on success as well,
+  so the job logs show how often that happens.
+
+  - Test: `examples` workflow, job `open-webui-searxng`; `manual:` with
+    valkey set back to 1.0.1 in the fetch inventory, Renovate 44.194.0
+    (`--platform=local --dry-run=lookup`, 2026-11-04) proposed 1.0.2 at
+    its digest on the branch `renovate/open-webui-searxng-recipes`
+  - Since: #132
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -1172,4 +1247,5 @@ therefore patches the StorageProfile `standard` with `ReadWriteOnce` and
 | `chart-vs-kapitan/` | One Kapitan project on the omegaconf backend, one target per chart, chart values in `values/`, CRDs and jsonnet libraries fetched by `check` into `kapitan/vendor/`; `check <chart>` (EX-13, EX-13a) |
 | `chart-vs-kapitan/kapitan/components/kube-prometheus-stack.jsonnet`, `chart-vs-kapitan/kapitan/jsonnetfile.json`, `chart-vs-kapitan/kapitan/jsonnetfile.lock.json` | Rules and dashboards of kube-prometheus-stack and the pins of their sources (EX-13a) |
 | `kubevirt-csi/` | One Kapitan project (targets `infra`, `tenant`) with the kubevirt generator pinned in `inventory/classes/generators.yml`, `infra.yaml`, the tenant workload in `tests/pvc.yaml`, the negative case's claim in `tests/static-pvc.yaml`; `check` (EX-14, EX-14a) |
+| `open-webui-searxng/` | One Kapitan project (targets `open-webui`, `searxng`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-17) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |

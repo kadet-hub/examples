@@ -19,6 +19,7 @@ longer holds.
 | [argocd-vs-flux](argocd-vs-flux/) | https://kadet-hub.org/guides/argocd-vs-flux/ | `argocd-vs-flux/check argocd`, `argocd-vs-flux/check flux` |
 | [helm-mutate](helm-mutate/) | https://kadet-hub.org/guides/patch-helm-chart/ | `helm-mutate/check kubectl`, `helm-mutate/check argocd`, `helm-mutate/check flux` |
 | [cert-manager-mutate](cert-manager-mutate/) | https://kadet-hub.org/blog/cert-manager-helm-chart-patches/ | `cert-manager-mutate/check` |
+| [open-webui-searxng](open-webui-searxng/) | https://kadet-hub.org/blog/open-webui-searxng-kubernetes/ | `open-webui-searxng/check` |
 
 ## Running
 
