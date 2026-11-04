@@ -35,9 +35,13 @@ schedule instead of trusting the state on the publishing day.
 
   `talos-machine-config/check` creates the cluster secrets with
   `talosctl gen secrets` on every run, writes them to Kapitan refs with the
-  base64 backend and compiles with `--reveal`, because `talosctl validate`
-  rejects placeholder certificates. Neither the refs nor the compiled
-  configs are committed.
+  base64 backend and compiles with `--reveal`. Without it the configs hold
+  ref tokens, which are not valid base64, and `talosctl validate` rejects
+  them. It also rejects a cluster CA document that is not PEM. A base64
+  value that is not a certificate passes elsewhere in the main config
+  document (checked with talosctl v1.14.5), so validation does not prove
+  the certificates are real. Neither the refs nor the compiled configs are
+  committed.
 
   `helm-vs-terraform` compiles one inventory into an OpenTofu root module
   (terraform-aws generator) and Kubernetes manifests (kubernetes
