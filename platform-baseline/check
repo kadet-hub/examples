@@ -1,0 +1,475 @@
+#!/usr/bin/env bash
+# A cluster baseline from kadet-hub generators and the cert-manager recipe,
+# with podinfo on top, deployed by Argo CD (EX-18). Verifies the latest
+# signed index, the recipe pinned in fetch/targets/recipes.yml and every
+# generator, pulls them by digest and compiles the seven targets. Changes
+# the domain in a copy of the inventory and fails unless exactly the two
+# certificates that name it change. Then installs the operators into a new
+# kind cluster, applies the platform targets, pushes compiled/podinfo to an
+# in-cluster Git server and exits 0 only if Argo CD reports podinfo Synced
+# and Healthy at that commit, podinfo serves a certificate from the
+# platform CA and the message from the secret store, Kyverno rejects a pod
+# whose image has no digest and admits the same pod with one, Prometheus
+# returns podinfo for up{namespace="podinfo"} and Grafana returns it through
+# its data source, External Secrets syncs a changed message, and Velero
+# restores the deleted secrets namespace.
+# Set KEEP=1 to keep the cluster.
+# Needs gh (authenticated), jq, oras, uv, kind, kubectl, velero, curl,
+# openssl, docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+min_serial=107
+tmp=$(mktemp -d)
+cluster=platform-baseline
+export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
+cleanup() {
+  kill "${watcher:-}" "${forward:-}" "${grafana:-}" 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf lib compiled inventory/classes/recipes
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+platform() { sed -nE "s/^ +$1: (.+)$/\1/p" inventory/classes/platform.yml; } # a value of the shared class
+started=$SECONDS
+
+# EX-4: index signature, digests and attestations, then pull by digest, as
+# "Verifying a recipe by hand" in the registry's docs/consumers.md does it.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+if ((serial < min_serial)); then
+  echo "index serial $serial is lower than $min_serial" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+
+pins=$(sed -nE 's|^ *source: ghcr\.io/kadet-hub/recipes/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  fetch/targets/recipes.yml)
+while read -r name version digest; do
+  record=$(jq -ec --arg n "$name" --arg v "$version" \
+    '.recipes[$n][$v] | select(.yanked == null)' "$tmp/index.json") || {
+    echo "recipe $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  want=$(jq -r .digest <<<"$record")
+  if [[ $want != "$digest" ]]; then
+    echo "recipe $name $version: index has $want, fetch/targets/recipes.yml pins $digest" >&2
+    exit 1
+  fi
+  while read -r iname idigest; do
+    grep -qE "^$iname [^ ]+ $idigest$" <<<"$pins" || {
+      echo "recipe $name $version includes $iname at $idigest, which fetch/targets/recipes.yml does not pin" >&2
+      exit 1
+    }
+  done < <(jq -r '.includes[] | "\(.name) \(.digest)"' <<<"$record")
+  gh attestation verify "oci://ghcr.io/kadet-hub/recipes/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/recipes/$name" "ghcr.io/kadet-hub/recipes/$name@$digest" >/dev/null
+  mkdir -p "inventory/classes/recipes/$name"
+  tar -xf "$tmp/recipes/$name/$name.tar" -C "inventory/classes/recipes/$name" --no-same-owner
+  echo "recipe $name $version verified and unpacked"
+done <<<"$pins"
+if (($(wc -l <<<"$pins") != 1)); then
+  echo "expected 1 recipe in fetch/targets/recipes.yml, found $(wc -l <<<"$pins")" >&2
+  exit 1
+fi
+
+# The generators of inventory/classes/generators.yml and those the recipe
+# pins. Both unpack into lib/<name>, so one name must have one digest.
+generators=$(cat inventory/classes/generators.yml inventory/classes/recipes/*/*.yml |
+  sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' | sort -u)
+twice=$(cut -d' ' -f1 <<<"$generators" | uniq -d)
+if [[ -n $twice ]]; then
+  echo "pinned at more than one version or digest: $twice" >&2
+  exit 1
+fi
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "generator $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "generator $name $version: index has $want, the inventory pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/generators/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/generators/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "generator $name $version verified and unpacked"
+done <<<"$generators"
+echo "verified and pulled in $((SECONDS - started))s"
+
+compile() { # in the current directory
+  "${py[@]}" kapitan compile >"$tmp/compile.log" 2>&1 || { cat "$tmp/compile.log"; exit 1; }
+}
+t=$SECONDS
+compile
+for target in compiled/*; do
+  echo "${target#compiled/}: $(find "$target" -type f | wc -l) files"
+done
+echo "compiled in $((SECONDS - t))s"
+
+# EX-18: the domain is set once in the shared class. In a copy of the
+# inventory with another domain, exactly the root CA, in target
+# cert-manager, and podinfo's certificate, in target podinfo, change.
+mkdir "$tmp/other"
+cp -r .kapitan inventory lib "$tmp/other"
+sed -i -E 's/^(    domain: ).+$/\1apps.example.org/' "$tmp/other/inventory/classes/platform.yml"
+(cd "$tmp/other" && compile)
+status=0
+diff -rq compiled "$tmp/other/compiled" >"$tmp/changed" || status=$?
+((status == 1)) || { echo "EX-18: diff found no change or failed ($status)" >&2; exit 1; }
+changed=$(sed -E "s|^Files compiled/(.+) and .+ differ$|\1|" "$tmp/changed" | sort)
+expected=$'cert-manager/issuers/cert-manager/platform-ca-cert.yml\npodinfo/podinfo/podinfo-tls-cert.yml'
+if [[ $changed != "$expected" ]]; then
+  echo "EX-18: another domain changed $(tr '\n' ' ' <<<"$changed"), expected $(tr '\n' ' ' <<<"$expected")" >&2
+  exit 1
+fi
+while read -r f; do
+  diff -u --label "a/compiled/$f" --label "b/compiled/$f" "compiled/$f" "$tmp/other/compiled/$f" || true
+done <<<"$changed"
+echo "EX-18: another domain changes $(wc -l <<<"$changed") files in 2 targets"
+
+# EX-6: what a broken or not ready pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop the rollout status as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    # EX-6: broken on two polls in a row; Argo CD's server briefly waits for a Secret.
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$ # check's children: the command it waits for and this watch
+    return
+  done
+}
+# EX-6: a kubectl rollout status or wait that prints the namespace on a timeout.
+install_wait() { # namespace kubectl-arguments
+  local ns=$1 s
+  shift
+  kubectl -n "$ns" "$@" && return
+  s=$?
+  kubectl -n "$ns" get events --sort-by=.lastTimestamp >&2 || true
+  kubectl -n "$ns" get pods -o wide >&2 || true
+  # shellcheck disable=SC2046 # one pod name per word
+  describe_pods "$ns" $(kubectl -n "$ns" get pods -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded" and (any(.status.conditions[]?;
+        .type == "Ready" and .status == "True") | not)) | .metadata.name')
+  return "$s"
+}
+# EX-6: an operator's webhook can refuse connections right after its rollout.
+apply() { # kubectl apply arguments
+  local i
+  for i in $(seq 30); do
+    kubectl apply "$@" >/dev/null && return
+    ((i < 30)) && sleep 2
+  done
+  return 1
+}
+# Waits until a jq filter, which may read $ENV, is true on a resource.
+until_true() { # seconds jq-filter kubectl-get-arguments
+  local deadline=$((SECONDS + $1)) filter=$2
+  shift 2
+  until kubectl get "$@" -o json 2>/dev/null | jq -e "$filter" >/dev/null; do
+    if ((SECONDS > deadline)); then
+      echo "timed out waiting for $filter on $*" >&2
+      kubectl get "$@" -o yaml >&2 || true
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+# The operators from their projects' release manifests, pinned by version and
+# sha256 (EX-3). Argo CD publishes its manifest in the repository only, so it
+# is pinned by the commit of its tag.
+# renovate: datasource=github-release-attachments depName=kyverno/kyverno
+KYVERNO_VERSION=v1.19.2
+KYVERNO_SHA256=4f785937dc7fe49a0731108b15def1538923c73d9236255bc69d94d498037969
+# renovate: datasource=github-release-attachments depName=prometheus-operator/prometheus-operator
+PROMETHEUS_OPERATOR_VERSION=v0.94.2
+PROMETHEUS_OPERATOR_SHA256=045754c91469cccb27d7832168a5b5f0448188bcb3513f74a13c76c9079d654b
+# renovate: datasource=github-release-attachments depName=external-secrets/external-secrets
+EXTERNAL_SECRETS_VERSION=v2.14.0
+EXTERNAL_SECRETS_SHA256=21d51ab38bf7016a3d01e1259a92d40c23e83e68182ae6c4ca816af18717cb55
+# renovate: datasource=github-release-attachments depName=grafana/grafana-operator
+GRAFANA_OPERATOR_VERSION=v5.25.0
+GRAFANA_OPERATOR_SHA256=b6cf299b645e6415e63c79fcebdd6d9cbb86bfeebf4068b8fd924d336b803f4b
+# renovate: datasource=github-tags depName=argoproj/argo-cd
+ARGOCD_COMMIT=c2b1e3017e2cec86b122172e861dcd026453ae44 # v3.5.6
+# EX-7: ECR Public throttles anonymous pulls from runners (429); the same tag
+# from the mirror, pinned by digest. The tag is the one Argo CD's manifest names.
+# renovate: datasource=docker depName=mirror.gcr.io/library/redis
+REDIS_IMAGE=mirror.gcr.io/library/redis:8.2.3-alpine@sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba
+# The server image of the workflow's velero release, and the AWS plugin
+# that speaks S3.
+# renovate: datasource=docker depName=docker.io/velero/velero
+VELERO_IMAGE=docker.io/velero/velero:v1.18.4@sha256:c89fb5b6d1fd6afd368e0f483e6f5555fd62851a1eada8ac5c72482e674ca17b
+# renovate: datasource=docker depName=docker.io/velero/velero-plugin-for-aws
+VELERO_AWS_IMAGE=docker.io/velero/velero-plugin-for-aws:v1.14.4@sha256:c85a7fa803569e3128c33e4f5766f84ab156c8d171c9f1dd2715581d45ce98fa
+manifest() { # url sha256 file
+  curl -fsSL -o "$tmp/$3" "$1"
+  echo "$2  $tmp/$3" | sha256sum -c --quiet
+}
+manifest "https://github.com/kyverno/kyverno/releases/download/$KYVERNO_VERSION/install.yaml" \
+  "$KYVERNO_SHA256" kyverno.yaml
+manifest "https://github.com/prometheus-operator/prometheus-operator/releases/download/$PROMETHEUS_OPERATOR_VERSION/bundle.yaml" \
+  "$PROMETHEUS_OPERATOR_SHA256" prometheus-operator.yaml
+manifest "https://github.com/external-secrets/external-secrets/releases/download/$EXTERNAL_SECRETS_VERSION/external-secrets.yaml" \
+  "$EXTERNAL_SECRETS_SHA256" external-secrets.yaml
+manifest "https://github.com/grafana/grafana-operator/releases/download/$GRAFANA_OPERATOR_VERSION/kustomize-cluster_scoped.yaml" \
+  "$GRAFANA_OPERATOR_SHA256" grafana-operator.yaml
+curl -fsSL -o "$tmp/argocd.yaml" "https://raw.githubusercontent.com/argoproj/argo-cd/$ARGOCD_COMMIT/manifests/install.yaml"
+redis=${REDIS_IMAGE%@*}
+sed -i "s|image: public.ecr.aws/docker/library/redis:${redis##*:}$|image: $REDIS_IMAGE|" "$tmp/argocd.yaml"
+if grep -q 'image: public.ecr.aws/docker/library/redis:' "$tmp/argocd.yaml"; then
+  echo "EX-7: Argo CD's manifest names another redis tag than REDIS_IMAGE" >&2
+  exit 1
+fi
+
+# The node image of the workflow's kind release; Renovate updates both together.
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
+watch_pods &
+watcher=$!
+
+# EX-18: the operators, all at once so that their images pull side by side.
+# Argo CD's redis goes first, until its secret-init has created the Secret
+# that the other Argo CD pods need to start (EX-7).
+installing=$SECONDS
+find compiled/cert-manager/manifests -name '*-namespace.yml' -exec kubectl apply -f {} \; >/dev/null
+apply -R -f compiled/cert-manager/manifests
+kubectl apply --server-side -f "$tmp/kyverno.yaml" >/dev/null
+kubectl apply --server-side -f "$tmp/prometheus-operator.yaml" >/dev/null
+kubectl apply --server-side -f "$tmp/external-secrets.yaml" >/dev/null
+kubectl apply --server-side -f "$tmp/grafana-operator.yaml" >/dev/null
+kubectl create namespace argocd >/dev/null
+kubectl apply -n argocd --server-side -f "$tmp/argocd.yaml" -l app.kubernetes.io/name=argocd-redis >/dev/null
+# velero install 1.18.4 names the plugin's init container
+# velero-velero-plugin-for-aws:v1-14-4 for a tag@digest image, which the API
+# server rejects. The name set here is the one it gives the image without
+# a digest.
+velero install --image "$VELERO_IMAGE" --plugins "$VELERO_AWS_IMAGE" \
+  --no-default-backup-location --no-secret --use-volume-snapshots=false --dry-run -o json |
+  jq '(.items[] | select(.kind == "Deployment") | .spec.template.spec.initContainers[0].name) = "velero-velero-plugin-for-aws"' |
+  kubectl apply -f - >/dev/null
+# Stand-ins for what lives outside the cluster: the Git server and the
+# object storage, each with keys that only this run knows.
+kubectl apply -f git-server.yaml -f s3-server.yaml >/dev/null
+access=$(openssl rand -hex 10)
+secret=$(openssl rand -hex 20)
+kubectl -n s3 create secret generic s3-root --from-literal=access-key="$access" \
+  --from-literal=secret-key="$secret" >/dev/null
+kubectl -n velero create secret generic velero-s3 \
+  --from-literal=cloud="$(printf '[default]\naws_access_key_id=%s\naws_secret_access_key=%s\n' "$access" "$secret")" >/dev/null
+install_wait argocd wait --for=create secret/argocd-redis --timeout=300s >/dev/null
+kubectl apply -n argocd --server-side --force-conflicts -f "$tmp/argocd.yaml" >/dev/null
+
+cm=$(platform cert_manager)
+for ns in "$cm" kyverno default grafana argocd velero git s3; do
+  install_wait "$ns" wait --for=condition=Available deploy --all --timeout=600s >/dev/null
+done
+install_wait argocd rollout status statefulset/argocd-application-controller --timeout=300s >/dev/null
+installed=$SECONDS
+echo "operators installed and available after $((installed - installing))s"
+
+# EX-18: the platform targets; each kind's webhook may still be starting.
+for target in cert-manager/issuers kyverno monitoring external-secrets velero; do
+  find "compiled/$target" -name '*-namespace.yml' -exec kubectl apply -f {} \; >/dev/null
+  apply -R -f "compiled/$target"
+done
+store=$(platform secret_store)
+issuer=$(platform issuer)
+secrets=$(platform secrets)
+monitoring=$(platform monitoring)
+message="message $(openssl rand -hex 8) from the secret store"
+kubectl -n "$secrets" create secret generic podinfo --from-literal=message="$message" >/dev/null
+until_true 120 'any(.status.conditions[]?; .type == "Ready" and .status == "True")' clusterissuer "$issuer"
+until_true 120 'any(.status.conditions[]?; .type == "Ready" and .status == "True")' clustersecretstore "$store"
+until_true 120 '.status.phase == "Available"' -n velero backupstoragelocation default
+until_true 120 '.status.conditionStatus.ready == true' validatingpolicy require-image-digest
+install_wait "$monitoring" wait --for=condition=Available prometheus/platform --timeout=300s >/dev/null
+# External Secrets defines a kind Grafana as well, so the full names.
+until_true 300 '.status.stage == "complete" and .status.stageStatus == "success"' \
+  -n "$monitoring" grafanas.grafana.integreatly.org platform
+until_true 300 'any(.status.conditions[]?; .type == "DatasourceSynchronized" and .status == "True")' \
+  -n "$monitoring" grafanadatasources.grafana.integreatly.org prometheus
+configured=$SECONDS
+echo "platform targets applied and ready after $((configured - installed))s"
+
+# EX-7: compiled/podinfo as one commit on main of the in-cluster Git server,
+# in the repository the shared class names.
+repo=$(platform git_repo)
+repo=${repo#http://*/}
+pass=$(openssl rand -hex 16)
+kubectl -n git exec deploy/gitea -- gitea admin user create --admin --username "${repo%%/*}" \
+  --password "$pass" --email kadet@example.com --must-change-password=false >/dev/null
+# shellcheck disable=SC2016 # $1 and $2 expand in the pod's shell
+revision=$(tar -C compiled -cf - podinfo | kubectl -n git exec -i deploy/gitea -- sh -euc '
+  mkdir /tmp/apps && cd /tmp/apps && tar -xf -
+  git init -q -b main && git add .
+  git -c user.name=check -c user.email=check@example.com commit -qm apps
+  git push -q "http://${2%%/*}:$1@localhost:3000/$2" main
+  git rev-parse HEAD' sh "$pass" "$repo")
+echo "pushed $revision"
+t=$SECONDS
+apply -R -f compiled/argocd
+# Every file of compiled/podinfo holds one resource; an Application whose
+# path has no manifests is Synced and Healthy as well.
+resources=$(find compiled/podinfo -type f | wc -l)
+# shellcheck disable=SC2016 # $ENV is jq's
+revision=$revision resources=$resources until_true 300 '.status.sync.status == "Synced" and
+  .status.sync.revision == $ENV.revision and .status.health.status == "Healthy" and
+  (.status.resources | length == ($ENV.resources | tonumber) and all(.status == "Synced"))' \
+  -n argocd application podinfo
+healthy=$SECONDS
+echo "EX-18: Argo CD reports podinfo Synced at $revision and Healthy, $resources resources," \
+  "$((healthy - t))s after the Application was applied"
+kubectl -n argocd get application podinfo -o json |
+  jq -r '.status.resources[] | "  \(.kind) \(.namespace)/\(.name): \(.status)"'
+
+# EX-18: podinfo serves the certificate the platform CA issued for
+# podinfo.<domain>, and the message the ExternalSecret synced.
+domain=$(platform domain)
+kubectl -n "$cm" get secret "$issuer" -o jsonpath='{.data.ca\.crt}' | base64 -d >"$tmp/ca.crt"
+kubectl -n podinfo port-forward service/podinfo 18443:443 >/dev/null &
+forward=$!
+host=podinfo.$domain
+for _ in $(seq 30); do
+  curl -fsS -o /dev/null --cacert "$tmp/ca.crt" --resolve "$host:18443:127.0.0.1" "https://$host:18443/healthz" 2>/dev/null && break
+  sleep 1
+done
+served=$(curl -fsS --cacert "$tmp/ca.crt" --resolve "$host:18443:127.0.0.1" "https://$host:18443/" | jq -r .message)
+if [[ $served != "$message" ]]; then
+  echo "EX-18: podinfo serves the message '$served', the secret store holds '$message'" >&2
+  exit 1
+fi
+echo "EX-18: https://$host verified against the $issuer CA, message from the secret store: $served"
+openssl s_client -connect 127.0.0.1:18443 -servername "$host" </dev/null 2>/dev/null |
+  openssl x509 -noout -subject -issuer -ext subjectAltName -dates | sed 's/^/  /'
+
+# EX-18: Kyverno denies a pod whose image has a tag only, admits the same
+# pod with the digest, and leaves namespaces without the tenant labels alone.
+image=$(kubectl -n podinfo get deploy podinfo -o jsonpath='{.spec.template.spec.containers[0].image}')
+pod() { # name image
+  jq -n --arg name "$1" --arg image "$2" '{apiVersion: "v1", kind: "Pod", metadata: {name: $name},
+    spec: {securityContext: {runAsNonRoot: true, runAsUser: 65534, seccompProfile: {type: "RuntimeDefault"}},
+      containers: [{name: "podinfo", image: $image, command: ["./podinfo", "--port=8080"],
+        securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: ["ALL"]}}}]}}'
+}
+if out=$(pod tag-only "${image%@*}" | kubectl -n podinfo create -f - 2>&1); then
+  echo "EX-18: Kyverno admitted $image without its digest in namespace podinfo" >&2
+  exit 1
+fi
+grep -q 'Images in app namespaces must be pinned by digest' <<<"$out" || { echo "$out" >&2; exit 1; }
+echo "EX-18: denied ${image%@*}: $out"
+pod by-digest "$image" | kubectl -n podinfo create -f - >/dev/null
+kubectl -n podinfo wait pod/by-digest --for=condition=Ready --timeout=60s >/dev/null
+kubectl -n podinfo delete pod by-digest --wait=false >/dev/null
+echo "EX-18: admitted $image, ready"
+pod tag-only "${image%@*}" | kubectl -n default create --dry-run=server -f - >/dev/null
+echo "EX-18: admitted ${image%@*} in namespace default, which has no tenant labels"
+
+# EX-18: Prometheus scrapes podinfo through its ServiceMonitor.
+query=/api/v1/namespaces/$monitoring/services/prometheus-operated:9090/proxy/api/v1/query
+up='.data.result | length > 0 and all(.value[1] == "1")' # every series of up{namespace="podinfo"} is 1
+scraped() { kubectl get --raw "$query?query=up%7Bnamespace%3D%22podinfo%22%7D" | jq -e "$up" >/dev/null; }
+for _ in $(seq 90); do
+  scraped && break
+  sleep 2
+done
+scraped || { kubectl get --raw "$query?query=up" >&2; exit 1; }
+echo "EX-18: up{namespace=\"podinfo\"} $((SECONDS - healthy))s after Healthy:"
+kubectl get --raw "$query?query=up%7Bnamespace%3D%22podinfo%22%7D" |
+  jq -r '.data.result[] | "  \(.metric | del(.__name__) | to_entries | map("\(.key)=\(.value)") | join(" ")) \(.value[1])"'
+
+# EX-18: Grafana returns the same series through the data source that the
+# target monitoring renders.
+creds=$(kubectl -n "$monitoring" get secret platform-admin-credentials -o json |
+  jq -r '.data | "\(.GF_SECURITY_ADMIN_USER | @base64d):\(.GF_SECURITY_ADMIN_PASSWORD | @base64d)"')
+kubectl -n "$monitoring" port-forward service/platform-service 13000:3000 >/dev/null &
+grafana=$!
+for _ in $(seq 30); do
+  curl -fsS -o /dev/null http://127.0.0.1:13000/api/health 2>/dev/null && break
+  sleep 1
+done
+curl -fsS -u "$creds" -G http://127.0.0.1:13000/api/datasources/proxy/uid/prometheus/api/v1/query \
+  --data-urlencode 'query=up{namespace="podinfo"}' | jq -e "$up" >/dev/null || {
+  echo "EX-18: Grafana's data source prometheus does not return podinfo" >&2
+  exit 1
+}
+echo "EX-18: Grafana $(curl -fsS http://127.0.0.1:13000/api/health | jq -r .version)" \
+  "returns up{namespace=\"podinfo\"} through its data source prometheus"
+
+# EX-18: a changed value in the store reaches podinfo's Secret.
+message="changed $(openssl rand -hex 8)"
+kubectl -n "$secrets" patch secret podinfo -p "$(jq -nc --arg m "$message" '{stringData: {message: $m}}')" >/dev/null
+t=$SECONDS
+# shellcheck disable=SC2016 # $ENV is jq's
+message=$message until_true 120 '.data.message | @base64d == $ENV.message' -n podinfo secret podinfo-message
+echo "EX-18: External Secrets synced the changed message in $((SECONDS - t))s"
+
+# EX-18: Velero backs up the secrets namespace, which is then deleted, and
+# restores it with the changed message.
+t=$SECONDS
+velero backup create check --from-schedule secrets --wait >/dev/null
+kubectl -n velero get backup check -o json | jq -e '.status.phase == "Completed"' >/dev/null || {
+  kubectl -n velero get backup check -o yaml >&2
+  kubectl -n velero logs deploy/velero -c velero --tail=50 >&2
+  exit 1
+}
+echo "EX-18: backup of $secrets completed in $((SECONDS - t))s," \
+  "$(kubectl -n velero get backup check -o jsonpath='{.status.progress.itemsBackedUp}') items"
+kubectl delete namespace "$secrets" --timeout=120s >/dev/null
+if kubectl -n "$secrets" get secret podinfo >/dev/null 2>&1; then
+  echo "EX-18: the secret podinfo still exists after deleting $secrets" >&2
+  exit 1
+fi
+t=$SECONDS
+velero restore create check --from-backup check --wait >/dev/null
+kubectl -n velero get restore check -o json | jq -e '.status.phase == "Completed"' >/dev/null || {
+  kubectl -n velero get restore check -o yaml >&2
+  kubectl -n velero logs deploy/velero -c velero --tail=50 >&2
+  exit 1
+}
+restored=$(kubectl -n "$secrets" get secret podinfo -o jsonpath='{.data.message}' | base64 -d)
+if [[ $restored != "$message" ]]; then
+  echo "EX-18: restored message '$restored', expected '$message'" >&2
+  exit 1
+fi
+echo "EX-18: restore of $secrets completed in $((SECONDS - t))s," \
+  "$(kubectl -n velero get restore check -o jsonpath='{.status.progress.itemsRestored}') items, message back"
+
+echo "pods: $(kubectl get pods -A --no-headers | wc -l), images:"
+kubectl get pods -A -o json | jq -r '[.items[].spec.containers[].image] | unique[]' | sed 's/^/  /'
+kubectl get --raw "/api/v1/nodes/$cluster-control-plane/proxy/stats/summary" | jq -r '
+  [.pods[] | {ns: .podRef.namespace, m: (.memory.workingSetBytes // 0)}] | group_by(.ns)
+  | map({ns: .[0].ns, mib: (map(.m) | add / 1048576 | floor)}) | sort_by(-.mib)
+  | (map("  \(.ns): \(.mib) MiB") | .[]), "  total: \(map(.mib) | add) MiB"'
+echo "platform-baseline: passed in $((SECONDS - started))s"

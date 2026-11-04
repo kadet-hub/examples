@@ -1,0 +1,27 @@
+# kadet-hub generators, pinned by version and digest (index serial 107).
+# The kubernetes generator comes with the cert-manager recipe, at the
+# version the recipe pins, and the other targets use it from lib/kubernetes.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/certmanager:1.0.4@sha256:99bfa0edf76fd7f564c101ce7dedbd2e0a790825db0173f1a64faed51bc0fd1f
+        output_path: lib/certmanager
+      - type: oci
+        source: ghcr.io/kadet-hub/kyverno:1.1.4@sha256:af3f1376bdc69e261bb75d23c01014a24926e14f52780c86d8e941c524525de6
+        output_path: lib/kyverno
+      - type: oci
+        source: ghcr.io/kadet-hub/prometheus-operator:1.1.6@sha256:99faa008d1335edc787f164685a04e855012b6b48364e67737fb764bb98c449b
+        output_path: lib/prometheus-operator
+      - type: oci
+        source: ghcr.io/kadet-hub/external-secrets:1.0.6@sha256:184e8a60f92c0c09eae32973ceaf909b2da53457e88233161ffb90c4b9a63e60
+        output_path: lib/external-secrets
+      - type: oci
+        source: ghcr.io/kadet-hub/velero:1.0.2@sha256:95c56a6cf87a55863b987e58fd2d21cea24c67b91ff9bac2fec2d796c8c8f46b
+        output_path: lib/velero
+      - type: oci
+        source: ghcr.io/kadet-hub/argocd:1.0.4@sha256:8b41817b189cdc043bb1a726f0e42a827672a1eda80e8d8406b512262182feea
+        output_path: lib/argocd
+      - type: oci
+        source: ghcr.io/kadet-hub/grafana:1.0.2@sha256:9cecd831498907000db0c6feaf85115388370b9438df590c76bf6d6a7ff859f0
+        output_path: lib/grafana

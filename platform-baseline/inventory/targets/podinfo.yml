@@ -1,0 +1,73 @@
+# The app: podinfo with a certificate from the platform CA, a message from
+# the secret store and a ServiceMonitor. Argo CD deploys compiled/podinfo.
+classes:
+  - generators
+  - platform
+parameters:
+  namespace: podinfo
+  kapitan:
+    vars:
+      target: podinfo
+    topics:
+      argocd:
+        parameters:
+          source:
+            path: podinfo
+          destination: ${namespace}
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/kubernetes], output_path: .}
+      - {input_type: kadet, output_type: yml, input_paths: [lib/certmanager], output_path: .}
+      - {input_type: kadet, output_type: yml, input_paths: [lib/external-secrets], output_path: .}
+      - {input_type: kadet, output_type: yml, input_paths: [lib/prometheus-operator], output_path: .}
+  generators:
+    manifest:
+      default_config:
+        recommended_labels: true
+        security_profile: restricted
+    certmanager:
+      certs:
+        podinfo-tls:
+          annotations:
+            argocd.argoproj.io/sync-wave: "-1"
+          spec:
+            secretName: podinfo-tls
+            issuerRef: {name: "${platform.issuer}", kind: ClusterIssuer}
+            dnsNames: ["podinfo.${platform.domain}"]
+    external_secrets:
+      externalsecrets:
+        podinfo-message:
+          annotations:
+            argocd.argoproj.io/sync-wave: "-1"
+          cluster_store: ${platform.secret_store}
+          refresh_interval: 10s
+          spec:
+            data:
+              - secretKey: message
+                remoteRef: {key: podinfo, property: message}
+    prometheus_operator:
+      service_monitors:
+        podinfo:
+          selector: {name: podinfo}
+          endpoints: http
+  components:
+    podinfo:
+      image: ghcr.io/stefanprodan/podinfo:6.15.0@sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
+      command: [./podinfo, --port=8080, --secure-port=8443, --cert-path=/data/cert]
+      security_context: {runAsUser: 65534}
+      ports:
+        http: {container_port: 8080, service_port: 80}
+        https: {container_port: 8443, service_port: 443}
+      env:
+        PODINFO_UI_MESSAGE:
+          secretKeyRef: {name: podinfo-message, key: message}
+      volumes:
+        tls:
+          secret: {secretName: podinfo-tls}
+      volume_mounts:
+        tls: {mount_path: /data/cert, read_only: true}
+      healthcheck:
+        readiness: {type: http, port: http, path: /readyz}
+      resources:
+        requests: {cpu: 50m, memory: 64Mi}
+        limits: {memory: 128Mi}
+      service: {type: ClusterIP}

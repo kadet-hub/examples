@@ -74,6 +74,9 @@ env:
   # renovate: datasource=github-release-attachments depName=kubevirt/kubevirt
   VIRTCTL_VERSION: v1.9.1
   VIRTCTL_SHA256: c289393c8186a258653594605f5199b4c171a3131e6e409ed204a96b491b782a
+  # renovate: datasource=github-release-attachments depName=vmware-tanzu/velero
+  VELERO_VERSION: v1.18.4
+  VELERO_SHA256: e520c17d8997e1c9d0a28ae013592e4473ca3bd82cb3acd132e51286263f74bf
   # renovate: datasource=github-release-attachments depName=google/osv-scanner
   OSV_SCANNER_VERSION: v2.7.0
   OSV_SCANNER_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
@@ -625,6 +628,43 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: open-webui-searxng/check
 
+  # EX-18: a cluster baseline from kadet-hub generators, with podinfo on top
+  # delivered by Argo CD, on kind.
+  platform-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install oras, uv, kubectl, kind and velero
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          curl -fsSLo velero.tgz "https://github.com/vmware-tanzu/velero/releases/download/$VELERO_VERSION/velero-$VELERO_VERSION-linux-amd64.tar.gz"
+          sha256sum -c <<EOF
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          $KIND_SHA256  kind
+          $VELERO_SHA256  velero.tgz
+          EOF
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          tar -xzf velero.tgz --strip-components=1 "velero-$VELERO_VERSION-linux-amd64/velero"
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
+          chmod +x kind
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: platform-baseline/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: platform-baseline/check
+
   # EX-3f: published advisories for the packages in the lock files.
   advisories:
     runs-on: ubuntu-24.04
@@ -704,6 +744,7 @@ jobs:
       - cert-manager-mutate
       - kubevirt-csi
       - open-webui-searxng
+      - platform-baseline
       - advisories
       - pins
     if: always()

@@ -1,0 +1,22 @@
+# Cluster-wide values. Every target includes this class, and the
+# resources that name one of these values read it from here.
+parameters:
+  platform:
+    # App hostnames are <app>.<domain>.
+    domain: apps.example.com
+    # The ClusterIssuer that signs the apps' certificates, and its CA.
+    issuer: platform-ca
+    # The ClusterSecretStore that apps read their secrets from.
+    secret_store: platform
+    namespaces:
+      cert_manager: cert-manager
+      monitoring: monitoring
+      # Holds the secrets the store serves; Velero backs it up.
+      secrets: platform-secrets
+    # The repository Argo CD deploys the apps from.
+    git_repo: http://gitea.git.svc.cluster.local:3000/kadet/apps.git
+    # Argo CD labels every app namespace it creates with these, and the
+    # Kyverno policy applies to the namespaces that carry them.
+    tenant_labels:
+      platform.example.com/tenant: "true"
+      pod-security.kubernetes.io/enforce: restricted

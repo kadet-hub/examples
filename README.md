@@ -20,6 +20,7 @@ longer holds.
 | [helm-mutate](helm-mutate/) | https://kadet-hub.org/guides/patch-helm-chart/ | `helm-mutate/check kubectl`, `helm-mutate/check argocd`, `helm-mutate/check flux` |
 | [cert-manager-mutate](cert-manager-mutate/) | https://kadet-hub.org/blog/cert-manager-helm-chart-patches/ | `cert-manager-mutate/check` |
 | [open-webui-searxng](open-webui-searxng/) | https://kadet-hub.org/blog/open-webui-searxng-kubernetes/ | `open-webui-searxng/check` |
+| [platform-baseline](platform-baseline/) | https://kadet-hub.org/blog/kubernetes-cluster-add-ons/ | `platform-baseline/check` |
 
 ## Running
 
