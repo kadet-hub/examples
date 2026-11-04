@@ -168,17 +168,28 @@ install_wait open-webui rollout status deploy/ollama --timeout=600s
 install_wait open-webui rollout status statefulset/open-webui --timeout=600s
 ready=$(date +%s)
 
-# Open WebUI has no readiness probe, so its rollout ends before it listens.
+# SearXNG and Open WebUI have no readiness probe, so their rollouts end
+# before they listen.
+searxng=/api/v1/namespaces/searxng/services/searxng:8080/proxy
+openwebui=/api/v1/namespaces/open-webui/services/open-webui:80/proxy
+for _ in $(seq 150); do
+  [[ $(kubectl get --raw "$searxng/healthz" 2>/dev/null) == OK ]] &&
+    kubectl get --raw "$openwebui/health" 2>/dev/null | jq -e '.status == true' >/dev/null && break
+  sleep 2
+done
+[[ $(kubectl get --raw "$searxng/healthz") == OK ]]
+kubectl get --raw "$openwebui/health" | jq -e '.status == true' >/dev/null
+listening=$(date +%s)
+echo "deployed in $((ready - start))s, SearXNG and Open WebUI answered their health checks $((listening - ready))s later"
+
+# Started only now: a port-forward ends at the first connection the pod refuses.
 kubectl -n open-webui port-forward service/open-webui 18080:80 >/dev/null &
 forward=$!
 url=http://127.0.0.1:18080
-for _ in $(seq 150); do
-  curl -fsS "$url/health" 2>/dev/null | jq -e '.status == true' >/dev/null && break
-  sleep 2
+for _ in $(seq 30); do
+  curl -fsS -o /dev/null "$url/health" 2>/dev/null && break
+  sleep 1
 done
-curl -fsS "$url/health" | jq -e '.status == true' >/dev/null
-listening=$(date +%s)
-echo "deployed in $((ready - start))s, Open WebUI answered /health $((listening - ready))s later"
 
 # The first account becomes admin.
 token=$(jq -n '{name: "Admin", email: "admin@example.com", password: "Check-Passw0rd"}' |
@@ -193,6 +204,12 @@ api() { # path [curl arguments]: prints the body and, on its own line, the statu
 
 query=kubernetes
 search() { api /api/v1/retrieval/process/web/search -d "$(jq -nc --arg q "$query" '{queries: [$q]}')"; }
+# Not part of the claim: the same query sent to SearXNG directly, with the
+# results per engine and the engines that did not answer.
+engines() {
+  kubectl get --raw "$searxng/search?q=$query&format=json" | jq -c '{results: (.results | length),
+    engines: ([.results[].engines[]] | group_by(.) | map({(.[0]): length}) | add), unresponsive_engines}' || true
+}
 t=$(date +%s)
 r=$(search)
 searched=$(date +%s)
@@ -200,12 +217,11 @@ code=${r##*$'\n'}
 body=${r%$'\n'*}
 if [[ $code != 200 ]] || ! jq -e '.items | length > 0' <<<"$body" >/dev/null; then
   echo "web search for $query: HTTP $code: $body" >&2
-  # Which engines SearXNG asked and which did not answer.
-  kubectl get --raw "/api/v1/namespaces/searxng/services/searxng:8080/proxy/search?q=$query&format=json" |
-    jq -c '{results: (.results | length), unresponsive_engines}' >&2 || true
+  engines >&2
   exit 1
 fi
 echo "web search for $query in $((searched - t))s: $(jq -r '[.items[].link] | join(" ")' <<<"$body"), $(jq -r .loaded_count <<<"$body") pages loaded"
+echo "SearXNG asked directly: $(engines)"
 
 # The same model the open-webui recipe's smoke test pulls, through Open WebUI.
 model=smollm:135m
@@ -224,14 +240,19 @@ answer=$(jq -er 'select(.choices[0].message.content | length > 0) | .choices[0].
 completed=$(date +%s)
 echo "pulled $model in $((pulled - t))s, chat completion in $((completed - pulled))s: $(tr -s '[:space:]' ' ' <<<"$answer")"
 
-# Without SearXNG the same search fails, so the results above came from it.
+# Without SearXNG the same search fails, and Open WebUI logs that it could
+# not connect to the host of SEARXNG_QUERY_URL, so the results above came
+# from SearXNG.
+host=$(sed -nE 's|^ *SEARXNG_QUERY_URL: http://([^/]+)/.*|\1|p' inventory/targets/open-webui.yml)
 kubectl -n searxng scale statefulset/searxng --replicas=0 >/dev/null
 kubectl -n searxng wait pod/searxng-0 --for=delete --timeout=120s >/dev/null
+since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 r=$(search)
 code=${r##*$'\n'}
-if [[ $code == 200 ]]; then
-  echo "web search for $query succeeded with SearXNG scaled to zero: ${r%$'\n'*}" >&2
+if [[ $code != 400 ]] || ! kubectl -n open-webui logs open-webui-0 -c open-webui --since-time="$since" |
+  grep -qF "Cannot connect to host $host"; then
+  echo "web search for $query with SearXNG scaled to zero: HTTP $code: ${r%$'\n'*}" >&2
   exit 1
 fi
-echo "with SearXNG scaled to zero the web search fails: HTTP $code $(jq -c .detail <<<"${r%$'\n'*}")"
+echo "with SearXNG scaled to zero the web search fails with HTTP $code, and Open WebUI cannot connect to $host"
 echo "open-webui-searxng: web search through SearXNG and a chat completion through Ollama passed"

@@ -10,7 +10,8 @@ parameters:
     open-webui:
       secret_key: ?{base64:open-webui/secret-key||random:str:40}
     valkey:
-      password: ?{base64:open-webui/valkey-password||random:str:32}
+      # Part of a URL in the recipe, so letters and digits only.
+      password: ?{base64:open-webui/valkey-password||random:loweralphanum:40}
   components:
     open-webui:
       env:

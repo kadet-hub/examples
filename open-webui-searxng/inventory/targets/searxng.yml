@@ -9,7 +9,8 @@ parameters:
     searxng:
       secret_key: ?{base64:searxng/secret-key||random:str:40}
     valkey:
-      password: ?{base64:searxng/valkey-password||random:str:32}
+      # Part of a URL in the recipe, so letters and digits only.
+      password: ?{base64:searxng/valkey-password||random:loweralphanum:40}
   components:
     searxng:
       config_maps:
