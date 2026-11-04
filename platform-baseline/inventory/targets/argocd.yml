@@ -1,0 +1,38 @@
+# An Argo CD Application for every target that publishes the topic argocd,
+# all in the project apps.
+classes:
+  - generators
+  - platform
+parameters:
+  kapitan:
+    vars:
+      target: argocd
+    topics:
+      argocd:
+        consume: true
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/argocd], output_path: .}
+  generators:
+    argocd:
+      projects:
+        apps:
+          source_repos: ["${platform.git_repo}"]
+          destinations:
+            - {namespace: "*", server: https://kubernetes.default.svc}
+          # The namespace that CreateNamespace=true creates; no other
+          # cluster-scoped kind.
+          cluster_resource_whitelist:
+            - {group: "", kind: Namespace}
+      topics:
+        argocd:
+          project: apps
+          source:
+            repoURL: ${platform.git_repo}
+            targetRevision: main
+            directory:
+              recurse: true
+          sync_policy:
+            automated: {prune: true, selfHeal: true}
+            syncOptions: [CreateNamespace=true]
+            managedNamespaceMetadata:
+              labels: ${platform.tenant_labels}

@@ -1,0 +1,8 @@
+# The cert-manager recipe, at the digest the index lists. It includes no
+# other recipe.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/cert-manager:1.0.3@sha256:99d27b9b0ed0afa330d48e1b12cc0bee25f37c5a4b5129ba07a68dfe5063bbef
+        output_path: inventory/classes/recipes/cert-manager

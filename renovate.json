@@ -42,7 +42,9 @@
       "managerFilePatterns": [
         "**/inventory/**/*.yml",
         "*/tests/**/*.yaml",
-        "argocd-vs-flux/git-server.yaml"
+        "argocd-vs-flux/git-server.yaml",
+        "platform-baseline/git-server.yaml",
+        "platform-baseline/s3-server.yaml"
       ],
       "matchStrings": [
         "source: oci://(?<depName>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})\\n\\s*chart_name: \\S+\\n\\s*version: (?<currentValue>\\S+)",
@@ -53,10 +55,11 @@
       "datasourceTemplate": "docker"
     },
     {
-      "description": "EX-3: recipes in the fetch inventory of open-webui-searxng; the org preset reads inventory/ only and allows no / in a name",
+      "description": "EX-3: recipes in the fetch inventories of open-webui-searxng and platform-baseline; the org preset reads inventory/ only and allows no / in a name",
       "customType": "regex",
       "managerFilePatterns": [
-        "open-webui-searxng/fetch/targets/recipes.yml"
+        "open-webui-searxng/fetch/targets/recipes.yml",
+        "platform-baseline/fetch/targets/recipes.yml"
       ],
       "matchStrings": [
         "source: (?<depName>ghcr\\.io/kadet-hub/recipes/[a-z0-9-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})"
@@ -145,6 +148,14 @@
         "kindest/node"
       ],
       "groupName": "kind"
+    },
+    {
+      "description": "EX-3: the velero CLI and the server image that platform-baseline/check installs with it, at one version",
+      "matchDepNames": [
+        "vmware-tanzu/velero",
+        "docker.io/velero/velero"
+      ],
+      "groupName": "velero"
     },
     {
       "description": "EX-3: podinfo's chart and the image that pin-image pins",

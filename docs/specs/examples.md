@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -59,7 +59,7 @@ schedule instead of trusting the state on the publishing day.
   EX-9 and EX-10 hold, `cert-manager-mutate` unless EX-11 holds,
   `first-platform` and `helm-vs-terraform` unless EX-12 holds,
   `kubevirt-csi` unless EX-14 and EX-14a hold, `open-webui-searxng`
-  unless EX-17 holds.
+  unless EX-17 holds, `platform-baseline` unless EX-18 and EX-18a hold.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -130,8 +130,8 @@ schedule instead of trusting the state on the publishing day.
   kubeconform and an API server accept manifests that the kubelet cannot
   run, such as a readiness probe on a port the app does not listen on.
   `argocd-vs-flux`, `helm-mutate`, `cert-manager-mutate`,
-  `kubevirt-csi` and `open-webui-searxng` deploy their workloads under
-  EX-7, EX-10, EX-11, EX-14 and EX-17.
+  `kubevirt-csi`, `open-webui-searxng` and `platform-baseline` deploy
+  their workloads under EX-7, EX-10, EX-11, EX-14, EX-17 and EX-18.
   `first-platform/check` deploys `compiled/prod/apps` (Namespace,
   Deployment, Service, PodDisruptionBudget), `helm-vs-terraform/check`
   the Deployment, Service and ConfigMap of its first compile. Both create
@@ -188,7 +188,9 @@ schedule instead of trusting the state on the publishing day.
     Kubernetes plugin, etcd, tk, jb, kind, chainsaw, talosctl, tofu and
     gVisor are GitHub release assets, and so are the install manifest of
     Flux and the CRDs of cert-manager and Prometheus Operator in
-    `chart-vs-kapitan`. In `kubevirt-csi` the
+    `chart-vs-kapitan`, and the install manifests of Kyverno, the
+    Prometheus Operator, External Secrets and the Grafana Operator and the
+    velero CLI in `platform-baseline`. In `kubevirt-csi` the
     operator manifests of KubeVirt and CDI, virtctl and the k3s binary are
     release assets too. The k3s pin sits in the cloud-init script of
     `kubevirt-csi/inventory/targets/infra.yml`, which the comment manager
@@ -206,7 +208,8 @@ schedule instead of trusting the state on the publishing day.
     binaries are identical to the dl.k8s.io downloads; the kustomize binary
     is a separate build of the same version. The check scripts pin kind's
     node image and the redis image of EX-7 the same way, `gvisor-ci/run`
-    the image of its sandbox rootfs.
+    the image of its sandbox rootfs, `platform-baseline/check` the Velero
+    server and AWS plugin images.
   - Commit: Argo CD's `install.yaml` and kubeconform's
     `openapi2jsonschema.py` are files in the projects' repositories, not
     release assets. They are fetched from raw.githubusercontent.com at the
@@ -229,8 +232,8 @@ schedule instead of trusting the state on the publishing day.
 
   Pins in Kapitan inventories and Kubernetes manifests are updated with
   `datasource=docker` by regex managers: generators through the org preset;
-  recipes in a fetch inventory (`open-webui-searxng`) by a manager of
-  their own, because the preset reads `**/inventory/**` only and allows no
+  recipes in a fetch inventory (`open-webui-searxng`, `platform-baseline`)
+  by a manager of their own, because the preset reads `**/inventory/**` only and allows no
   `/` in a name;
   charts by version and the digest of their OCI artifact (podinfo in
   `helm-mutate`, cert-manager and trust-manager in `cert-manager-mutate`); images wherever an `image:` or
@@ -247,7 +250,8 @@ schedule instead of trusting the state on the publishing day.
   never run with another operator version; kind and its
   node image; podinfo's chart and image; `@pulumi/kubernetes` and its
   plugin; the four recipes of `open-webui-searxng`, whose includes must
-  be pinned at the digests the index lists (EX-17).
+  be pinned at the digests the index lists (EX-17); the velero CLI and the
+  server image `platform-baseline/check` installs with it (EX-18).
 
   Two values follow another pin, and the pull request that changes that
   pin has to change them: the redis tag follows Argo CD's manifest (EX-7),
@@ -345,7 +349,8 @@ schedule instead of trusting the state on the publishing day.
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
-    cryptography override: #86; recipes in a fetch inventory: #132
+    cryptography override: #86; recipes in a fetch inventory: #132;
+    `platform-baseline`: #135
 
 - EX-3h: Renovate MUST merge its own pull request once every check on it
   passed, unless it is a major update or a digest update of a GitHub Action.
@@ -1218,6 +1223,126 @@ Pod Security level `baseline`.
     its digest on the branch `renovate/open-webui-searxng-recipes`
   - Since: #132
 
+## Platform baseline
+
+`platform-baseline/` backs the kadet-hub.org blog post on a cluster's
+platform layer kept in one Kapitan inventory. The generators render what a
+platform team configures: a private CA as cert-manager ClusterIssuers, a
+Kyverno policy, a Prometheus and a Grafana with that Prometheus as its data
+source, an External Secrets ClusterSecretStore, Velero's backup location
+and schedule, and Argo CD's project and Applications. podinfo is the app on
+top. Its target renders a Certificate, an ExternalSecret and a
+ServiceMonitor next to the Deployment, and Argo CD deploys it.
+
+The generators render custom resources only, not the operators that read
+them. cert-manager comes from the kadet-hub recipe `cert-manager`, pinned
+in the fetch inventory `fetch/targets/recipes.yml` and compiled into
+`compiled/cert-manager/manifests`. kadet-hub publishes no recipe for the
+other operators, so `check` installs them from their projects' release
+artifacts: Kyverno's `install.yaml`, the Prometheus Operator's
+`bundle.yaml`, External Secrets' `external-secrets.yaml` and the Grafana
+Operator's `kustomize-cluster_scoped.yaml`, each pinned by version and
+sha256, Argo CD's `install.yaml` at the commit of its tag as in EX-7, and
+Velero through `velero install` with the server and AWS plugin images
+pinned by digest. The manifests of the Prometheus Operator and of External
+Secrets install into the namespace `default`, and `check` leaves them
+there.
+
+There is one target per component, `cert-manager`, `kyverno`,
+`monitoring`, `external-secrets`, `velero` and `argocd`, and the target
+`podinfo`. The class `platform` holds the values more than one resource
+reads: domain, issuer, secret store, the secrets namespace, the Git
+repository and the labels of app namespaces. The class `generators` pins
+the generators. The kubernetes generator is missing from it, because the
+recipe pins it and both would unpack into `lib/kubernetes`. `check` fails
+when one generator is pinned at two digests. The recipe is written for the
+omegaconf backend, which `.kapitan` selects.
+
+podinfo's target publishes the Kapitan topic `argocd`, and the target
+`argocd` turns each publisher into an Application in the project `apps`.
+The Application syncs automatically, reads its path recursively, and
+creates its namespace with `CreateNamespace=true` and the labels of
+`platform.tenant_labels`. The project allows Namespace as the only
+cluster-scoped kind, which `CreateNamespace=true` needs. The Kyverno
+policy selects namespaces by the same labels. The ExternalSecret has the
+sync wave `-1`, so Argo CD creates the Deployment once its Secret exists.
+A pod that starts before the Secret waits with `CreateContainerConfigError`,
+which EX-6 counts as broken when it lasts two polls. The certmanager generator 1.0.4 renders no annotations,
+so the Certificate has no wave. A Secret volume that does not exist yet
+keeps the pod in `ContainerCreating`, which EX-6 does not count.
+
+Two stand-ins replace what lives outside a cluster. `git-server.yaml` is
+the Gitea of EX-7, and `check` pushes `compiled/podinfo` to it.
+`s3-server.yaml` runs Versity's S3 gateway (versitygw, Apache-2.0) with its
+posix backend, where a bucket is a directory, so `mkdir` creates Velero's
+bucket. MinIO was considered. On 2026-11-04 neither `quay.io/minio/minio`
+nor `docker.io/minio/minio` listed its tags to an anonymous client, so
+there was no image to pin. `check` creates the gateway's keys, Velero's
+credentials and the message in the secrets namespace with random values,
+so none of them is in the repository.
+
+- EX-18: `platform-baseline/check` MUST fail unless the recipe of the
+  fetch inventory and every generator pass the checks of EX-17 and EX-4,
+  and, deployed to a new kind cluster:
+
+  - Argo CD reports the Application `podinfo` `Synced` at the pushed
+    commit and `Healthy`, with one resource per file of
+    `compiled/podinfo`, each `Synced`;
+  - podinfo serves HTTPS with a certificate that verifies against the
+    platform CA for `podinfo.<domain>`, and returns the message stored in
+    the secrets namespace;
+  - Kyverno denies a pod in namespace `podinfo` whose image has a tag and
+    no digest, admits the same pod with the digest, and admits the
+    tag-only pod in namespace `default` in a server-side dry run;
+  - Prometheus answers `up{namespace="podinfo"}` with 1 for every series,
+    and Grafana returns the same through its data source `prometheus`;
+  - a changed message in the secrets namespace reaches podinfo's Secret
+    within 120 seconds;
+  - a Velero backup of the secrets namespace completes, the namespace is
+    deleted, and a restore completes and brings back the Secret with the
+    changed message.
+
+  An Application whose path holds no manifest is `Synced` and `Healthy`
+  too. The first local run passed that way, while the Application read
+  only the top level of `podinfo/`, where the generators write a
+  directory per namespace. `Healthy` covers the Certificate and the
+  ExternalSecret, through Argo CD's built-in health checks for both
+  kinds.
+
+  The certificate check uses `curl --cacert` with the CA from the Secret
+  of the CA Certificate, and `--resolve` to the port-forward, so the
+  hostname is checked against the certificate without DNS. Velero backs up
+  the secrets namespace because Git does not hold its content. Argo CD
+  would recreate podinfo's namespace after a delete, so a restore of it
+  would prove nothing. External Secrets also defines a kind `Grafana`, in
+  `generators.external-secrets.io`, so `check` names the Grafana
+  Operator's kinds with their group.
+
+  `velero install` 1.18.4 names the plugin's init container
+  `velero-velero-plugin-for-aws:v1-14-4` for an image given as
+  `tag@digest`, which the API server rejects. `check` renders the install
+  with `--dry-run -o json` and sets the name the CLI gives the same image
+  without a digest.
+
+  Related: EX-6, EX-7, EX-12
+
+  - Test: `examples` workflow, job `platform-baseline`; `manual:` Renovate
+    44.194.0 (`--platform=local --dry-run=lookup`, 2026-11-05) found every
+    pin of `platform-baseline`, and with External Secrets set back to
+    v2.13.0 proposed v2.14.0 with the sha256 of its `external-secrets.yaml`
+  - Since: #135
+
+- EX-18a: `platform-baseline/check` MUST fail unless compiling a copy of
+  the inventory with another `platform.domain` changes exactly
+  `compiled/cert-manager/issuers/cert-manager/platform-ca-cert.yml` and
+  `compiled/podinfo/podinfo/podinfo-tls-cert.yml`.
+
+  The domain is the root CA's common name in the target `cert-manager` and
+  podinfo's DNS name in the target `podinfo`. The post shows the diff.
+
+  - Test: `examples` workflow, job `platform-baseline`
+  - Since: #135
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -1252,4 +1377,5 @@ Pod Security level `baseline`.
 | `chart-vs-kapitan/kapitan/components/kube-prometheus-stack.jsonnet`, `chart-vs-kapitan/kapitan/jsonnetfile.json`, `chart-vs-kapitan/kapitan/jsonnetfile.lock.json` | Rules and dashboards of kube-prometheus-stack and the pins of their sources (EX-13a) |
 | `kubevirt-csi/` | One Kapitan project (targets `infra`, `tenant`) with the kubevirt generator pinned in `inventory/classes/generators.yml`, `infra.yaml`, the tenant workload in `tests/pvc.yaml`, the negative case's claim in `tests/static-pvc.yaml`; `check` (EX-14, EX-14a) |
 | `open-webui-searxng/` | One Kapitan project (targets `open-webui`, `searxng`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-17) |
+| `platform-baseline/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `kyverno`, `monitoring`, `external-secrets`, `velero`, `argocd`, `podinfo`), the shared class `inventory/classes/platform.yml`, the cert-manager recipe pinned in `fetch/targets/recipes.yml`, the stand-ins `git-server.yaml` and `s3-server.yaml`; `check` (EX-18, EX-18a) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |

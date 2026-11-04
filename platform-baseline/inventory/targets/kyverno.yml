@@ -1,0 +1,25 @@
+# Enforced in every app namespace: container images pinned by digest.
+classes:
+  - generators
+  - platform
+parameters:
+  kapitan:
+    vars:
+      target: kyverno
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/kyverno], output_path: .}
+  generators:
+    kyverno:
+      validating_policies:
+        require-image-digest:
+          match_kinds: [Pod]
+          match_constraints:
+            namespaceSelector:
+              matchLabels: ${platform.tenant_labels}
+          validation_actions: [Deny]
+          validations:
+            - expression: >-
+                object.spec.containers.all(c, c.image.contains('@sha256:')) &&
+                (!has(object.spec.initContainers) ||
+                object.spec.initContainers.all(c, c.image.contains('@sha256:')))
+              message: Images in app namespaces must be pinned by digest.

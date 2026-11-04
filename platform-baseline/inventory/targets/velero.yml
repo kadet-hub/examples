@@ -1,0 +1,32 @@
+# Where Velero writes backups, and a daily backup of the secrets namespace.
+# The bucket is the S3 server of s3-server.yaml; check creates the
+# Secret velero-s3 with its keys.
+classes:
+  - generators
+  - platform
+parameters:
+  kapitan:
+    vars:
+      target: velero
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/velero], output_path: .}
+  generators:
+    velero:
+      backup_storage_locations:
+        default:
+          provider: aws
+          bucket: velero
+          config:
+            region: us-east-1
+            s3ForcePathStyle: "true"
+            s3Url: http://s3.s3.svc:7070
+          credential:
+            name: velero-s3
+            key: cloud
+      schedules:
+        secrets:
+          schedule: CRON_TZ=UTC 0 3 * * *
+          skip_immediately: true
+          template:
+            included_namespaces: ["${platform.namespaces.secrets}"]
+            ttl: 168h0m0s

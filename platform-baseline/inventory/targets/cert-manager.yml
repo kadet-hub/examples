@@ -1,0 +1,26 @@
+# cert-manager from the kadet-hub recipe into compiled/cert-manager/manifests,
+# and the platform's CA into compiled/cert-manager/issuers.
+classes:
+  - generators
+  - platform
+  - recipes.cert-manager
+  - recipes.cert-manager.crds
+parameters:
+  namespace: ${platform.namespaces.cert_manager}
+  kapitan:
+    vars:
+      target: cert-manager
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/certmanager], output_path: issuers}
+  generators:
+    kubernetes:
+      namespaces:
+        cert-manager:
+          name: ${platform.namespaces.cert_manager}
+    certmanager:
+      # A self-signed root CA and the ClusterIssuer that signs with it.
+      ca_issuers:
+        platform:
+          name: ${platform.issuer}
+          namespace: ${platform.namespaces.cert_manager}
+          common_name: ${platform.domain} root CA

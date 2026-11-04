@@ -1,0 +1,45 @@
+# One Prometheus that scrapes every ServiceMonitor in the cluster, and a
+# Grafana with that Prometheus as its data source.
+classes:
+  - generators
+  - platform
+parameters:
+  namespace: ${platform.namespaces.monitoring}
+  kapitan:
+    vars:
+      target: monitoring
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/kubernetes], output_path: .}
+      - {input_type: kadet, output_type: yml, input_paths: [lib/prometheus-operator], output_path: .}
+      - {input_type: kadet, output_type: yml, input_paths: [lib/grafana], output_path: .}
+  generators:
+    kubernetes:
+      namespaces:
+        monitoring:
+          name: ${platform.namespaces.monitoring}
+    prometheus_operator:
+      prometheuses:
+        platform:
+          rbac: true
+          retention: 2d
+          service_monitor_selector: {}
+          service_monitor_namespace_selector: {}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+    grafana:
+      instance_selector:
+        grafana: platform
+      instances:
+        platform:
+          labels:
+            grafana: platform
+      datasources:
+        prometheus:
+          uid: prometheus
+          datasource:
+            name: Prometheus
+            type: prometheus
+            access: proxy
+            url: http://prometheus-operated.${platform.namespaces.monitoring}.svc:9090
+            isDefault: true

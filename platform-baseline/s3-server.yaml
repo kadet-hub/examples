@@ -1,0 +1,57 @@
+# The object storage Velero writes to, standing in for a bucket outside the
+# cluster: Versity's S3 gateway with its posix backend, where a bucket is a
+# directory, data in an emptyDir. check creates the Secret s3-root with the
+# keys.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: s3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3
+  namespace: s3
+spec:
+  selector:
+    matchLabels: {app: s3}
+  template:
+    metadata:
+      labels: {app: s3}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: versitygw
+          image: docker.io/versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316
+          command: [sh, -c, "mkdir -p /data/velero && exec versitygw posix /data"]
+          env:
+            - name: ROOT_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: s3-root, key: access-key}}
+            - name: ROOT_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: s3-root, key: secret-key}}
+          ports:
+            - {name: s3, containerPort: 7070}
+          readinessProbe:
+            tcpSocket: {port: s3}
+            periodSeconds: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - {name: data, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3
+  namespace: s3
+spec:
+  selector: {app: s3}
+  ports:
+    - {name: s3, port: 7070, targetPort: s3}
