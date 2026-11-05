@@ -18,14 +18,14 @@ id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/head
 min_serial=113
 tmp=$(mktemp -d)
 cluster="compose-miniflux"
-compose=(docker compose -p compose-ex-miniflux -f compiled/compose/compose.yml)
+compose=(docker compose -p compose-ex-miniflux)
 export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
 cleanup() {
   kill "${watcher:-}" "${forward:-}" 2>/dev/null || true
   rm -rf -- "$tmp"
   [[ ${KEEP:-} == 1 ]] && return
   kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
-  [[ ! -f compiled/compose/compose.yml ]] || "${compose[@]}" down -v >/dev/null 2>&1 || true
+  "${compose[@]}" down -v >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 rm -rf lib compiled inventory/classes/recipes
@@ -152,8 +152,8 @@ refusal="components.miniflux: no Compose mapping for ['security_profile']"
 grep -qF "$refusal" "$tmp/compile.log" || { cat "$tmp/compile.log" >&2; exit 1; }
 echo "EX-30b: the target compose refuses security_profile in the shared class: $refusal"
 
-compile --reveal
-echo "compiled with --reveal in $((SECONDS - started))s"
+compile --reveal -t cluster
+echo "compiled the target cluster with --reveal in $((SECONDS - started))s"
 
 # EX-30: Miniflux behind a base URL answers its health check, reports the
 # recipe's version and stores and lists a category, logged in as the admin
@@ -250,10 +250,13 @@ forward=$!
 smoke kind http://127.0.0.1:18080
 kill "$forward" "$watcher" 2>/dev/null || true
 
-# EX-30: the target compose under docker compose on this host.
+# EX-30: the target compose under docker compose on this host, from the
+# output compiled without --reveal. kapitan refs reveals it into compose's
+# stdin, so no file holds the passwords.
 docker compose version
 t=$SECONDS
-"${compose[@]}" up -d --wait --wait-timeout 300 || {
+"${py[@]}" kapitan refs --refs-path "$tmp/refs" --reveal -f "$tmp/before/compiled/compose/compose.yml" |
+  "${compose[@]}" -f - up -d --wait --wait-timeout 300 || {
   "${compose[@]}" ps -a >&2 || true
   "${compose[@]}" logs --tail=50 >&2 || true
   exit 1

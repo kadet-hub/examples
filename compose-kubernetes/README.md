@@ -33,10 +33,11 @@ image in a copy of the shared class and requires exactly the image line of
 the Deployment and of `compose.yml` to change. It also requires the target
 `compose` to refuse `security_profile`, a Kubernetes-only key, in the
 shared class. It then deploys `cluster` to a new kind cluster and starts
-`compose` with `docker compose up`. On both, Miniflux must answer its
-health check, report the recipe's version and store and list a category
-through its API as the admin. `KEEP=1 ./check` keeps the cluster
-`compose-miniflux` and the compose project `compose-ex-miniflux`.
+`compose` with `docker compose up`, revealed as under Using it. On both,
+Miniflux must answer its health check, report the recipe's version and
+store and list a category through its API as the admin. `KEEP=1 ./check`
+keeps the cluster `compose-miniflux` and the compose project
+`compose-ex-miniflux`.
 
 ## Using it
 
