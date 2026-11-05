@@ -5,4 +5,4 @@ parameters:
   env: dev
   letsencrypt: staging
   hostname: shop.dev.example.com
-  replicas: 2
+  replicas: 1
