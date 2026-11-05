@@ -1891,9 +1891,10 @@ enforce the Pod Security level `baseline`.
   lock (`Migrate` in `internal/database/database.go`). When several
   replicas start on an empty database, one can fail with an error such as
   `pq: column "karakeep_tags" of relation "integrations" already exists`,
-  exit and start again on the migrated schema. In the first local run one
-  pod of stage and one of prod restarted once. EX-6 counts restarts as
-  broken from the fourth.
+  exit and start again on the migrated schema. In three local runs one
+  pod of stage and one of prod restarted once. In the first CI run of
+  #150 one pod of stage restarted twice and no pod of prod. EX-6 counts
+  restarts as broken from the fourth.
 
   Not tested: an Ingress or Gateway for the hostnames, because kind runs
   no controller that would serve them, and the reclaim of a volume after
@@ -1901,7 +1902,9 @@ enforce the Pod Security level `baseline`.
 
   Related: EX-6, EX-12
 
-  - Test: `examples` workflow, job `multi-env`
+  - Test: `examples` workflow, job `multi-env`; `manual:` with
+    `hostname: news.prod.example.com` in `env/prod.yml`, the guard
+    passed and `check` failed on the API endpoint of prod's miniflux
   - Since: #150
 
 - EX-28a: `multi-env/check` MUST fail unless, in a copy of the project,
