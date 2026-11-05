@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `argocd-cmp/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -60,7 +60,8 @@ schedule instead of trusting the state on the publishing day.
   `first-platform` and `helm-vs-terraform` unless EX-12 holds,
   `kubevirt-csi` unless EX-14 and EX-14a hold, `open-webui-searxng`
   unless EX-17 holds, `platform-baseline` unless EX-18 and EX-18a hold,
-  `immich-cnpg` unless EX-19 holds, `pihole-powerdns` unless EX-20 holds.
+  `immich-cnpg` unless EX-19 holds, `pihole-powerdns` unless EX-20 holds,
+  `argocd-cmp` unless EX-24 holds.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -132,8 +133,8 @@ schedule instead of trusting the state on the publishing day.
   run, such as a readiness probe on a port the app does not listen on.
   `argocd-vs-flux`, `helm-mutate`, `cert-manager-mutate`,
   `kubevirt-csi`, `open-webui-searxng`, `platform-baseline`,
-  `immich-cnpg` and `pihole-powerdns` deploy their workloads under EX-7,
-  EX-10, EX-11, EX-14, EX-17, EX-18, EX-19 and EX-20.
+  `immich-cnpg`, `pihole-powerdns` and `argocd-cmp` deploy their workloads
+  under EX-7, EX-10, EX-11, EX-14, EX-17, EX-18, EX-19, EX-20 and EX-24.
   `first-platform/check` deploys `compiled/prod/apps` (Namespace,
   Deployment, Service, PodDisruptionBudget), `helm-vs-terraform/check`
   the Deployment, Service and ConfigMap of its first compile. Both create
@@ -235,7 +236,7 @@ schedule instead of trusting the state on the publishing day.
   Pins in Kapitan inventories and Kubernetes manifests are updated with
   `datasource=docker` by regex managers: generators through the org preset;
   recipes in a fetch inventory (`open-webui-searxng`, `platform-baseline`,
-  `immich-cnpg`, `pihole-powerdns`) by a manager of their own, because the preset reads `**/inventory/**` only and allows no
+  `immich-cnpg`, `pihole-powerdns`, `argocd-cmp`) by a manager of their own, because the preset reads `**/inventory/**` only and allows no
   `/` in a name;
   charts by version and the digest of their OCI artifact (podinfo in
   `helm-mutate`, cert-manager and trust-manager in `cert-manager-mutate`); images wherever an `image:` or
@@ -1514,6 +1515,90 @@ writes the Service's cluster IP into the zone.
   - Test: `examples` workflow, job `pihole-powerdns`
   - Since: #138
 
+## Argo CD config management plugin
+
+`argocd-cmp/` backs the kadet-hub.org blog post for teams that will not add
+a compile step to CI and want Argo CD to compile the Kapitan project. A
+config management plugin runs `kapitan compile` in a sidecar of Argo CD's
+repo server, and the Application names the plugin and the target. The
+project uses the recipe `blackbox-exporter`, which includes no other
+recipe, pinned in the fetch inventory `fetch/targets/recipes.yml`.
+
+The Application creates the namespace with the Pod Security level
+`restricted`. The recipe 1.0.0 sets no seccomp profile, which that level
+requires, so the target adds `RuntimeDefault` to the container's
+`security_context`.
+
+`check` installs Argo CD from its release manifest at the commit of its
+tag, in the two steps of EX-7 and with the redis image of EX-7. It then
+applies the ConfigMap of `kapitan-plugin.yaml` and patches the Deployment
+`argocd-repo-server` with `repo-server-patch.yaml`. The argocd generator
+renders Applications, ApplicationSets and AppProjects, and its README
+leaves the installation to the `helm` input, so it cannot add the sidecar.
+The sidecar runs Kapitan's image, pinned as `tag@sha256:digest`, as user
+999 with Argo CD's `argocd-cmp-server` as its command, as Argo CD's
+documentation requires. The plugin has no `discover` section, so it
+renders only Applications that name it. The Application passes the target
+in its plugin env `TARGET`, which the plugin reads as `ARGOCD_ENV_TARGET`.
+
+The plugin compiles without `--fetch` (EX-4). `check` verifies and pulls
+the recipe and the kubernetes generator it pins as `pihole-powerdns/check`
+does and pushes them with `.kapitan`, `fetch/` and `inventory/` to the
+Gitea of EX-7. A sidecar could not fetch the recipe with `kapitan compile
+--fetch` alone in any case, because Kapitan 0.36.3 reads the inventory,
+which includes the recipe, before it fetches (kapicorp/kapitan#1638).
+`generate` prints every `.yml` and `.yaml` file under `compiled/<target>`
+and fails when there is none. Argo CD's documentation warns that a plugin
+that prints nothing makes an Application with `prune` delete its
+resources.
+
+- EX-24: `argocd-cmp/check` MUST fail unless the recipe and the generator
+  pass the checks of EX-17 and EX-4, and, in a new kind cluster with Argo
+  CD and the sidecar:
+
+  - the sidecar has no service account token, opens a TCP connection to
+    ghcr.io on port 443, and cannot open it once `repo-server-egress.yaml`
+    applies;
+  - Argo CD reports the Application `blackbox-exporter` with source type
+    `Plugin`, `Synced` at the pushed commit and `Healthy`, and the
+    exporter's Deployment has one replica, available;
+  - after a commit that sets `replicas` to 2 in the target, and a refresh,
+    the same holds at the new commit with two replicas.
+
+  The post says what the sidecar can reach, and these steps check it.
+  Argo CD's manifest sets `automountServiceAccountToken: false` on the
+  repo server's pod, so no container in it can call the API server with
+  the pod's identity. Its NetworkPolicies restrict ingress only, so the
+  sidecar reaches the internet until a policy restricts egress.
+  `repo-server-egress.yaml` allows DNS, Argo CD's Redis and the Git server,
+  and both commits render under it, which shows that the plugin needs no
+  other network. The connection test runs the sidecar's Python. `check`
+  waits up to a minute for the policy to take effect and fails when it
+  does not, so a CNI that ignores NetworkPolicy fails the check. kindnet,
+  the CNI that kind v0.33.0 installs, enforces it.
+
+  After the second push `check` sets the annotation
+  `argocd.argoproj.io/refresh: normal`, which is what Argo CD's webhook
+  handler sets on a push event (`RefreshApp` in `util/argo/argo.go`).
+  Without a webhook Argo CD polls the repository every
+  `timeout.reconciliation`, 120 seconds by default, plus up to 60 seconds
+  of jitter.
+
+  Refs are not tested. The recipe renders no Secret, and the plugin passes
+  no `--reveal`. The repository's `.kapitan` can still set `reveal` and
+  `fetch` for every compile (`from_dot_kapitan` in Kapitan 0.36.3's
+  `cli.py`), so the plugin's command line does not keep a compile from
+  revealing refs or fetching. What keeps refs closed is that the sidecar
+  holds no key for them.
+
+  Related: EX-6, EX-7, EX-12
+
+  - Test: `examples` workflow, job `argocd-cmp`; `manual:` without the
+    seccomp profile in the target, the first local run timed out waiting
+    for the Application to become `Healthy`, while PodSecurity rejected
+    every pod of the exporter's ReplicaSet
+  - Since: tbd
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -1551,4 +1636,5 @@ writes the Service's cluster IP into the zone.
 | `platform-baseline/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `kyverno`, `monitoring`, `external-secrets`, `velero`, `argocd`, `podinfo`), the shared class `inventory/classes/platform.yml`, the cert-manager recipe pinned in `fetch/targets/recipes.yml`, the stand-ins `git-server.yaml` and `s3-server.yaml`; `check` (EX-18, EX-18a) |
 | `immich-cnpg/` | One Kapitan project (targets `cnpg`, `immich`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-19) |
 | `pihole-powerdns/` | One Kapitan project (targets `dns`, `pihole`) on the omegaconf backend, the zone in `inventory/classes/home.yml`, the three recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-20) |
+| `argocd-cmp/` | One Kapitan project (target `blackbox-exporter`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the plugin's ConfigMap `kapitan-plugin.yaml`, the sidecar in `repo-server-patch.yaml`, the egress policy `repo-server-egress.yaml`, `application.yaml`, `git-server.yaml`; `check` (EX-24) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |

@@ -1,0 +1,18 @@
+# The Application names this target in its plugin env TARGET. check pushes
+# this inventory to the in-cluster Git server, then changes replicas to 2
+# and pushes again.
+classes:
+  - recipes.blackbox-exporter
+parameters:
+  namespace: blackbox-exporter
+  kapitan:
+    vars:
+      target: blackbox-exporter
+  components:
+    blackbox-exporter-prometheus-blackbox-exporter:
+      replicas: 1
+      # The recipe sets no seccomp profile, which the namespace's Pod
+      # Security level restricted requires.
+      security_context:
+        seccompProfile:
+          type: RuntimeDefault
