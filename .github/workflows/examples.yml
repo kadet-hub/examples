@@ -53,6 +53,12 @@ env:
   # renovate: datasource=github-release-attachments depName=jsonnet-bundler/jsonnet-bundler
   JB_VERSION: v0.6.0
   JB_SHA256: 78e54afbbc3ff3e0942b1576b4992277df4f6beb64cddd58528a76f0cd70db54
+  # renovate: datasource=github-release-attachments depName=stefanprodan/timoni
+  TIMONI_VERSION: v0.37.0
+  TIMONI_SHA256: bfbc3e7b6819a290bf92b2251defba325c0f7aeaeb4c46f1ed02614a4fe40ae7
+  # renovate: datasource=github-release-attachments depName=kcl-lang/cli
+  KCL_VERSION: v0.13.3
+  KCL_SHA256: 37c8bf8e965f3f04f512a46fdb1ba471174d7d4592a831123115bcedb77d2633
   # renovate: datasource=node-version depName=node
   NODE_VERSION: 26.12.1
   NODE_SHA256: 6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd
@@ -313,6 +319,68 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           npm_config_update_notifier: "false"
         run: config-tools/check
+
+  timoni-vs-kapitan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install timoni, oras and uv
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo timoni.tgz "https://github.com/stefanprodan/timoni/releases/download/$TIMONI_VERSION/timoni_${TIMONI_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          sha256sum -c <<EOF
+          $TIMONI_SHA256  timoni.tgz
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          EOF
+          tar -xzf timoni.tgz timoni
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: timoni-vs-kapitan/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: timoni-vs-kapitan/check
+
+  kcl-vs-kapitan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install kcl, oras and uv
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo kcl.tgz "https://github.com/kcl-lang/cli/releases/download/$KCL_VERSION/kcl-$KCL_VERSION-linux-amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          sha256sum -c <<EOF
+          $KCL_SHA256  kcl.tgz
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          EOF
+          tar -xzf kcl.tgz kcl
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: kcl-vs-kapitan/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: kcl-vs-kapitan/check
 
   talos-machine-config:
     runs-on: ubuntu-24.04
@@ -800,6 +868,8 @@ jobs:
       - verify-oci
       - gvisor-ci
       - config-tools
+      - timoni-vs-kapitan
+      - kcl-vs-kapitan
       - talos-machine-config
       - helm-vs-terraform
       - argocd-vs-flux
