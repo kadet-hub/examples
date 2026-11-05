@@ -1862,10 +1862,9 @@ generator, and the Namespace `miniflux` at the Pod Security level
 probe on Miniflux's `/healthcheck`, which the recipe 1.0.0 lacks. Without
 it the rollout ended before Miniflux listened, and the port-forward of the
 first CI run of #147 ended at the refused connection, as in EX-17. The
-target `compose` adds the
-compile entry of `components/compose` and, under `compose.services`, what
-only a Docker host needs: the published port, the start order and the
-restart policy. It leaves out `init.yml`, whose compile entry would run the
+target `compose` adds the compile entry of `components/compose` and, under
+`compose.services`, what only a Docker host needs: the published port,
+the start order and the restart policy. It leaves out `init.yml`, whose compile entry would run the
 kubernetes generator as well. The class `miniflux` therefore also sets the
 database user and name and the admin's username, which `init.yml` sets to
 the same values.
@@ -1902,9 +1901,9 @@ container port, so the Service port 80 of `miniflux` has no counterpart.
   `docker compose up --wait` returns once postgres reports healthy and
   Miniflux runs. `check` compiles `compose` without `--reveal` and pipes
   the output through `kapitan refs --reveal` into `docker compose -f -`,
-  so no file on the host holds the passwords. The job installs docker compose v5.7.0 as a CLI plugin,
-  pinned by version and sha256 as a release asset (EX-3), in place of the
-  runner's own.
+  so no file on the host holds the passwords. The job installs docker
+  compose v5.7.0 as a CLI plugin, pinned by version and sha256 as a
+  release asset (EX-3), in place of the runner's own.
 
   Related: EX-1, EX-6, EX-12
 
