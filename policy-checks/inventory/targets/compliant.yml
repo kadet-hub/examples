@@ -1,0 +1,23 @@
+# Passes every policy: image by tag and digest, requests and a memory
+# limit, the restricted Pod Security profile and a PodDisruptionBudget.
+classes:
+  - web
+parameters:
+  namespace: compliant
+  generators:
+    kubernetes:
+      namespaces:
+        compliant: {}
+    manifest:
+      default_config:
+        security_profile: restricted
+  components:
+    web:
+      image: ghcr.io/stefanprodan/podinfo:6.17.0@sha256:fa2f27c1a8561097e5144bfc0853eba6054d743b68b03de4cad4675616ddefb0
+      # The image names its user app, which the kubelet cannot check
+      # against runAsNonRoot.
+      security_context: {runAsUser: 65534}
+      resources:
+        requests: {cpu: 50m, memory: 64Mi}
+        limits: {memory: 128Mi}
+      pdb_min_available: 1
