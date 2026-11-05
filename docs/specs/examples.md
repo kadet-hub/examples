@@ -1902,7 +1902,7 @@ enforce the Pod Security level `baseline`.
   Related: EX-6, EX-12
 
   - Test: `examples` workflow, job `multi-env`
-  - Since: tbd
+  - Since: #150
 
 - EX-28a: `multi-env/check` MUST fail unless, in a copy of the project,
   `METRICS_COLLECTOR: 1` under `components.miniflux.env` changes the
@@ -1918,7 +1918,7 @@ enforce the Pod Security level `baseline`.
   deployed.
 
   - Test: `examples` workflow, job `multi-env`
-  - Since: tbd
+  - Since: #150
 
 - EX-28b: `multi-env/check` MUST fail unless `guard` accepts prod's
   compiled output against stage's, refuses it after the step of EX-28a
@@ -1938,7 +1938,7 @@ enforce the Pod Security level `baseline`.
   of the deploys decides which runs first.
 
   - Test: `examples` workflow, job `multi-env`
-  - Since: tbd
+  - Since: #150
 
 ## Open questions
 
