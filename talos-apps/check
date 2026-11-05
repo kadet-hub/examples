@@ -80,8 +80,10 @@ if [[ $want != "$digest" ]]; then
   echo "recipe $name $version: index has $want, fetch/targets/recipes.yml pins $digest" >&2
   exit 1
 fi
+# The fetch inventory pins only what a target includes (registry CON-4). This
+# recipe includes none, and check does not fetch includes from the index.
 if jq -e '.includes | length > 0' <<<"$record" >/dev/null; then
-  echo "recipe $name $version includes other recipes, which fetch/targets/recipes.yml does not pin" >&2
+  echo "recipe $name $version includes other recipes, which check does not fetch" >&2
   exit 1
 fi
 gh attestation verify "oci://ghcr.io/kadet-hub/recipes/$name@$digest" \
