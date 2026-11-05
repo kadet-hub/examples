@@ -2078,9 +2078,10 @@ Each target includes three classes in this order: `common`, one of
 `env/dev`, `env/stage` and `env/prod`, and one of `cluster/a` and
 `cluster/b`. A later class overrides an earlier one. `common` includes the
 recipe and sets what every environment runs, with prod's resources: the
-refs, one set per target, `BASE_URL` from the env class's `hostname`, and
-the storage class of the database's claim from the cluster class's
-`cluster.storage_class`. The env classes set `hostname` and the replicas,
+refs, one set per target, `BASE_URL` from the env class's `hostname`, the
+storage class of the database's claim from the cluster class's
+`cluster.storage_class`, and a readiness probe that the recipe lacks. The
+env classes set `hostname` and the replicas,
 and `env/dev` sets smaller resources. The cluster classes set the cluster's
 name and storage class. dev and stage share the cluster `multienv-a`, so the
 target `dev` sets the namespace `miniflux-dev`. Apart from that, a target
@@ -2119,6 +2120,13 @@ enforce the Pod Security level `baseline`.
   pod of stage and one of prod restarted once. In the first CI run of
   #150 one pod of stage restarted twice and no pod of prod. EX-6 counts
   restarts as broken from the fourth.
+
+  The recipe 1.0.0 gives miniflux no readiness probe, so a pod counted as
+  ready once its container ran. `rollout status` then returned while a pod
+  that would lose the race was still migrating, and a CI run of #150 found
+  2 of prod's 3 replicas ready. `common` adds a readiness probe on
+  miniflux's `/healthcheck`, which answers once the HTTP server runs, after
+  the migrations. `rollout status` then waits through the restarts.
 
   Not tested: an Ingress or Gateway for the hostnames, because kind runs
   no controller that would serve them, and the reclaim of a volume after
