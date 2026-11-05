@@ -23,5 +23,5 @@ parameters:
         source: ghcr.io/kadet-hub/argocd:1.0.4@sha256:8b41817b189cdc043bb1a726f0e42a827672a1eda80e8d8406b512262182feea
         output_path: lib/argocd
       - type: oci
-        source: ghcr.io/kadet-hub/grafana:1.0.2@sha256:9cecd831498907000db0c6feaf85115388370b9438df590c76bf6d6a7ff859f0
+        source: ghcr.io/kadet-hub/grafana:1.0.3@sha256:a31a55e6eb06eeb6c28ed61e12b8971b0c23ab446eb3f8d7e43bd1b290cbf836
         output_path: lib/grafana
