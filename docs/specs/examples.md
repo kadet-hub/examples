@@ -1908,8 +1908,18 @@ Deployment's pod labels, which takes two files at once.
   profile forbids the absence of a profile. The post says so, and `check`
   fails once the policy changes.
 
-  - Test: `examples` workflow, job `policy-checks`
-  - Since: tbd
+  - Test: `examples` workflow, job `policy-checks`; `manual:` with the
+    resources removed from `compliant`, `check` failed on
+    `require-requests-limits`, and with `privileged: false` in
+    `noncompliant`, it failed because Kyverno no longer reported
+    `disallow-privileged-containers`; `manual:` the CLI 1.19.2 printed the
+    ClusterPolicy deprecation warning for
+    `best-practices/disallow-latest-tag` (2026-11-05); `manual:` Renovate
+    44.216.6 (`--platform=local --dry-run=lookup`, 2026-11-05) proposed
+    282e77f on `renovate/kyverno-policies-digest` with the policies pin set
+    back to 790d5e5, and v1.19.2 and v0.71.1 with the sha256 of their
+    linux x86_64 archives with the CLI at v1.19.1 and conftest at v0.71.0
+  - Since: #148
 
 - EX-27a: `policy-checks/check` MUST fail unless, in a new kind cluster
   with Kyverno from the `install.yaml` of the CLI's version and the same
@@ -1940,7 +1950,7 @@ Deployment's pod labels, which takes two files at once.
   Related: EX-4, EX-6, EX-12
 
   - Test: `examples` workflow, job `policy-checks`
-  - Since: tbd
+  - Since: #148
 
 ## Open questions
 
