@@ -18,4 +18,4 @@ jobs:
       pull-requests: write
       actions: read # the artifact of the compile-diff run
     steps:
-      - uses: kadet-hub/registry/.github/actions/compile-diff-comment@bfb96792f7afd43ee513b1e0339faeff069550f8 # main, kadet-hub/registry#537; no index tag at this commit
+      - uses: kadet-hub/registry/.github/actions/compile-diff-comment@ed0973860f5a9c7c03561b8aeec32ea568d4191e # main, kadet-hub/registry#560; no index tag at this commit
