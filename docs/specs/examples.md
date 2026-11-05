@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -60,7 +60,8 @@ schedule instead of trusting the state on the publishing day.
   `first-platform` and `helm-vs-terraform` unless EX-12 holds,
   `kubevirt-csi` unless EX-14 and EX-14a hold, `open-webui-searxng`
   unless EX-17 holds, `platform-baseline` unless EX-18 and EX-18a hold,
-  `immich-cnpg` unless EX-19 holds, `pihole-powerdns` unless EX-20 holds.
+  `immich-cnpg` unless EX-19 holds, `pihole-powerdns` unless EX-20 holds,
+  `helmfile-vs-kapitan` unless EX-21 holds.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -132,8 +133,9 @@ schedule instead of trusting the state on the publishing day.
   run, such as a readiness probe on a port the app does not listen on.
   `argocd-vs-flux`, `helm-mutate`, `cert-manager-mutate`,
   `kubevirt-csi`, `open-webui-searxng`, `platform-baseline`,
-  `immich-cnpg` and `pihole-powerdns` deploy their workloads under EX-7,
-  EX-10, EX-11, EX-14, EX-17, EX-18, EX-19 and EX-20.
+  `immich-cnpg`, `pihole-powerdns` and `helmfile-vs-kapitan` deploy their
+  workloads under EX-7, EX-10, EX-11, EX-14, EX-17, EX-18, EX-19, EX-20 and
+  EX-21.
   `first-platform/check` deploys `compiled/prod/apps` (Namespace,
   Deployment, Service, PodDisruptionBudget), `helm-vs-terraform/check`
   the Deployment, Service and ConfigMap of its first compile. Both create
@@ -238,7 +240,10 @@ schedule instead of trusting the state on the publishing day.
   `immich-cnpg`, `pihole-powerdns`) by a manager of their own, because the preset reads `**/inventory/**` only and allows no
   `/` in a name;
   charts by version and the digest of their OCI artifact (podinfo in
-  `helm-mutate`, cert-manager and trust-manager in `cert-manager-mutate`); images wherever an `image:` or
+  `helm-mutate`, cert-manager and trust-manager in `cert-manager-mutate`,
+  podinfo and Valkey in the classes and in `helmfile/helmfile.yaml` of
+  `helmfile-vs-kapitan`, whose digest pins Renovate's own helmfile manager
+  skips as `unsupported-chart-type`); images wherever an `image:` or
   `image_name:` key or an `-image=` argument names one, by tag or by
   `tag@sha256:digest`, as
   `repository`, `tag` and `digest` values, or as a mutate `images` entry
@@ -254,7 +259,9 @@ schedule instead of trusting the state on the publishing day.
   plugin; the four recipes of `open-webui-searxng` and those of
   `immich-cnpg` and `pihole-powerdns`, whose includes must be pinned at
   the digests the index lists (EX-17, EX-19, EX-20); the velero CLI and the
-  server image `platform-baseline/check` installs with it (EX-18).
+  server image `platform-baseline/check` installs with it (EX-18); the
+  charts of both sides of `helmfile-vs-kapitan`, outside the podinfo group
+  (EX-21).
 
   Two values follow another pin, and the pull request that changes that
   pin has to change them: the redis tag follows Argo CD's manifest (EX-7),
@@ -353,7 +360,7 @@ schedule instead of trusting the state on the publishing day.
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
     cryptography override: #86; recipes in a fetch inventory: #132;
-    `platform-baseline`: #135
+    `platform-baseline`: #135; `helmfile-vs-kapitan`: #140
 
 - EX-3h: Renovate MUST merge its own pull request once every check on it
   passed, unless it is a major update or a digest update of a GitHub Action.
@@ -1514,6 +1521,78 @@ writes the Service's cluster IP into the zone.
   - Test: `examples` workflow, job `pihole-powerdns`
   - Since: #138
 
+## Helmfile and Kapitan
+
+`helmfile-vs-kapitan/` backs the kadet-hub.org blog post that compares
+Helmfile with Kapitan on a setup Helmfile is usually chosen for: two
+upstream charts, podinfo and Valkey as its cache, in the environments `dev`
+and `prod`. Both sides pin the charts at the same version and OCI digest
+and render them with the same helm binary. `helmfile/helmfile.yaml` lists
+the two releases, `helmfile/environments/` holds what differs per
+environment, and `helmfile/values/` holds the chart values as Go
+templates that read it. The targets in `kapitan/inventory/targets/` hold
+the same values as parameters, and the classes `podinfo` and `valkey`
+render the charts with Kapitan's `helm` input. The release `podinfo`
+`needs` `valkey`.
+
+podinfo logs in to Valkey as the user `default`. Its chart value
+`extraEnvs` reads the password from the Secret `valkey-auth` and builds
+`PODINFO_CACHE_SERVER` from it with the kubelet's `$(VAR)` expansion.
+`check` creates the password per run. Helmfile reads it through vals from
+the environment, `ref+envsubst://$VALKEY_PASSWORD`, and passes it to the
+chart, which writes it base64-encoded into `valkey-auth`. Kapitan reads it
+from the ref `?{base64:valkey/password}`, which `check` writes to a
+temporary refs path. Kapitan hands `helm_values` to Helm as written and
+reveals refs only in its own output. Given to the chart, the ref tag ends up
+base64-encoded in the chart's Secret, where `--reveal` does not find it.
+The class `valkey` therefore drops the chart's `secret.yaml` with the
+`remove` input, and the kubernetes generator writes `valkey-auth` with the
+ref in `stringData`.
+
+`check` normalizes both sides as `same-app` does (EX-1), with two rules
+of its own. An object without a namespace gets `podinfo`, the namespace
+both sides give Helm. A Secret is compared by name, namespace, type and
+decoded data, because on the Kapitan side the generator writes it, with its
+own labels. An empty object list fails the check.
+
+- EX-21: `helmfile-vs-kapitan/check` MUST fail unless, for `dev` and
+  `prod`, the normalized output of `helmfile template` equals that of
+  `kapitan compile --reveal`, Helmfile's output holds the password
+  base64-encoded, Kapitan's output without `--reveal` holds neither the
+  password nor its base64 encoding but the ref token in `valkey-auth`, a
+  compile without the `remove` entry leaves the ref tag in the chart's
+  Secret after `--reveal`, and `prod`, deployed to a new kind cluster with
+  `helmfile sync` and then with `kubectl apply` of Kapitan's output, lets
+  podinfo store and read a key in Valkey, which refuses `valkey-cli`
+  without the password. `helmfile sync` MUST process `valkey` in an
+  earlier group than `podinfo`.
+
+  Helmfile 1.8.2 logs its groups at the log level `debug` only, which
+  `check` sets for `sync`. `check` prints that log when `sync` fails. It
+  holds the password neither plain nor base64-encoded, as `grep` showed
+  for a local `sync` of `prod` on kind on 2026-11-05.
+
+  `check` writes and reads the key through the API server's service proxy.
+  Between the two deploys it runs `helmfile destroy` and deletes the
+  namespace. After the Kapitan deploy `helm list` must be empty. The
+  Kapitan side has no order. podinfo starts while Valkey is down and
+  connects later (`startCachePool` in podinfo 6.17.0), so it needs none.
+
+  Not tested: `helmfile diff` and `helmfile apply`, which need the
+  helm-diff plugin; helm-secrets with sops; vals backends other than
+  `envsubst`; `dev` on a cluster.
+
+  Related: EX-1, EX-4, EX-6, EX-12
+
+  - Test: `examples` workflow, job `helmfile-vs-kapitan`; `manual:` with
+    prod's podinfo replicas changed in `kapitan/inventory/targets/prod.yml`
+    alone, `check` fails on the Deployment's `replicas`; `manual:` with
+    podinfo set back to 6.16.0 and Valkey to 0.12.0 on both sides, Renovate
+    44.194.0 (`--platform=local --dry-run=lookup`, 2026-11-05) proposed
+    6.17.0 and 0.12.1 at their digests for all four pins on the branch
+    `renovate/helmfile-vs-kapitan-charts`
+  - Since: #140
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -1551,4 +1630,5 @@ writes the Service's cluster IP into the zone.
 | `platform-baseline/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `kyverno`, `monitoring`, `external-secrets`, `velero`, `argocd`, `podinfo`), the shared class `inventory/classes/platform.yml`, the cert-manager recipe pinned in `fetch/targets/recipes.yml`, the stand-ins `git-server.yaml` and `s3-server.yaml`; `check` (EX-18, EX-18a) |
 | `immich-cnpg/` | One Kapitan project (targets `cnpg`, `immich`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-19) |
 | `pihole-powerdns/` | One Kapitan project (targets `dns`, `pihole`) on the omegaconf backend, the zone in `inventory/classes/home.yml`, the three recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-20) |
+| `helmfile-vs-kapitan/` | `helmfile/` (releases, environments, values templates) and `kapitan/` (targets `dev`, `prod`, classes `common`, `podinfo`, `valkey`), both pinning podinfo and Valkey; `check` (EX-21) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
