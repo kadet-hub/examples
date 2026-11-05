@@ -1397,8 +1397,9 @@ password is a ref as in EX-17.
   into PostgreSQL, and it looks up the nearest one with `earthdistance`,
   the extension of the option `earthdistance` of `postgresql`. `check`
   prints the city and does not compare it, because the nearest place is
-  not always the expected one: the first local run placed Times Square
-  in Weehawken, New Jersey.
+  not always the expected one: in the first CI run of #137, on an
+  ubuntu-24.04 runner, Times Square resolved to Weehawken, New Jersey,
+  across the Hudson.
 
   The admin creates the second user, who gets 400 for the photo of the
   Eiffel Tower before the album `Paris 2024` with it is shared with them
@@ -1411,9 +1412,11 @@ password is a ref as in EX-17.
   `pgvector`. Machine learning downloads the model from Hugging Face when
   the first photo needs it. `check` waits until a search finds all four
   photos, then requires the photo of each colour first for "a red photo"
-  and the three other colours. Hugging Face is outside the cluster, so
-  this step can fail without a change to the repository, as the web
-  search of EX-17 can.
+  and the three other colours. In the first CI run of #137 the search
+  found all four photos 16 seconds after their metadata, with 606 MB of
+  CLIP model downloaded. Hugging Face is outside the cluster, so this
+  step can fail without a change to the repository, as the web search of
+  EX-17 can.
 
   `check` starts Immich's job `backup-database`, which writes a `pg_dump`
   of the database as its owner into `backups/` on the library claim.
@@ -1434,8 +1437,8 @@ password is a ref as in EX-17.
   pod again on the same claim. `kubectl delete` of that pod waits for the
   instance manager, which shuts PostgreSQL down smart first and waits up
   to `smartShutdownTimeout`, 180 seconds by default, for the clients to
-  disconnect. Immich keeps its connections open, so the delete took 183
-  seconds in the first local run.
+  disconnect. Immich keeps its connections open, so the delete took 182
+  seconds in the first CI run of #137.
 
   - Test: `examples` workflow, job `immich-cnpg`; `manual:` with cnpg set
     back to 1.0.1 in the fetch inventory, Renovate 44.194.0
