@@ -1,0 +1,12 @@
+classes:
+  - home
+  - recipes.external-dns-powerdns
+parameters:
+  namespace: dns
+  kapitan:
+    vars:
+      target: dns
+  applications:
+    powerdns:
+      api_key: ?{base64:dns/powerdns-api-key||random:str:40}
+      zone: ${home.zone}

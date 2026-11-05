@@ -1,0 +1,4 @@
+# The home zone, read by both targets.
+parameters:
+  home:
+    zone: home.example

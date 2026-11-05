@@ -1,0 +1,23 @@
+classes:
+  - home
+  - recipes.pihole
+parameters:
+  namespace: pihole
+  kapitan:
+    vars:
+      target: pihole
+  applications:
+    pihole:
+      password: ?{base64:pihole/password||random:str:32}
+  components:
+    pihole:
+      env:
+        # kind's cluster DNS. On a LAN this is the resolver Pi-hole forwards to.
+        FTLCONF_dns_upstreams: kube-dns.kube-system.svc.cluster.local
+        # The home zone goes to PowerDNS. FTL's dnsmasq resolves the name of
+        # the Service once, when FTL starts.
+        FTLCONF_misc_dnsmasq_lines: server=/${home.zone}/powerdns.dns.svc.cluster.local
+      service:
+        annotations:
+          # external-dns writes this name into the zone.
+          external-dns.kubernetes.io/hostname: pihole.${home.zone}

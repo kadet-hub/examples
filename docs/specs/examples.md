@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -60,7 +60,7 @@ schedule instead of trusting the state on the publishing day.
   `first-platform` and `helm-vs-terraform` unless EX-12 holds,
   `kubevirt-csi` unless EX-14 and EX-14a hold, `open-webui-searxng`
   unless EX-17 holds, `platform-baseline` unless EX-18 and EX-18a hold,
-  `immich-cnpg` unless EX-19 holds.
+  `immich-cnpg` unless EX-19 holds, `pihole-powerdns` unless EX-20 holds.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -131,9 +131,9 @@ schedule instead of trusting the state on the publishing day.
   kubeconform and an API server accept manifests that the kubelet cannot
   run, such as a readiness probe on a port the app does not listen on.
   `argocd-vs-flux`, `helm-mutate`, `cert-manager-mutate`,
-  `kubevirt-csi`, `open-webui-searxng`, `platform-baseline` and
-  `immich-cnpg` deploy their workloads under EX-7, EX-10, EX-11, EX-14,
-  EX-17, EX-18 and EX-19.
+  `kubevirt-csi`, `open-webui-searxng`, `platform-baseline`,
+  `immich-cnpg` and `pihole-powerdns` deploy their workloads under EX-7,
+  EX-10, EX-11, EX-14, EX-17, EX-18, EX-19 and EX-20.
   `first-platform/check` deploys `compiled/prod/apps` (Namespace,
   Deployment, Service, PodDisruptionBudget), `helm-vs-terraform/check`
   the Deployment, Service and ConfigMap of its first compile. Both create
@@ -235,7 +235,7 @@ schedule instead of trusting the state on the publishing day.
   Pins in Kapitan inventories and Kubernetes manifests are updated with
   `datasource=docker` by regex managers: generators through the org preset;
   recipes in a fetch inventory (`open-webui-searxng`, `platform-baseline`,
-  `immich-cnpg`) by a manager of their own, because the preset reads `**/inventory/**` only and allows no
+  `immich-cnpg`, `pihole-powerdns`) by a manager of their own, because the preset reads `**/inventory/**` only and allows no
   `/` in a name;
   charts by version and the digest of their OCI artifact (podinfo in
   `helm-mutate`, cert-manager and trust-manager in `cert-manager-mutate`); images wherever an `image:` or
@@ -252,8 +252,8 @@ schedule instead of trusting the state on the publishing day.
   never run with another operator version; kind and its
   node image; podinfo's chart and image; `@pulumi/kubernetes` and its
   plugin; the four recipes of `open-webui-searxng` and those of
-  `immich-cnpg`, whose includes must be pinned at the digests the index
-  lists (EX-17, EX-19); the velero CLI and the
+  `immich-cnpg` and `pihole-powerdns`, whose includes must be pinned at
+  the digests the index lists (EX-17, EX-19, EX-20); the velero CLI and the
   server image `platform-baseline/check` installs with it (EX-18).
 
   Two values follow another pin, and the pull request that changes that
@@ -1446,6 +1446,74 @@ password is a ref as in EX-17.
     its digest on the branch `renovate/immich-cnpg-recipes`
   - Since: #137
 
+## Pi-hole and PowerDNS
+
+`pihole-powerdns/` backs the kadet-hub.org blog post on DNS for a home or
+office network, put together from published recipes of kadet-hub/recipes.
+PowerDNS is authoritative for the home zone. external-dns writes a record
+into that zone for every annotated Service. Pi-hole is the resolver the
+clients ask. It forwards the home zone to PowerDNS and every other name to
+its upstream.
+
+The fetch inventory `fetch/targets/recipes.yml` pins `pihole`,
+`external-dns-powerdns` and `powerdns` by version and digest.
+`external-dns-powerdns` 1.0.0 includes `powerdns` 1.0.0, so the fetch
+inventory pins powerdns 1.0.0, not the later 1.0.1. A Renovate pull request
+that moves powerdns to 1.0.1 alone fails `check` until an
+external-dns-powerdns version that includes 1.0.1 is listed. `check`
+verifies and pulls the recipes and the generator they pin as in EX-17.
+
+The target `dns` renders PowerDNS and external-dns into the namespace
+`dns`, at the Pod Security level `restricted`. The target `pihole` renders
+Pi-hole into `pihole`, at `baseline`, because Pi-hole's image starts as
+root. The class `home` sets the zone `home.example` once for both targets.
+
+The target `pihole` wires Pi-hole through `components.pihole.env`.
+`FTLCONF_misc_dnsmasq_lines` adds
+`server=/home.example/powerdns.dns.svc.cluster.local` to the dnsmasq
+configuration. FTL's dnsmasq resolves a server name with `getaddrinfo` when
+it reads its configuration (`parse_server` in `src/dnsmasq/option.c` of FTL
+v6.8). `check` therefore deploys `dns` before `pihole`, and Pi-hole needs a
+restart when the Service `powerdns` is recreated with a new cluster IP.
+Pi-hole's conditional forwarding, `dns.revServers`, writes the same
+`server=` line, but it also requires the CIDR of a reverse zone, which
+PowerDNS does not serve here. `FTLCONF_dns_upstreams` points Pi-hole at
+the cluster's DNS, as the pihole recipe's test target does. The Service
+`pihole` carries the annotation
+`external-dns.kubernetes.io/hostname: pihole.home.example`, so external-dns
+writes the Service's cluster IP into the zone.
+
+- EX-20: `pihole-powerdns/check` MUST fail unless the recipes of the fetch
+  inventory and every generator pass the checks of EX-17 and EX-4, and,
+  deployed to a new kind cluster, a client pod that asks Pi-hole gets the
+  cluster IP of the Service `pihole` for `pihole.home.example` over UDP
+  and TCP, NXDOMAIN with the SOA of `home.example` for a name the zone
+  lacks, and `0.0.0.0` over UDP and TCP for `ads.example` once it is
+  denied through Pi-hole's API.
+
+  The client is a pod of Pi-hole's image, which brings `dig` and `curl`.
+  `check` first waits until PowerDNS itself answers `pihole.home.example`
+  with the Service's cluster IP. external-dns syncs every 10 seconds.
+  The SOA's contact is `hostmaster.home.example`, which PowerDNS derives
+  from the zone name. Neither the cluster's DNS nor the root servers
+  answer with that SOA, so the NXDOMAIN comes from PowerDNS through
+  Pi-hole. The SOA's primary name server is
+  `a.misconfigured.dns.server.invalid`, PowerDNS's `default-soa-content`,
+  because the powerdns recipe 1.0.0 sets none, and `check` does not test
+  it. `ads.example` lies under the reserved TLD
+  `.example`. `check` requires NXDOMAIN for it before the deny entry, so
+  the `0.0.0.0` afterwards comes from the entry and not from the blocklist
+  that Pi-hole downloads at its first start.
+
+  Not tested: an Ingress as the source of a record, because
+  external-dns-powerdns 1.0.0 reads Services only (`--source=service`) and
+  its ClusterRole grants no access to Ingresses. A LoadBalancer Service
+  for Pi-hole, which clients on a LAN need and kind does not provide. The
+  downloaded blocklist, and Pi-hole as the DHCP server.
+
+  - Test: `examples` workflow, job `pihole-powerdns`
+  - Since: #138
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -1482,4 +1550,5 @@ password is a ref as in EX-17.
 | `open-webui-searxng/` | One Kapitan project (targets `open-webui`, `searxng`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-17) |
 | `platform-baseline/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `kyverno`, `monitoring`, `external-secrets`, `velero`, `argocd`, `podinfo`), the shared class `inventory/classes/platform.yml`, the cert-manager recipe pinned in `fetch/targets/recipes.yml`, the stand-ins `git-server.yaml` and `s3-server.yaml`; `check` (EX-18, EX-18a) |
 | `immich-cnpg/` | One Kapitan project (targets `cnpg`, `immich`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-19) |
+| `pihole-powerdns/` | One Kapitan project (targets `dns`, `pihole`) on the omegaconf backend, the zone in `inventory/classes/home.yml`, the three recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-20) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
