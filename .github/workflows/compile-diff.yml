@@ -1,0 +1,23 @@
+name: compile-diff
+
+# EX-25: compile first-platform at the base and the merge commit of a pull
+# request and upload the diff of compiled/. compile-diff-comment posts it.
+on:
+  pull_request:
+    paths:
+      - first-platform/**
+
+permissions: {}
+
+jobs:
+  diff:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read # the sandbox image and the generators
+      attestations: read # gh attestation verify
+    steps:
+      - uses: kadet-hub/registry/.github/actions/compile-diff@bfb96792f7afd43ee513b1e0339faeff069550f8 # main, kadet-hub/registry#537; no index tag at this commit
+        with:
+          working-directory: first-platform
