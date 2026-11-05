@@ -1,0 +1,15 @@
+# Breaks the policies on purpose: the latest tag, no resources, a
+# privileged container, no Pod Security profile and no
+# PodDisruptionBudget. Nothing pulls this image.
+classes:
+  - web
+parameters:
+  namespace: noncompliant
+  generators:
+    kubernetes:
+      namespaces:
+        noncompliant: {}
+  components:
+    web:
+      image: ghcr.io/stefanprodan/podinfo:latest
+      security_context: {privileged: true}

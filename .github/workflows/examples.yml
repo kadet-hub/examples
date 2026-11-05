@@ -866,6 +866,53 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: argocd-cmp/check
 
+  # EX-27: the Kyverno CLI and conftest on compiled/, Kyverno at admission
+  # on kind. The CLI runs at the version that check installs into kind.
+  policy-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    env:
+      # renovate: datasource=github-release-attachments depName=kyverno/kyverno
+      KYVERNO_CLI_VERSION: v1.19.2
+      KYVERNO_CLI_SHA256: 357eaf1df8bc24ddd5a73979fadeaae6a032e8710f11af264229756e4956bf4a
+      # renovate: datasource=github-release-attachments depName=open-policy-agent/conftest
+      CONFTEST_VERSION: v0.71.1
+      CONFTEST_SHA256: c3f6b2a753bd56e377a1e51a95ae3e057f926f2e9139f7d5b5dfbbaf810f7985
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install oras, uv, the Kyverno CLI, conftest, kubectl and kind
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSLo kyverno.tgz "https://github.com/kyverno/kyverno/releases/download/$KYVERNO_CLI_VERSION/kyverno-cli_${KYVERNO_CLI_VERSION}_linux_x86_64.tar.gz"
+          curl -fsSLo conftest.tgz "https://github.com/open-policy-agent/conftest/releases/download/$CONFTEST_VERSION/conftest_${CONFTEST_VERSION#v}_Linux_x86_64.tar.gz"
+          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          sha256sum -c <<EOF
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          $KYVERNO_CLI_SHA256  kyverno.tgz
+          $CONFTEST_SHA256  conftest.tgz
+          $KIND_SHA256  kind
+          EOF
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          tar -xzf kyverno.tgz kyverno
+          tar -xzf conftest.tgz conftest
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
+          chmod +x kind
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: policy-checks/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: policy-checks/check
+
   # EX-3f: published advisories for the packages in the lock files.
   advisories:
     runs-on: ubuntu-24.04
@@ -952,6 +999,7 @@ jobs:
       - pihole-powerdns
       - helmfile-vs-kapitan
       - argocd-cmp
+      - policy-checks
       - advisories
       - pins
     if: always()

@@ -1841,6 +1841,117 @@ runs from the default branch only.
     pull request after the merge
   - Since: #143
 
+## Policy checks
+
+`policy-checks/` backs the kadet-hub.org blog post on policy checks of
+Kapitan's compiled output in a pull request, compared with the same
+policies at admission. One Kapitan project renders podinfo with the
+kubernetes generator in two targets. `compliant` pins the image by tag and
+digest, sets requests and a memory limit, uses the generator's
+`security_profile: restricted` and gets a PodDisruptionBudget.
+`noncompliant` uses the tag `latest`, sets no resources, runs the
+container privileged and has no PodDisruptionBudget. Its image carries no
+digest, unlike EX-3a asks, because nothing pulls it: the cluster sees it
+in a server-side dry run only.
+
+The Kyverno policies come from kyverno/policies, which publishes no
+release or tag, only a release branch per Kyverno minor version. `check`
+downloads the repository's archive at the commit `KYVERNO_POLICIES_COMMIT`,
+the head of `release-1.19` when it was pinned, and uses the ValidatingPolicy
+versions: `best-practices-vpol/disallow-latest-tag`,
+`best-practices-vpol/require-pod-requests-limits` and every policy under
+`pod-security-vpol/baseline` and `pod-security-vpol/restricted`, 18 files at
+that commit. They ship with `validationActions: [Audit]`. The ClusterPolicy
+versions in `best-practices/` and `pod-security/` were not chosen, because
+the Kyverno CLI 1.19.2 warns that `kyverno.io/v1 ClusterPolicy is
+deprecated and will be removed in a future release`.
+
+Renovate moves the commit along the branch with `datasource=github-digest`
+through the `_COMMIT` match string of EX-3, and never to another branch.
+The pull request that moves Kyverno to a new minor version has to move the
+branch in the comment of the pin. `check` fails until it does, and when the
+CLI version the workflow installs differs from the `install.yaml` version
+in `check`.
+
+conftest runs `policy/compiled.rego` with `--combine`, so one evaluation
+reads every file of a target. One rule requires every image to be pinned
+by digest. The other requires, for every Deployment with more than one
+replica, a PodDisruptionBudget in its namespace whose selector matches the
+Deployment's pod labels, which takes two files at once.
+
+- EX-27: `policy-checks/check` MUST fail unless `kapitan compile` exits 0
+  for both targets and logs the generator's warnings for `noncompliant`'s
+  tag and resources, and:
+
+  - `kyverno apply` with the policies and `--resource` for every file of
+    `compliant` exits 0;
+  - the same for `noncompliant` exits non-zero and reports
+    `disallow-latest-tag`, `require-requests-limits` and
+    `disallow-privileged-containers` for the Deployment `web`, and not
+    `restrict-seccomp-strict`;
+  - `kyverno apply` with `--resource=compiled` applies the policies to 0
+    resources and exits 0;
+  - `conftest test --combine` with `policy/` exits 0 for
+    `compiled/compliant`, and non-zero for `compiled/noncompliant` with the
+    findings for the image digest and the PodDisruptionBudget.
+
+  The CLI counts the violation of a policy in `Audit` as a failure unless
+  `--audit-warn` is set. Kyverno derives rules for Deployments and the
+  other pod controllers from the Pod policies, so the CLI judges the
+  Deployment's pod template. `--resource` reads the files of a directory,
+  not those of its subdirectories, and Kapitan writes a target's objects
+  into a subdirectory per namespace. `check` therefore names every file.
+
+  `restrict-seccomp-strict` at the pinned commit reads a missing
+  `seccompProfile` as `RuntimeDefault`, so it passes `noncompliant`, whose
+  pod sets no seccomp profile. The Pod Security Standards' restricted
+  profile forbids the absence of a profile. The post says so, and `check`
+  fails once the policy changes.
+
+  - Test: `examples` workflow, job `policy-checks`; `manual:` with the
+    resources removed from `compliant`, `check` failed on
+    `require-requests-limits`, and with `privileged: false` in
+    `noncompliant`, it failed because Kyverno no longer reported
+    `disallow-privileged-containers`; `manual:` the CLI 1.19.2 printed the
+    ClusterPolicy deprecation warning for
+    `best-practices/disallow-latest-tag` (2026-11-05); `manual:` Renovate
+    44.216.6 (`--platform=local --dry-run=lookup`, 2026-11-05) proposed
+    282e77f on `renovate/kyverno-policies-digest` with the policies pin set
+    back to 790d5e5, and v1.19.2 and v0.71.1 with the sha256 of their
+    linux x86_64 archives with the CLI at v1.19.1 and conftest at v0.71.0
+  - Since: #148
+
+- EX-27a: `policy-checks/check` MUST fail unless, in a new kind cluster
+  with Kyverno from the `install.yaml` of the CLI's version and the same
+  policies:
+
+  - a server-side dry run of `noncompliant`'s Deployment is rejected with
+    the three policies of EX-27 once every policy's `validationActions` is
+    `[Deny]`, and admitted after the policies are applied again as
+    shipped;
+  - `compliant`'s objects apply under `[Deny]` and its Deployment becomes
+    available (EX-12);
+  - `kubectl run --privileged` of `podinfo:latest` is rejected with
+    `disallow-privileged-containers`.
+
+  The dry run takes the Deployment through admission without creating it,
+  so nothing pulls the `latest` image. Kyverno takes a changed
+  `validationActions` within seconds, and `check` repeats the dry run for
+  up to a minute until the result changes. The denied run comes first, so
+  the admitted one shows Kyverno auditing and not a webhook that is not
+  configured yet.
+
+  Not tested: the workflow template `.github/workflows/policy.yml`, which
+  needs a repository whose root the consumer workflow compiles; whether the
+  consumer workflow's output rules (registry SEC-12) stop `noncompliant` on
+  its privileged container before the policy job runs; Kyverno's policy
+  reports; Kubernetes' built-in Pod Security Admission.
+
+  Related: EX-4, EX-6, EX-12
+
+  - Test: `examples` workflow, job `policy-checks`
+  - Since: #148
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -1883,4 +1994,5 @@ runs from the default branch only.
 | `timoni-vs-kapitan/` | The Timoni module `timoni/app` with its vendored Kubernetes schemas, the bundle `timoni/shop.cue` with `dev.cue` and `prod.cue`, the Kapitan project of `config-tools`; `check` (EX-22 to EX-22b) |
 | `kcl-vs-kapitan/` | The KCL module `kcl/` (`app/app.k`, `shop.k`, `dev.k`, `prod.k`, `kcl.mod`, `kcl.mod.lock`), the Kapitan project of `config-tools`; `check` (EX-23 to EX-23b) |
 | `argocd-cmp/` | One Kapitan project (target `blackbox-exporter`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the plugin's ConfigMap `kapitan-plugin.yaml`, the sidecar in `repo-server-patch.yaml`, the egress policy `repo-server-egress.yaml`, `application.yaml`, `git-server.yaml`; `check` (EX-24) |
+| `policy-checks/` | One Kapitan project (targets `compliant`, `noncompliant`) with the kubernetes generator pinned in `inventory/classes/web.yml`, the conftest rules in `policy/compiled.rego`, the pull request workflow template `.github/workflows/policy.yml`; `check` (EX-27, EX-27a) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
