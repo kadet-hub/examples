@@ -1891,7 +1891,9 @@ container port, so the Service port 80 of `miniflux` has no counterpart.
   runtimes got the revealed value. A category is a row in PostgreSQL, so
   storing and listing one shows that Miniflux reached its database.
   `docker compose up --wait` returns once postgres reports healthy and
-  Miniflux runs. The job installs docker compose v5.7.0 as a CLI plugin,
+  Miniflux runs. `check` compiles `compose` without `--reveal` and pipes
+  the output through `kapitan refs --reveal` into `docker compose -f -`,
+  so no file on the host holds the passwords. The job installs docker compose v5.7.0 as a CLI plugin,
   pinned by version and sha256 as a release asset (EX-3), in place of the
   runner's own.
 
