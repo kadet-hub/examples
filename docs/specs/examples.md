@@ -2380,6 +2380,157 @@ of the others. Liveness, startup and HTTP, TCP or gRPC probes, which
 of Docker's `local` driver does not have. Data that survives a restart,
 and the restart policies of both runtimes.
 
+## Single sign-on with Keycloak
+
+`sso-keycloak/` backs the kadet-hub.org blog post on single sign-on for
+self-hosted apps. Keycloak is the OIDC provider of Gitea, Open WebUI and
+Miniflux. All four come from published recipes of kadet-hub/recipes:
+`keycloak` with the operator recipe `keycloak-operator`, `gitea`,
+`open-webui` and `miniflux`. The fetch inventory `fetch/targets/recipes.yml`
+pins these five and `cert-manager` and `cnpg`, the recipes the targets
+include. `check` adds the recipes their index records list under
+`includes`, `postgresql`, `valkey` and `ollama`, as EX-17 describes. The
+operators `cert-manager`, `cnpg` and `keycloak-operator` get a target and a
+namespace each, and so do Keycloak and the three apps.
+
+The class `sso` holds what both ends of a login read. It sets the issuer,
+and per app the client ID, the app's URL, the redirect URI, the client
+secret as a ref with the base64 backend and the group the app admits. The
+target `keycloak` renders a KeycloakRealmImport with the realm `home`, the
+groups `git`, `chat` and `family`, the users `alice` and `bob` and one
+confidential client per app, whose client ID and redirect URI come from the
+class. The app targets read the same values: Gitea's `ROOT_URL` and the
+client ID and secret of its login source, Open WebUI's and Miniflux's
+redirect URI, client ID and secret. The client secrets and the users'
+passwords reach the realm as placeholders, which the import fills from the
+Secrets `sso-clients` and `sso-users` of the target `keycloak`. Those
+Secrets hold the same refs as the apps' Secrets. The target renders them
+with the kubernetes generator that the app recipes pin into
+`lib/kubernetes`, as `platform-baseline` uses the one of its
+cert-manager recipe. It pins no generator itself, so the project has one
+kubernetes generator version, the one of the recipes. The keycloak generator
+1.1.0 logs a warning about plaintext credentials for every user and client
+of the realm, although the values are placeholders.
+
+Keycloak's operator creates a realm from a KeycloakRealmImport only when
+the realm does not exist yet. It never updates it, as the operator's
+[realm import guide](https://www.keycloak.org/operator/realm-import)
+says. A change to the class after the first import reaches the compiled
+realm import and the app, but not the running Keycloak. This is not
+tested.
+
+An app compares the issuer it was configured with to the `issuer` of
+Keycloak's discovery document and to the `iss` claim of the ID token.
+Keycloak's `hostname`, which the target sets to
+`https://sso.example.test:8443`, makes every URL of the discovery document
+name that host, whether the request came from a browser or from a pod. The
+apps' pods therefore have to reach Keycloak by that name.
+
+`check` adds the rule `rewrite name exact sso.example.test
+keycloak-service.keycloak.svc.cluster.local answer auto` to kind's
+CoreDNS. It stands in for the split-horizon DNS or the hairpin through an
+ingress that a real network uses. The issuer keeps the port 8443 of the
+Service `keycloak-service`, because the port is part of the issuer and the
+pods connect to the Service directly. The scripted browser is curl on the
+machine that runs `check`. It reaches Keycloak and each app through a
+port-forward on a free local port and `--connect-to`, which leaves the
+name and port of each URL unchanged. The host names are under `.test`,
+which RFC 2606 reserves for testing. Neither an `/etc/hosts` entry nor an
+ingress controller is needed.
+
+Keycloak serves HTTPS on port 8443 with the certificate `keycloak-tls`,
+which cert-manager issues with the CA Issuer `sso-ca`. `check` creates the
+CA with openssl and writes certificate and key to the refs `sso/ca.crt`
+and `sso/ca.key`, which the class and the target `keycloak` read. A
+repository creates them once and commits the refs. Each app target renders
+a Secret `sso-ca` with the certificate, mounts it at `/etc/sso` and sets
+`SSL_CERT_FILE` to it. The apps themselves serve plain HTTP on their
+Services.
+
+Gitea keeps its login sources in its database. `app.ini` has no setting
+for them, and the admin page or the CLI creates them. The recipe `gitea`
+1.0.0 leaves the chart's OAuth sources out. The target adds the init
+container `configure-oauth` after the recipe's `configure-gitea`. It adds
+the source `keycloak` with Gitea's CLI, or updates it when it exists, with
+`--required-claim-name groups --required-claim-value git`. The CLI reads
+Keycloak's discovery document, so the init container mounts the CA as
+well. In the first local run without it, the init container failed with
+`x509: certificate signed by unknown authority`. `[oauth2_client]` creates
+a user on the first login, named after `preferred_username`. Gitea 28.3.0
+accepts tokens only on its API (`buildAuthGroup` in
+`routers/api/v1/api.go`), so `check` reads the signed-in user from the
+settings page.
+
+Open WebUI 0.12.5 reads its OIDC settings from `OAUTH_*` and `OPENID_*`
+variables. `ENABLE_OAUTH_ROLE_MANAGEMENT` with the claim `groups` and the
+allowed role `chat` turns away a user whose groups do not include `chat`.
+The first account Open WebUI creates becomes admin without that check
+(`get_user_role` in `utils/oauth.py`), so `check` signs `alice` in first.
+In the same function, a user without any group gets an account with the
+default role `pending` instead of being turned away. Once a second account
+exists, every login sets the role from the groups again, so the first
+admin keeps admin only in a group that `OAUTH_ADMIN_ROLES` lists. Neither
+is tested.
+
+Miniflux 2.3.4 reads its OIDC settings from `OAUTH2_*` variables and has no
+group restriction. It creates a user on the first login. Miniflux reads
+Keycloak's discovery document on every login request (`getOAuth2Manager`
+in `internal/ui/auth.go`) and logs an error when that fails. Gitea's init
+container reads it before Gitea starts, so the apps start after the realm
+import.
+
+Keycloak, its operator, Open WebUI and the PostgreSQL of Miniflux do not
+meet the Pod Security level `restricted`. Their namespaces enforce
+`baseline`, the namespaces of cert-manager and CloudNativePG
+`restricted`.
+
+- EX-32: `sso-keycloak/check` MUST fail unless the recipes and generators
+  pass the checks of EX-17 and, deployed to a new kind cluster:
+
+  - `alice`, in the groups `git` and `chat`, signs in to Gitea with her
+    password on Keycloak's login form, and to Open WebUI and Miniflux
+    through Keycloak's session without the form, and each app's session
+    names `alice`;
+  - a wrong password gets Keycloak's form again with `Invalid username or
+    password.`, and no app has a session;
+  - `bob`, in the group `family` only, gets Gitea's `Sign-In Prohibited`
+    page, is sent back to Open WebUI's `/auth` with an error, has a session
+    in neither, and signs in to Miniflux;
+  - Miniflux with `OAUTH2_OIDC_DISCOVERY_ENDPOINT` set to
+    `https://keycloak-service.keycloak.svc:8443/realms/home` does not send
+    the browser to Keycloak and logs that the issuer did not match the one
+    Keycloak returned.
+
+  The scripted browser follows the authorization code flow with a cookie
+  jar per user. The app's login URL redirects to Keycloak. Without a
+  Keycloak session Keycloak answers with its login form, whose POST
+  redirects to the app's redirect URI with a code. The app exchanges the
+  code over its own connection to Keycloak, which is where the issuer has
+  to match. With `alice`'s Keycloak session in the jar, Keycloak redirects
+  back at once. That second and third login without a password is the
+  single sign-on.
+
+  Not tested: logout, back-channel logout and token refresh, a second
+  factor, more than one Keycloak instance, TLS between browser and apps,
+  a real DNS or ingress in front of Keycloak, and changes to the realm
+  after its import.
+
+  Related: EX-4, EX-6, EX-12, EX-17
+
+  - Test: `examples` workflow, job `sso-keycloak`
+  - Since: tbd
+
+- EX-32a: `sso-keycloak/check` MUST fail unless changing Gitea's URL in a
+  copy of the class `sso` changes the redirect URI of the client `gitea` in
+  the compiled realm import and Gitea's `ROOT_URL`, and nothing else in the
+  targets `keycloak` and `gitea`.
+
+  Both compiles run without `--reveal` at the same refs, so no secret
+  reaches the diff, which the post shows.
+
+  - Test: `examples` workflow, job `sso-keycloak`
+  - Since: tbd
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -2428,3 +2579,4 @@ and the restart policies of both runtimes.
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
 | `talos-apps/` | One Kapitan project (targets `talos`, `blackbox-exporter`) on the omegaconf backend, the networks both read in `inventory/classes/cluster.yml`, the talos generator pinned in `inventory/classes/generators.yml`, the recipe pinned in `fetch/targets/recipes.yml`; `check` (EX-29) |
 | `compose-kubernetes/` | One Kapitan project on the omegaconf backend (targets `cluster`, `compose`), the shared class `inventory/classes/miniflux.yml`, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the kadet component `components/compose` that writes `compose.yml`; `check` (EX-30 to EX-30b) |
+| `sso-keycloak/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `cnpg`, `keycloak-operator`, `keycloak`, `gitea`, `open-webui`, `miniflux`), the class `inventory/classes/sso.yml` that Keycloak and the apps read, the seven recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-32, EX-32a) |
