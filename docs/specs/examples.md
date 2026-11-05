@@ -1547,7 +1547,9 @@ reveals refs only in its own output. Given to the chart, the ref tag ends up
 base64-encoded in the chart's Secret, where `--reveal` does not find it.
 The class `valkey` therefore drops the chart's `secret.yaml` with the
 `remove` input, and the kubernetes generator writes `valkey-auth` with the
-ref in `stringData`.
+ref in `stringData`. Helmfile with vals turned off,
+`HELMFILE_DISABLE_VALS=true`, hands the chart the `ref+` string, which
+ends up base64-encoded in the same way.
 
 `check` normalizes both sides as `same-app` does (EX-1), with two rules
 of its own. An object without a namespace gets `podinfo`, the namespace
@@ -1561,11 +1563,12 @@ own labels. An empty object list fails the check.
   base64-encoded, Kapitan's output without `--reveal` holds neither the
   password nor its base64 encoding but the ref token in `valkey-auth`, a
   compile without the `remove` entry leaves the ref tag in the chart's
-  Secret after `--reveal`, and `prod`, deployed to a new kind cluster with
-  `helmfile sync` and then with `kubectl apply` of Kapitan's output, lets
-  podinfo store and read a key in Valkey, which refuses `valkey-cli`
-  without the password. `helmfile sync` MUST process `valkey` in an
-  earlier group than `podinfo`.
+  Secret after `--reveal`, `helmfile template` with
+  `HELMFILE_DISABLE_VALS=true` leaves the `ref+` string in it, and `prod`,
+  deployed to a new kind cluster with `helmfile sync` and then with
+  `kubectl apply` of Kapitan's output, lets podinfo store and read a key in
+  Valkey, which refuses `valkey-cli` without the password. `helmfile sync`
+  MUST process `valkey` in an earlier group than `podinfo`.
 
   Helmfile 1.8.2 logs its groups at the log level `debug` only, which
   `check` sets for `sync`. `check` prints that log when `sync` fails. It

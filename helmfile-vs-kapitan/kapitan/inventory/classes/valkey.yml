@@ -24,8 +24,8 @@ parameters:
             appendonly yes
           dataStorage: ${valkey:dataStorage}
           resources: ${valkey:resources}
-      # The chart base64-encodes the ref token, which --reveal then cannot
-      # find. Its Secret is replaced by one the kubernetes generator writes.
+      # The chart base64-encodes the ref tag it gets as the password, so
+      # --reveal cannot find it. The kubernetes generator writes the Secret.
       - input_type: remove
         input_paths:
           - compiled/${kapitan:vars:target}/valkey/valkey/templates/secret.yaml

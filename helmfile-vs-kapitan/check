@@ -143,15 +143,32 @@ d["parameters"]["kapitan"]["compile"] = [e for e in c if e["input_type"] != "rem
 yaml.safe_dump(d, open(f, "w"))
 ' "$tmp/inventory/classes/valkey.yml"
 compile "$tmp/kept" --inventory-path "$tmp/inventory" -t prod --reveal
-kept=$("${py[@]}" python -I -c '
+password_in() { # file: the decoded default-password of the Secret valkey-auth in it
+  "${py[@]}" python -I -c '
 import base64, sys, yaml
-print(base64.b64decode(yaml.safe_load(open(sys.argv[1]))["data"]["default-password"]).decode())
-' "$tmp/kept/compiled/prod/valkey/valkey/templates/secret.yaml")
+for d in yaml.safe_load_all(open(sys.argv[1])):
+    if d and d["kind"] == "Secret" and d["metadata"]["name"] == "valkey-auth":
+        print(base64.b64decode(d["data"]["default-password"]).decode())
+' "$1"
+}
+kept=$(password_in "$tmp/kept/compiled/prod/valkey/valkey/templates/secret.yaml")
 [[ $kept == "?{base64:valkey/password}" ]] || {
   echo "the chart's Secret holds '$kept' after --reveal, not the ref tag" >&2
   exit 1
 }
 echo "chart's Secret after --reveal, without the remove entry: $kept"
+
+# With vals off, Helmfile hands the chart the ref+ string, which the chart
+# base64-encodes the same way.
+HELMFILE_DISABLE_VALS=true helmfile -f helmfile/helmfile.yaml -e prod template --skip-tests \
+  >"$tmp/passthrough.raw" 2>"$tmp/helmfile.log" || { cat "$tmp/helmfile.log"; exit 1; }
+passed=$(password_in "$tmp/passthrough.raw")
+# shellcheck disable=SC2016 # the ref+ string as written, not expanded
+[[ $passed == 'ref+envsubst://$VALKEY_PASSWORD' ]] || {
+  echo "with HELMFILE_DISABLE_VALS=true the chart's Secret holds '$passed', not the ref+ string" >&2
+  exit 1
+}
+echo "chart's Secret from helmfile with HELMFILE_DISABLE_VALS=true: $passed"
 
 # EX-6: what a broken or not ready pod leaves to read.
 describe_pods() { # namespace pod...
