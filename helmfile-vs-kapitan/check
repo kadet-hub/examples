@@ -218,16 +218,26 @@ install_wait() { # namespace kubectl-arguments
 # podinfo writes a key to Valkey and reads it back, through the API server's
 # service proxy. Valkey refuses a client without the password.
 smoke() { # side
-  local svc=/api/v1/namespaces/podinfo/services/podinfo:http/proxy/cache/check out
+  local svc=/api/v1/namespaces/podinfo/services/podinfo:http/proxy/cache/check out='' i
   install_wait podinfo rollout status deploy/valkey --timeout=300s
   install_wait podinfo rollout status deploy/podinfo --timeout=300s
   printf %s "$1" >"$tmp/value"
-  kubectl create --raw "$svc" -f "$tmp/value" >/dev/null
-  out=$(kubectl get --raw "$svc")
-  [[ $out == "$1" ]] || { echo "$1: podinfo returned '$out' from the cache" >&2; exit 1; }
+  # kubectl create --raw exits 0 on podinfo's error answer and prints it; the
+  # 202 of a write has no body. Right after the rollout Valkey can still
+  # refuse podinfo, so the write is repeated for up to a minute.
+  for i in $(seq 30); do
+    out=$(kubectl create --raw "$svc" -f "$tmp/value" 2>&1) && [[ -z $out ]] &&
+      out=$(kubectl get --raw "$svc" 2>&1) && [[ $out == "$1" ]] && break
+    sleep 2
+  done
+  [[ $out == "$1" ]] || {
+    echo "$1: podinfo's cache still answers '$out'" >&2
+    kubectl -n podinfo logs deploy/podinfo --tail=20 >&2 || true
+    exit 1
+  }
   out=$(kubectl -n podinfo exec deploy/valkey -c valkey -- valkey-cli ping 2>&1 || true)
   [[ $out == NOAUTH* ]] || { echo "$1: valkey-cli without the password got '$out'" >&2; exit 1; }
-  echo "$1: podinfo stored a key in Valkey, which refuses a client without the password"
+  echo "$1: podinfo stored a key in Valkey (write $i), which refuses a client without the password"
 }
 
 # EX-12: prod twice on one cluster, once per side.

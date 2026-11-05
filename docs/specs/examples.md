@@ -1576,6 +1576,14 @@ own labels. An empty object list fails the check.
   for a local `sync` of `prod` on kind on 2026-11-05.
 
   `check` writes and reads the key through the API server's service proxy.
+  `kubectl create --raw` exits 0 when podinfo answers the write with an
+  error, and prints the answer, while the 202 of a write has no body. In
+  the second CI run of #140 the read right after the Helmfile rollout found
+  no key. Locally, with Valkey scaled to zero and back to one, podinfo
+  answered five writes with 500 `cache set failed` and stored the sixth,
+  11 seconds later. `check` therefore repeats write and read for up to a
+  minute until the read returns the value. A wrong password keeps the write
+  failing and fails the check.
   Between the two deploys it runs `helmfile destroy` and deletes the
   namespace. After the Kapitan deploy `helm list` must be empty. The
   Kapitan side has no order. podinfo starts while Valkey is down and
@@ -1590,6 +1598,8 @@ own labels. An empty object list fails the check.
   - Test: `examples` workflow, job `helmfile-vs-kapitan`; `manual:` with
     prod's podinfo replicas changed in `kapitan/inventory/targets/prod.yml`
     alone, `check` fails on the Deployment's `replicas`; `manual:` with
+    `valkey-auth` changed after the deploy and podinfo restarted, all 30
+    writes got 500 and podinfo logged `WRONGPASS`; `manual:` with
     podinfo set back to 6.16.0 and Valkey to 0.12.0 on both sides, Renovate
     44.194.0 (`--platform=local --dry-run=lookup`, 2026-11-05) proposed
     6.17.0 and 0.12.1 at their digests for all four pins on the branch
