@@ -1,0 +1,419 @@
+#!/usr/bin/env bash
+# Single sign-on with Keycloak for Gitea, Open WebUI and Miniflux, from
+# published recipes and one Kapitan inventory (EX-32). Verifies the latest
+# signed index, the recipes pinned in fetch/targets/recipes.yml, the recipes
+# they include and the generators they pin, pulls all of them by digest,
+# compiles the targets and deploys them to a new kind cluster (EX-12). Exits
+# 0 only if a scripted browser logs in to each app through Keycloak as the
+# realm's user, a wrong password gets no session, Gitea and Open WebUI turn
+# away a user outside their group, and Miniflux pointed at Keycloak's
+# in-cluster name fails on the issuer. Set KEEP=1 to keep the cluster.
+# Needs gh (authenticated), jq, oras, uv, kind, kubectl, curl, openssl, docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+min_serial=115
+tmp=$(mktemp -d)
+cluster=sso-keycloak
+export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
+forward=()
+cleanup() {
+  kill "${watcher:-}" "${forward[@]}" 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf lib compiled inventory/classes/recipes
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+
+# EX-4: index signature, digests and attestations, then pull by digest, as
+# "Verifying a recipe by hand" in the registry's docs/consumers.md does it.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+if ((serial < min_serial)); then
+  echo "index serial $serial is lower than $min_serial" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+
+# The pinned recipes, then the recipes their records list under includes, at
+# the listed version and digest, as the consumer workflow adds them. All of
+# them share inventory/classes/recipes/, so one name at two digests fails.
+mapfile -t queue < <(sed -nE 's|^ *source: ghcr\.io/kadet-hub/recipes/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  fetch/targets/recipes.yml)
+declare -A wanted
+for ((i = 0; i < ${#queue[@]}; i++)); do
+  read -r name version digest <<<"${queue[i]}"
+  if [[ -n ${wanted[$name]:-} ]]; then
+    [[ ${wanted[$name]} == "$version $digest" ]] || {
+      echo "recipe $name is wanted as ${wanted[$name]} and as $version $digest" >&2
+      exit 1
+    }
+    continue
+  fi
+  wanted[$name]="$version $digest"
+  record=$(jq -ec --arg n "$name" --arg v "$version" \
+    '.recipes[$n][$v] | select(.yanked == null)' "$tmp/index.json") || {
+    echo "recipe $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  want=$(jq -r .digest <<<"$record")
+  if [[ $want != "$digest" ]]; then
+    echo "recipe $name $version: index has $want, the pin or include names $digest" >&2
+    exit 1
+  fi
+  mapfile -t -O "${#queue[@]}" queue < <(jq -r '.includes[] | "\(.name) \(.version) \(.digest)"' <<<"$record")
+  gh attestation verify "oci://ghcr.io/kadet-hub/recipes/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/recipes/$name" "ghcr.io/kadet-hub/recipes/$name@$digest" >/dev/null
+  mkdir -p "inventory/classes/recipes/$name"
+  tar -xf "$tmp/recipes/$name/$name.tar" -C "inventory/classes/recipes/$name" --no-same-owner
+  echo "recipe $name $version verified and unpacked"
+done
+if ((${#wanted[@]} != 10)); then
+  echo "expected 10 recipes, found ${!wanted[*]}" >&2
+  exit 1
+fi
+
+# The generators the recipes pin, which Kapitan would otherwise fetch
+# unverified. They share lib/, so one name at two digests fails.
+generators=$(cat inventory/classes/recipes/*/*.yml |
+  sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' | sort -u)
+[[ -n $generators ]] || { echo "the recipes pin no generator" >&2; exit 1; }
+twice=$(cut -d' ' -f1 <<<"$generators" | uniq -d)
+[[ -z $twice ]] || { echo "generators pinned at two digests: $twice" >&2; exit 1; }
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "generator $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "generator $name $version: index has $want, a recipe pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/generators/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/generators/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "generator $name $version verified and unpacked"
+done <<<"$generators"
+
+# The CA that signs Keycloak's certificate, written to the refs the class sso
+# reads, as a reader does once with the backend of the repository. The other
+# refs get random values in the first compile, the second writes them all
+# into the Secrets.
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 \
+  -subj '/CN=sso-keycloak example CA' -addext basicConstraints=critical,CA:TRUE \
+  -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$tmp/ca.key" -out "$tmp/ca.crt" 2>/dev/null
+for part in crt key; do
+  "${py[@]}" kapitan refs --refs-path "$tmp/refs" --write "base64:sso/ca.$part" -f "$tmp/ca.$part" >/dev/null
+done
+compile() {
+  "${py[@]}" kapitan compile --refs-path "$tmp/refs" "$@" >"$tmp/compile.log" 2>&1 ||
+    { cat "$tmp/compile.log" >&2; exit 1; }
+}
+compile
+compile --reveal
+reveal() { "${py[@]}" kapitan refs --refs-path "$tmp/refs" --reveal --tag "?{base64:$1}"; }
+"${py[@]}" kapitan inventory -t keycloak -p sso -F >"$tmp/sso"
+sso() { sed -n "s|^$1: ||p" "$tmp/sso"; }
+echo "compiled $(find compiled -type f | wc -l) files"
+
+# EX-32a: a client's URL is set in the class sso only. Changing it in a copy
+# changes the redirect URI that Keycloak imports and the URL that Gitea runs
+# at, and nothing else. Compiled without --reveal, at the same refs.
+git=$(sso clients.gitea.url)
+moved=http://code.example.test
+mkdir "$tmp/copy"
+cp -r .kapitan inventory lib "$tmp/copy/"
+(
+  cd "$tmp/copy"
+  compile -t keycloak gitea
+  mv compiled before
+  sed -i "s|^        url: $git\$|        url: $moved|" inventory/classes/sso.yml
+  compile -t keycloak gitea
+  diff -r -U0 before compiled || (($? == 1))
+) >"$tmp/moved.diff"
+files=$(sed -nE 's|^\+\+\+ compiled/([^\t]+).*|\1|p' "$tmp/moved.diff" | sort | tr '\n' ' ')
+removed=$(grep -E '^-[^-]' "$tmp/moved.diff" | grep -cF "$git/") || true
+added=$(grep -E '^\+[^+]' "$tmp/moved.diff" | grep -cF "$moved/") || true
+lines=$(grep -cE '^[-+]([^-+]|$)' "$tmp/moved.diff") || true
+if [[ $files != "gitea/manifests/gitea/gitea-deploy.yml keycloak/manifests/keycloak/home-keycloakrealmimport.yml " ||
+  $removed != 2 || $added != 2 || $lines != 4 ]]; then
+  cat "$tmp/moved.diff" >&2
+  echo "EX-32a: moving Gitea to $moved changed more or less than its redirect URI and ROOT_URL" >&2
+  exit 1
+fi
+echo "Gitea moved to $moved in the class sso:"
+grep -E '^(\+\+\+ |[-+][^-+])' "$tmp/moved.diff" | sed -E 's|^\+\+\+ compiled/([^\t]+).*|\1|'
+
+# EX-6: what a broken or not ready pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop the rollout status as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$ # check's children: the command it waits for and this watch
+    return
+  done
+}
+# EX-6: a kubectl rollout status or wait that prints the namespace on a timeout.
+install_wait() { # namespace kubectl-arguments
+  local ns=$1 s
+  shift
+  kubectl -n "$ns" "$@" && return
+  s=$?
+  kubectl -n "$ns" get events --sort-by=.lastTimestamp >&2 || true
+  kubectl -n "$ns" get pods -o wide >&2 || true
+  # shellcheck disable=SC2046 # one pod name per word
+  describe_pods "$ns" $(kubectl -n "$ns" get pods -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded" and (any(.status.conditions[]?;
+        .type == "Ready" and .status == "True") | not)) | .metadata.name')
+  return "$s"
+}
+# EX-6: the webhooks of cert-manager and CloudNativePG can refuse connections
+# for a few seconds after their rollout reports done; repeat the (idempotent)
+# apply until the API server accepts it.
+apply() { # kubectl apply arguments
+  local i
+  for i in $(seq 30); do
+    kubectl apply --server-side "$@" >/dev/null && return
+    ((i < 30)) && sleep 2
+  done
+  return 1
+}
+namespace() { # name pod-security-level
+  kubectl create namespace "$1" >/dev/null
+  kubectl label namespace "$1" "pod-security.kubernetes.io/enforce=$2" >/dev/null
+}
+
+# EX-12: the operators first, each in its namespace, then Keycloak, then the
+# apps. Server-side, because a client-side apply stores the object in an
+# annotation, which the API server refuses for CRDs above 256 KiB.
+# The node image of the workflow's kind release; Renovate updates both together.
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
+watch_pods &
+watcher=$!
+start=$(date +%s)
+
+# Pods resolve Keycloak's public name to its Service, as split-horizon DNS
+# or a hairpin through the ingress would in a real network.
+host=$(sso host)
+kubectl -n kube-system get configmap coredns -o json |
+  jq --arg r "rewrite name exact $host keycloak-service.keycloak.svc.cluster.local answer auto" \
+    '.data.Corefile |= sub("\n    ready\n"; "\n    ready\n    \($r)\n")' |
+  kubectl replace -f - >/dev/null
+kubectl -n kube-system rollout restart deployment/coredns >/dev/null
+install_wait kube-system rollout status deployment/coredns --timeout=120s >/dev/null
+
+# The Keycloak Operator, Keycloak, Open WebUI and Miniflux's PostgreSQL do not
+# meet the level restricted, Open WebUI and PostgreSQL run as root.
+namespace cert-manager restricted
+namespace cnpg-system restricted
+namespace keycloak-operator baseline
+apply -R -f compiled/cert-manager
+apply -R -f compiled/cnpg
+apply -R -f compiled/keycloak-operator
+install_wait cert-manager rollout status deployment/cert-manager-webhook --timeout=300s
+install_wait cnpg-system rollout status deployment/cnpg-cloudnative-pg --timeout=300s
+install_wait keycloak-operator rollout status deployment/keycloak-operator --timeout=300s
+
+# Keycloak exits while PostgreSQL refuses connections, so the Cluster first.
+namespace keycloak baseline
+apply -f compiled/keycloak/manifests/keycloak/postgresql-cluster-cluster.yml
+install_wait keycloak wait cluster/postgresql-cluster --for=condition=Ready --timeout=600s
+apply -R -f compiled/keycloak
+install_wait keycloak wait keycloak/keycloak --for=condition=Ready --timeout=600s
+install_wait keycloak wait keycloakrealmimport/home --for=condition=Done --timeout=600s
+keycloak=$(date +%s)
+echo "Keycloak ready with the realm imported $((keycloak - start))s after the cluster"
+
+# Gitea's init container reads Keycloak's discovery document, so the apps
+# come after the import. Gitea and Miniflux exit while their database refuses
+# connections, so the databases first.
+namespace gitea baseline
+namespace open-webui baseline
+namespace miniflux baseline
+apply -f compiled/gitea/manifests/gitea/postgresql-cluster-cluster.yml
+apply -R -f compiled/miniflux -l name=miniflux-db
+install_wait gitea wait cluster/postgresql-cluster --for=condition=Ready --timeout=600s
+install_wait miniflux rollout status statefulset/miniflux-db --timeout=600s
+for app in gitea open-webui miniflux; do
+  apply -R -f "compiled/$app"
+done
+install_wait gitea rollout status deployment/valkey --timeout=600s
+install_wait gitea rollout status deployment/gitea --timeout=600s
+install_wait open-webui rollout status deployment/valkey --timeout=600s
+install_wait open-webui rollout status statefulset/open-webui --timeout=600s
+install_wait miniflux rollout status deployment/miniflux --timeout=600s
+# open-webui 1.0.0 has no readiness probe, so its rollout ends before Open
+# WebUI listens. A port-forward ends at the first connection the pod refuses.
+for _ in $(seq 150); do
+  kubectl get --raw /api/v1/namespaces/open-webui/services/open-webui:80/proxy/health 2>/dev/null |
+    jq -e '.status == true' >/dev/null && break
+  sleep 2
+done
+ready=$(date +%s)
+echo "apps ready $((ready - keycloak))s later"
+
+
+# The scripted browser runs on the host. It reaches each URL of the class sso
+# through a port-forward on a free local port, with the URL's name and port
+# unchanged, so Keycloak and the apps see the same URLs as from a browser.
+reveal sso/ca.crt >"$tmp/ca.pem"
+chat=$(sso clients.open-webui.url) rss=$(sso clients.miniflux.url)
+declare -A local_port
+forward() { # namespace service port
+  local _
+  kubectl -n "$1" port-forward "service/$2" ":$3" >"$tmp/forward-$2" 2>&1 &
+  forward+=($!)
+  for _ in $(seq 30); do
+    local_port[$2]=$(sed -nE 's/^Forwarding from 127\.0\.0\.1:([0-9]+) .*/\1/p' "$tmp/forward-$2")
+    [[ -z ${local_port[$2]} ]] || return 0
+    sleep 1
+  done
+  cat "$tmp/forward-$2" >&2
+  return 1
+}
+forward keycloak keycloak-service 8443
+forward gitea gitea-http 3000
+forward open-webui open-webui 80
+forward miniflux miniflux 80
+browser() { # cookie-jar curl-arguments
+  local jar=$1
+  shift
+  curl -sS --max-time 60 --cacert "$tmp/ca.pem" -b "$jar" -c "$jar" \
+    --connect-to "$host:8443:127.0.0.1:${local_port[keycloak-service]}" \
+    --connect-to "${git#http://}:80:127.0.0.1:${local_port[gitea-http]}" \
+    --connect-to "${chat#http://}:80:127.0.0.1:${local_port[open-webui]}" \
+    --connect-to "${rss#http://}:80:127.0.0.1:${local_port[miniflux]}" "$@"
+}
+issuer=$(sso issuer)
+for _ in $(seq 30); do
+  browser /dev/null -fo /dev/null "$issuer/.well-known/openid-configuration" 2>/dev/null &&
+    browser /dev/null -fo /dev/null "$git/api/healthz" 2>/dev/null &&
+    browser /dev/null -fo /dev/null "$chat/health" 2>/dev/null &&
+    browser /dev/null -fo /dev/null "$rss/healthcheck" 2>/dev/null && break
+  sleep 1
+done
+echo "issuer $(browser /dev/null -f "$issuer/.well-known/openid-configuration" | jq -r .issuer)"
+
+# The authorization code flow as a browser runs it. The app's login URL
+# redirects to Keycloak, which shows its login form unless the jar holds a
+# Keycloak session. The form's POST redirects to the app's redirect URI with
+# a code, which the app exchanges for tokens over its own connection to
+# Keycloak. Prints where the browser ended.
+login() { # jar login-url [user password]
+  local jar=$1 page action
+  page=$(browser "$jar" -L -o "$tmp/page" -w '%{url_effective}' "$2")
+  action=$(sed -nE 's/.*<form id="kc-form-login"[^>]* action="([^"]+)".*/\1/p' "$tmp/page" | sed 's/&amp;/\&/g')
+  if [[ -z $action ]]; then # no form: Keycloak's session signed the browser in
+    echo "$page"
+    return
+  fi
+  [[ -n ${3:-} ]] || { echo "Keycloak asked for a password at $2" >&2; return 1; }
+  browser "$jar" -L -o "$tmp/page" -w '%{url_effective}' \
+    --data-urlencode "username=$3" --data-urlencode "password=$4" "$action"
+}
+# Who the app's session belongs to, empty without one. Gitea 28's API takes
+# tokens only, so its settings page names the user.
+whoami() { # app jar
+  case $1 in
+    gitea) browser "$2" "$git/user/settings" | sed -nE 's/.*<input id="username"[^>]* value="([^"]*)".*/\1/p' ;;
+    open-webui) browser "$2" "$chat/api/v1/auths/" | jq -r '.email // empty' ;;
+    miniflux) browser "$2" "$rss/unread" | sed -nE 's/.*title="Logged in as ([^"]*)".*/\1/p' ;;
+  esac
+}
+declare -A login_url=([gitea]=$git/user/oauth2/keycloak [open-webui]=$chat/oauth/oidc/login
+  [miniflux]=$rss/oauth2/oidc/redirect)
+fail() { echo "$*" >&2; exit 1; }
+password_alice=$(reveal sso/alice-password)
+password_bob=$(reveal sso/bob-password)
+
+# alice, in the groups git and chat, types her password once, at Gitea's
+# login. Open WebUI and Miniflux get her from Keycloak's session.
+jar=$tmp/alice
+for app in gitea open-webui miniflux; do
+  if [[ $app == gitea ]]; then
+    end=$(login "$jar" "${login_url[$app]}" alice "$password_alice")
+  else
+    end=$(login "$jar" "${login_url[$app]}")
+  fi
+  user=$(whoami "$app" "$jar")
+  [[ $user == alice || $user == alice@example.test ]] || fail "$app: alice ended at $end as '$user'"
+  echo "$app: alice signed in as $user$([[ $app == gitea ]] && echo " with her password" || echo " through Keycloak's session"), ended at ${end%%\?*}"
+done
+role=$(browser "$jar" "$chat/api/v1/auths/" | jq -r .role)
+echo "open-webui: alice has the role $role"
+
+# A wrong password: Keycloak shows its form again and no app gets a session.
+for app in gitea open-webui miniflux; do
+  jar=$tmp/wrong-$app
+  end=$(login "$jar" "${login_url[$app]}" alice "$(openssl rand -hex 12)")
+  grep -qF 'Invalid username or password.' "$tmp/page" && [[ $end == "$issuer/"* ]] ||
+    fail "$app: a wrong password ended at $end"
+  [[ -z $(whoami "$app" "$jar") ]] || fail "$app: a session after a wrong password"
+done
+echo "a wrong password: Keycloak answered 'Invalid username or password.' and no app has a session"
+
+# bob is in the group family only. Gitea requires git in the claim groups,
+# Open WebUI chat. Miniflux checks no group.
+jar=$tmp/bob
+end=$(login "$jar" "${login_url[gitea]}" bob "$password_bob")
+grep -qF '<title>Sign-In Prohibited' "$tmp/page" && [[ -z $(whoami gitea "$jar") ]] ||
+  fail "gitea: bob ended at $end as '$(whoami gitea "$jar")'"
+echo "gitea: bob, not in git, got 'Sign-In Prohibited' and no session"
+end=$(login "$jar" "${login_url[open-webui]}")
+[[ $end == "$chat/auth?error="* && -z $(whoami open-webui "$jar") ]] ||
+  fail "open-webui: bob ended at $end as '$(whoami open-webui "$jar")'"
+echo "open-webui: bob, not in chat, was sent to /auth with '$(error=${end#*error=} && echo "${error//+/ }")' and no session"
+end=$(login "$jar" "${login_url[miniflux]}")
+[[ $(whoami miniflux "$jar") == bob ]] || fail "miniflux: bob ended at $end"
+echo "miniflux: bob signed in as bob"
+
+# The classic pitfall: an app that reads Keycloak's in-cluster name. Keycloak
+# answers with the issuer of its hostname, which go-oidc in Miniflux refuses.
+# Miniflux reads the discovery document on each login, and the port-forward
+# needs the new pod.
+internal=https://keycloak-service.keycloak.svc:8443/realms/$(sso realm)
+kubectl -n miniflux set env deployment/miniflux "OAUTH2_OIDC_DISCOVERY_ENDPOINT=$internal" >/dev/null
+install_wait miniflux rollout status deployment/miniflux --timeout=300s >/dev/null
+pod=$(kubectl -n miniflux get pods -l name=miniflux --sort-by=.metadata.creationTimestamp -o name | tail -n 1)
+forward miniflux miniflux 80
+since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+end=$(browser "$tmp/pitfall" -L -o /dev/null -w '%{url_effective}' "${login_url[miniflux]}")
+[[ $end != "$issuer/"* ]] || fail "miniflux with the issuer $internal sent the browser to $end"
+error=$(kubectl -n miniflux logs "$pod" --since-time="$since" | grep -F 'Failed to initialize OIDC provider') ||
+  fail "miniflux logged no OIDC error with the issuer $internal"
+grep -qF "did not match the issuer URL returned by provider (\\\"$issuer\\\")" <<<"$error" ||
+  fail "miniflux: $error"
+echo "miniflux with the issuer $internal: the login ended at $end, and Miniflux logged"
+echo "$error"
+echo "sso-keycloak: single sign-on through Keycloak for Gitea, Open WebUI and Miniflux passed"

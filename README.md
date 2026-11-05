@@ -32,6 +32,7 @@ longer holds.
 | [multi-env](multi-env/) | https://kadet-hub.org/blog/kapitan-multiple-environments/ | `multi-env/check` |
 | [talos-apps](talos-apps/) | https://kadet-hub.org/blog/talos-homelab-kapitan/ | `talos-apps/check` |
 | [compose-kubernetes](compose-kubernetes/) | https://kadet-hub.org/blog/docker-compose-kubernetes/ | `compose-kubernetes/check` |
+| [sso-keycloak](sso-keycloak/) | https://kadet-hub.org/blog/keycloak-sso-self-hosted-apps/ | `sso-keycloak/check` |
 
 ## Running
 

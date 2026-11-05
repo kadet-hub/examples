@@ -1,0 +1,54 @@
+# Open WebUI from the published recipe, with Keycloak as its OIDC provider.
+# Users of the group chat get an account on their first login.
+classes:
+  - recipes.open-webui
+  - sso
+parameters:
+  namespace: open-webui
+  kapitan:
+    vars:
+      target: open-webui
+  applications:
+    open-webui:
+      secret_key: ?{base64:open-webui/secret-key||random:str:40}
+    valkey:
+      # Part of a URL in the recipe, so letters and digits only.
+      password: ?{base64:open-webui/valkey-password||random:loweralphanum:40}
+  components:
+    open-webui:
+      env:
+        WEBUI_URL: ${sso.clients.open-webui.url}
+        ENABLE_OAUTH_SIGNUP: "True"
+        OAUTH_PROVIDER_NAME: Keycloak
+        OPENID_PROVIDER_URL: ${sso.issuer}/.well-known/openid-configuration
+        OPENID_REDIRECT_URI: ${sso.clients.open-webui.redirect_uri}
+        OAUTH_CLIENT_ID: ${sso.clients.open-webui.id}
+        OAUTH_CLIENT_SECRET:
+          secretKeyRef:
+            name: sso-client
+            key: secret
+        OAUTH_SCOPES: openid email profile
+        ENABLE_OAUTH_ROLE_MANAGEMENT: "True"
+        OAUTH_ROLES_CLAIM: groups
+        OAUTH_ALLOWED_ROLES: ${sso.clients.open-webui.group}
+        # Open WebUI reads Keycloak's discovery document over TLS.
+        SSL_CERT_FILE: /etc/sso/ca.crt
+      volumes:
+        sso-ca:
+          secret:
+            secretName: sso-ca
+      volume_mounts:
+        sso-ca:
+          mount_path: /etc/sso
+          read_only: true
+  generators:
+    kubernetes:
+      secrets:
+        sso-ca:
+          string_data:
+            ca.crt:
+              value: ${sso.ca}
+        sso-client:
+          string_data:
+            secret:
+              value: ${sso.clients.open-webui.secret}

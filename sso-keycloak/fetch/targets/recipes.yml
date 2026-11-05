@@ -1,0 +1,26 @@
+# The recipes the targets include. The recipes these include, postgresql,
+# valkey and ollama, come at the versions and digests the index lists for them.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/cert-manager:1.0.3@sha256:99d27b9b0ed0afa330d48e1b12cc0bee25f37c5a4b5129ba07a68dfe5063bbef
+        output_path: inventory/classes/recipes/cert-manager
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/cnpg:1.0.2@sha256:76038710239a93ead3d44c0162aee4396fa0ab9f96b160b6487d2d437152f4da
+        output_path: inventory/classes/recipes/cnpg
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/keycloak-operator:1.0.0@sha256:275b500d91cef15eb8daa543565ace51066acd80bd6884f99fa6f22614b4b429
+        output_path: inventory/classes/recipes/keycloak-operator
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/keycloak:1.0.0@sha256:0b176fe3b1073ce5b8f6474d762a26e61a0b0553dfaf519b1ed6c36105c2abae
+        output_path: inventory/classes/recipes/keycloak
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/gitea:1.0.0@sha256:12d127bbd2eaab3ec4a366c76569788cb96dbd1744bde58ef4ab4241eae1c875
+        output_path: inventory/classes/recipes/gitea
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/open-webui:1.0.0@sha256:f44fd8d69166996694c83eeb6951e95699dc8601368d0f42259068c20a0c913c
+        output_path: inventory/classes/recipes/open-webui
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/miniflux:1.0.0@sha256:e6686151fc46edd6f889d076efde59901670507f536ad27eaad7e4e44d5a56d4
+        output_path: inventory/classes/recipes/miniflux

@@ -1,0 +1,30 @@
+# The identity provider and its clients, read by Keycloak's realm import and
+# by each app. A client's id, redirect URI, secret and group exist only here.
+parameters:
+  sso:
+    host: sso.example.test
+    # The port is part of the issuer. Browsers and pods use this URL alike.
+    url: https://${sso.host}:8443
+    realm: home
+    issuer: ${sso.url}/realms/${sso.realm}
+    # The CA that signs Keycloak's certificate, which every app trusts.
+    ca: ?{base64:sso/ca.crt}
+    clients:
+      gitea:
+        id: gitea
+        url: http://git.example.test
+        redirect_uri: ${sso.clients.gitea.url}/user/oauth2/keycloak/callback
+        secret: ?{base64:sso/gitea-client-secret||random:str:40}
+        group: git
+      open-webui:
+        id: open-webui
+        url: http://chat.example.test
+        redirect_uri: ${sso.clients.open-webui.url}/oauth/oidc/callback
+        secret: ?{base64:sso/open-webui-client-secret||random:str:40}
+        group: chat
+      # Miniflux has no group restriction: every user of the realm gets in.
+      miniflux:
+        id: miniflux
+        url: http://rss.example.test
+        redirect_uri: ${sso.clients.miniflux.url}/oauth2/oidc/callback
+        secret: ?{base64:sso/miniflux-client-secret||random:str:40}

@@ -1,0 +1,88 @@
+# Gitea from the published recipe, with Keycloak as its login source. Users
+# of the group git get an account on their first login.
+classes:
+  - recipes.gitea
+  - sso
+parameters:
+  namespace: gitea
+  kapitan:
+    vars:
+      target: gitea
+  applications:
+    gitea:
+      admin:
+        username: gitea_admin
+        password: ?{base64:gitea/admin-password||random:str:24}
+      secret_key: ?{base64:gitea/secret-key||random:loweralphanum:64}
+      internal_token: ?{base64:gitea/internal-token||random:loweralphanum:64}
+    valkey:
+      # Part of a URL in the recipe, so letters and digits only.
+      password: ?{base64:gitea/valkey-password||random:loweralphanum:40}
+    postgresql:
+      # One node: further instances on it would share its disk.
+      instances: 1
+  components:
+    gitea:
+      env:
+        # Gitea and its CLI read Keycloak's discovery document over TLS.
+        SSL_CERT_FILE: /etc/sso/ca.crt
+      volumes:
+        sso-ca:
+          secret:
+            secretName: sso-ca
+      volume_mounts:
+        sso-ca:
+          mount_path: /etc/sso
+          read_only: true
+      init_containers:
+        init-app-ini:
+          env:
+            GITEA__SERVER__ROOT_URL: ${sso.clients.gitea.url}/
+            GITEA__OAUTH2_CLIENT__ENABLE_AUTO_REGISTRATION: "true"
+            GITEA__OAUTH2_CLIENT__USERNAME: preferred_username
+        # The login source keycloak, which the redirect URI of the class sso
+        # names. Gitea configures login sources through its CLI only, and the
+        # CLI reads the discovery document.
+        configure-oauth:
+          image: ${components.gitea.image}
+          command:
+            - bash
+            - -ec
+            - |
+              id=$(gitea admin auth list --vertical-bars | awk -F'|' '$2 ~ /^[[:space:]]*keycloak[[:space:]]*$/ {print $1 + 0}')
+              if [ -n "$id" ]; then cmd="update-oauth --id $id"; else cmd=add-oauth; fi
+              gitea admin auth $cmd --name keycloak --provider openidConnect \
+                --key "$CLIENT_ID" --secret "$CLIENT_SECRET" \
+                --auto-discover-url "$ISSUER/.well-known/openid-configuration" \
+                --required-claim-name groups --required-claim-value "$GROUP"
+          security_context: ${components.gitea.init_containers.configure-gitea.security_context}
+          env:
+            GITEA_APP_INI: ${components.gitea.env.GITEA_APP_INI}
+            GITEA_CUSTOM: ${components.gitea.env.GITEA_CUSTOM}
+            GITEA_WORK_DIR: ${components.gitea.env.GITEA_WORK_DIR}
+            GITEA_TEMP: ${components.gitea.env.GITEA_TEMP}
+            HOME: ${components.gitea.env.HOME}
+            SSL_CERT_FILE: ${components.gitea.env.SSL_CERT_FILE}
+            ISSUER: ${sso.issuer}
+            CLIENT_ID: ${sso.clients.gitea.id}
+            CLIENT_SECRET:
+              secretKeyRef:
+                name: sso-client
+                key: secret
+            GROUP: ${sso.clients.gitea.group}
+          volume_mounts:
+            temp: ${components.gitea.volume_mounts.temp}
+            data: ${components.gitea.volume_mounts.data}
+            sso-ca: ${components.gitea.volume_mounts.sso-ca}
+          resources: ${components.gitea.init_containers.init-directories.resources}
+  generators:
+    kubernetes:
+      secrets:
+        sso-ca:
+          string_data:
+            ca.crt:
+              value: ${sso.ca}
+        sso-client:
+          string_data:
+            secret:
+              value: ${sso.clients.gitea.secret}
