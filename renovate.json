@@ -47,7 +47,8 @@
         "platform-baseline/s3-server.yaml",
         "helmfile-vs-kapitan/helmfile/helmfile.yaml",
         "argocd-cmp/git-server.yaml",
-        "argocd-cmp/repo-server-patch.yaml"
+        "argocd-cmp/repo-server-patch.yaml",
+        "secrets-end-to-end/vault-server.yaml"
       ],
       "matchStrings": [
         "source: oci://(?<depName>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})\\n\\s*chart_name: \\S+\\n\\s*version: (?<currentValue>\\S+)",
@@ -66,7 +67,8 @@
         "platform-baseline/fetch/targets/recipes.yml",
         "immich-cnpg/fetch/targets/recipes.yml",
         "pihole-powerdns/fetch/targets/recipes.yml",
-        "argocd-cmp/fetch/targets/recipes.yml"
+        "argocd-cmp/fetch/targets/recipes.yml",
+        "secrets-end-to-end/fetch/targets/recipes.yml"
       ],
       "matchStrings": [
         "source: (?<depName>ghcr\\.io/kadet-hub/recipes/[a-z0-9-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})"

@@ -1,0 +1,319 @@
+#!/usr/bin/env bash
+# Vaultwarden from the published recipe with two kinds of secret (EX-26):
+# the AppRole secret ID that External Secrets logs in to Vault with is a
+# Kapitan gpg ref, the admin token is synced from Vault. Verifies the latest
+# signed index, the recipe pinned in fetch/targets/recipes.yml and the
+# generators, pulls them by digest, and starts External Secrets and a Vault
+# dev server in a new kind cluster. Exits 0 only if the compile without
+# --reveal and without a gpg key holds the ref's tag and not the secret ID,
+# the reveal fails without the key, External Secrets syncs the admin token
+# with the revealed secret ID, Vaultwarden logs in with it, and after a new
+# token is written to Vault, the Secret follows, the running pod still
+# takes the old token, and after a restart takes the new one only.
+# Set KEEP=1 to keep the cluster.
+# Needs gh (authenticated), jq, oras, uv, gpg, kind, kubectl, openssl,
+# docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+min_serial=113
+tmp=$(mktemp -d)
+cluster=secrets-end-to-end
+export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
+export GNUPGHOME=$tmp/gnupg       # the run's own keyring
+cleanup() {
+  kill "${watcher:-}" 2>/dev/null || true
+  gpgconf --kill gpg-agent 2>/dev/null || true
+  GNUPGHOME=$tmp/no-key gpgconf --kill gpg-agent 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf lib compiled inventory/classes/recipes
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+started=$SECONDS
+
+# EX-4: index signature, digests and attestations, then pull by digest, as
+# "Verifying a recipe by hand" in the registry's docs/consumers.md does it.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+if ((serial < min_serial)); then
+  echo "index serial $serial is lower than $min_serial" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+
+pins=$(sed -nE 's|^ *source: ghcr\.io/kadet-hub/recipes/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  fetch/targets/recipes.yml)
+while read -r name version digest; do
+  record=$(jq -ec --arg n "$name" --arg v "$version" \
+    '.recipes[$n][$v] | select(.yanked == null)' "$tmp/index.json") || {
+    echo "recipe $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  want=$(jq -r .digest <<<"$record")
+  if [[ $want != "$digest" ]]; then
+    echo "recipe $name $version: index has $want, fetch/targets/recipes.yml pins $digest" >&2
+    exit 1
+  fi
+  if (($(jq '.includes | length' <<<"$record") != 0)); then
+    echo "recipe $name $version includes other recipes, which fetch/targets/recipes.yml does not pin" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/recipes/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/recipes/$name" "ghcr.io/kadet-hub/recipes/$name@$digest" >/dev/null
+  mkdir -p "inventory/classes/recipes/$name"
+  tar -xf "$tmp/recipes/$name/$name.tar" -C "inventory/classes/recipes/$name" --no-same-owner
+  echo "recipe $name $version verified and unpacked"
+done <<<"$pins"
+if (($(wc -l <<<"$pins") != 1)); then
+  echo "expected 1 recipe in fetch/targets/recipes.yml, found $(wc -l <<<"$pins")" >&2
+  exit 1
+fi
+
+# The generator the recipe pins and the one the target pins. Both unpack
+# into lib/<name>, so one name must have one digest.
+generators=$(cat inventory/targets/*.yml inventory/classes/recipes/*/*.yml |
+  sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' | sort -u)
+twice=$(cut -d' ' -f1 <<<"$generators" | uniq -d)
+if [[ -n $twice ]]; then
+  echo "pinned at more than one version or digest: $twice" >&2
+  exit 1
+fi
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "generator $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "generator $name $version: index has $want, the inventory pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/generators/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/generators/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "generator $name $version verified and unpacked"
+done <<<"$generators"
+
+# EX-6: what a broken or not ready pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop the rollout status as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$ # check's children: the command it waits for and this watch
+    return
+  done
+}
+# EX-6: a kubectl rollout status or wait that prints the namespace on a timeout.
+install_wait() { # namespace kubectl-arguments
+  local ns=$1 s
+  shift
+  kubectl -n "$ns" "$@" && return
+  s=$?
+  kubectl -n "$ns" get events --sort-by=.lastTimestamp >&2 || true
+  kubectl -n "$ns" get pods -o wide >&2 || true
+  # shellcheck disable=SC2046 # one pod name per word
+  describe_pods "$ns" $(kubectl -n "$ns" get pods -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded" and (any(.status.conditions[]?;
+        .type == "Ready" and .status == "True") | not)) | .metadata.name')
+  return "$s"
+}
+# EX-6: an operator's webhook can refuse connections right after its rollout.
+apply() { # kubectl apply arguments
+  local i
+  for i in $(seq 30); do
+    kubectl apply "$@" >/dev/null && return
+    ((i < 30)) && sleep 2
+  done
+  return 1
+}
+# Waits until a jq filter, which may read $ENV, is true on a resource.
+until_true() { # seconds jq-filter kubectl-get-arguments
+  local deadline=$((SECONDS + $1)) filter=$2
+  shift 2
+  until kubectl get "$@" -o json 2>/dev/null | jq -e "$filter" >/dev/null; do
+    if ((SECONDS > deadline)); then
+      echo "timed out waiting for $filter on $*" >&2
+      kubectl get "$@" -o yaml >&2 || true
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+# External Secrets from its release manifest, pinned by version and sha256
+# (EX-3).
+# renovate: datasource=github-release-attachments depName=external-secrets/external-secrets
+EXTERNAL_SECRETS_VERSION=v2.14.0
+EXTERNAL_SECRETS_SHA256=21d51ab38bf7016a3d01e1259a92d40c23e83e68182ae6c4ca816af18717cb55
+curl -fsSL -o "$tmp/external-secrets.yaml" \
+  "https://github.com/external-secrets/external-secrets/releases/download/$EXTERNAL_SECRETS_VERSION/external-secrets.yaml"
+echo "$EXTERNAL_SECRETS_SHA256  $tmp/external-secrets.yaml" | sha256sum -c --quiet
+
+# The node image of the workflow's kind release; Renovate updates both together.
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
+watch_pods &
+watcher=$!
+t=$SECONDS
+kubectl apply --server-side -f "$tmp/external-secrets.yaml" >/dev/null
+kubectl apply -f vault-server.yaml >/dev/null
+kubectl -n vault create secret generic vault-root --from-literal=token="$(openssl rand -hex 16)" >/dev/null
+install_wait default wait --for=condition=Available deploy --all --timeout=300s >/dev/null
+install_wait vault rollout status deploy/vault --timeout=300s >/dev/null
+echo "External Secrets $EXTERNAL_SECRETS_VERSION and $(kubectl -n vault exec deploy/vault -- vault version | cut -d' ' -f1-2)" \
+  "available after $((SECONDS - t))s"
+
+# The Vault side, as its admin sets it up: the admin token in KV v2, a
+# policy that reads it, and an AppRole with that policy. The role ID is
+# set, so the inventory can name it; Vault issues the secret ID.
+vault() { kubectl -n vault exec -i deploy/vault -- vault "$@"; }
+vault auth enable approle >/dev/null
+vault policy write vaultwarden - >/dev/null <<'EOF'
+path "secret/data/vaultwarden" {
+  capabilities = ["read"]
+}
+EOF
+vault write auth/approle/role/vaultwarden token_policies=vaultwarden token_ttl=10m >/dev/null
+vault write auth/approle/role/vaultwarden/role-id role_id=vaultwarden >/dev/null
+secret_id=$(vault write -f -field=secret_id auth/approle/role/vaultwarden/secret-id)
+token=$(openssl rand -hex 24)
+printf %s "$token" | vault kv put secret/vaultwarden admin_token=- >/dev/null
+echo "Vault: AppRole vaultwarden $(vault read -format=json auth/approle/role/vaultwarden |
+  jq -r '.data | "with secret_id_ttl \(.secret_id_ttl), token_ttl \(.token_ttl), policies \(.token_policies | join(","))"'),"\
+  "admin token in secret/vaultwarden"
+
+# EX-26: the secret ID becomes a gpg ref, encrypted for the recipient that
+# the target names, with a key that exists for this run only.
+mkdir -m 700 "$GNUPGHOME" "$tmp/no-key"
+recipient=$(sed -nE 's/^ *- name: (.+@.+)$/\1/p' inventory/targets/vaultwarden.yml)
+gpg --batch --quiet --passphrase '' --quick-gen-key "$recipient" default default never 2>/dev/null
+printf %s "$secret_id" | "${py[@]}" kapitan refs --write gpg:vaultwarden/vault-secret-id \
+  -t vaultwarden -f - --refs-path "$tmp/refs" >"$tmp/refs.log" 2>&1 || { cat "$tmp/refs.log"; exit 1; }
+echo "ref gpg:vaultwarden/vault-secret-id written for $recipient," \
+  "key $(sed -nE 's/^- fingerprint: //p' "$tmp/refs/vaultwarden/vault-secret-id")"
+
+# EX-26: without --reveal, the compile needs no key. The output holds the
+# ref's tag in place of the secret ID.
+GNUPGHOME=$tmp/no-key "${py[@]}" kapitan compile --refs-path "$tmp/refs" >"$tmp/compile.log" 2>&1 ||
+  { cat "$tmp/compile.log"; exit 1; }
+echo "compiled without a gpg key: $(find compiled/vaultwarden -type f | wc -l) files"
+manifests=compiled/vaultwarden/manifests/vaultwarden
+if grep -rqF -e "$secret_id" -e "$(printf %s "$secret_id" | base64 -w0)" compiled; then
+  echo "EX-26: the secret ID is in compiled/ without --reveal" >&2
+  exit 1
+fi
+tag=$(sed -nE 's/^ +secret-id: (\?\{gpg:vaultwarden\/vault-secret-id:[0-9a-f]{8}\})$/\1/p' "$manifests/vault-approle-secret.yml")
+[[ -n $tag ]] || { cat "$manifests/vault-approle-secret.yml" >&2; exit 1; }
+echo "EX-26: $manifests/vault-approle-secret.yml holds $tag, not the secret ID"
+if [[ -e $manifests/vaultwarden-secret.yml ]]; then
+  echo "EX-26: the recipe's Secret vaultwarden is in the output" >&2
+  exit 1
+fi
+if out=$(GNUPGHOME=$tmp/no-key "${py[@]}" kapitan refs --reveal -f "$manifests/vault-approle-secret.yml" \
+  --refs-path "$tmp/refs" 2>&1); then
+  echo "EX-26: revealed the secret ID without the key" >&2
+  exit 1
+fi
+echo "EX-26: reveal without the key fails: $(grep -m1 -oE 'GPGError: .+' <<<"$out")"
+
+# The app's namespace. Vaultwarden's image runs as root.
+kubectl create namespace vaultwarden >/dev/null
+kubectl label namespace vaultwarden pod-security.kubernetes.io/enforce=baseline >/dev/null
+reveal() { "${py[@]}" kapitan refs --reveal -f "$1" --refs-path "$tmp/refs"; }
+# The store and the ExternalSecret first, so the StatefulSet starts once
+# its Secret exists.
+reveal "$manifests/vault-approle-secret.yml" | kubectl apply -f - >/dev/null
+t=$SECONDS
+apply -f "$manifests/vault-ss.yml" -f "$manifests/vaultwarden-es.yml"
+until_true 120 'any(.status.conditions[]?; .type == "Ready" and .status == "True")' -n vaultwarden secretstore vault
+until_true 120 'any(.status.conditions[]?; .type == "Ready" and .status == "True")' -n vaultwarden externalsecret vaultwarden
+# shellcheck disable=SC2016 # $ENV is jq's
+token=$token until_true 60 '.data.ADMIN_TOKEN | @base64d == $ENV.token' -n vaultwarden secret vaultwarden
+echo "EX-26: External Secrets logged in with the revealed secret ID and wrote the admin token" \
+  "into the Secret vaultwarden in $((SECONDS - t))s"
+kubectl -n vaultwarden get secretstore/vault externalsecret/vaultwarden -o json |
+  jq -r '.items[] | .kind as $k | .status.conditions[] | "  \($k): \(.type) \(.status), \(.reason): \(.message)"'
+kubectl -n vaultwarden get secret vaultwarden -o json |
+  jq -r '"  Secret vaultwarden: keys \(.data | keys | join(",")), owner \(.metadata.ownerReferences[0] | "\(.kind)/\(.name)")"'
+reveal compiled/vaultwarden | kubectl apply -f - >/dev/null
+install_wait vaultwarden rollout status statefulset/vaultwarden --timeout=300s >/dev/null
+
+# From a pod of Vaultwarden's image, which brings curl, through the
+# Service vaultwarden.
+image=$(kubectl -n vaultwarden get statefulset vaultwarden -o jsonpath='{.spec.template.spec.containers[0].image}')
+kubectl -n vaultwarden run client --image="$image" --restart=Never --command -- sleep 3600 >/dev/null
+install_wait vaultwarden wait pod/client --for=condition=Ready --timeout=120s >/dev/null
+url=http://vaultwarden:8000
+run() { kubectl -n vaultwarden exec -i client -- "$@"; }
+alive() {
+  for _ in $(seq 30); do run curl -fsS -o /dev/null "$url/alive" 2>/dev/null && return; sleep 2; done
+  echo "/alive does not answer through the Service vaultwarden" >&2
+  exit 1
+}
+login() { run curl -sS -o /dev/null -w '%{http_code}' --data-urlencode "token=$1" "$url/admin"; }
+login_is() { # token status what
+  local got
+  got=$(login "$1")
+  if [[ $got != "$2" ]]; then
+    echo "EX-26: admin login with $3: $got, expected $2" >&2
+    kubectl -n vaultwarden logs vaultwarden-0 --tail=30 >&2
+    exit 1
+  fi
+  echo "EX-26: admin login with $3: $got"
+}
+alive
+# Vaultwarden answers the fourth admin login from one address within 300
+# seconds with 429 (ADMIN_RATELIMIT_MAX_BURST 3, ADMIN_RATELIMIT_SECONDS
+# 300), and its counter starts over with the pod. Three per pod, then.
+login_is "$token" 200 "the token from Vault"
+
+# EX-26: rotation. A new token in Vault reaches the Secret within the
+# refresh interval. Vaultwarden reads ADMIN_TOKEN at start, so the running
+# pod keeps the old token until it restarts.
+old=$token
+token=$(openssl rand -hex 24)
+printf %s "$token" | vault kv put secret/vaultwarden admin_token=- >/dev/null
+t=$SECONDS
+# shellcheck disable=SC2016 # $ENV is jq's
+token=$token until_true 60 '.data.ADMIN_TOKEN | @base64d == $ENV.token' -n vaultwarden secret vaultwarden
+echo "EX-26: the Secret vaultwarden holds the new token $((SECONDS - t))s after it was written to Vault"
+login_is "$token" 401 "the new token, before the restart"
+login_is "$old" 200 "the old token, before the restart"
+t=$SECONDS
+kubectl -n vaultwarden rollout restart statefulset/vaultwarden >/dev/null
+install_wait vaultwarden rollout status statefulset/vaultwarden --timeout=300s >/dev/null
+alive
+echo "restarted in $((SECONDS - t))s"
+login_is "$token" 200 "the new token, after the restart"
+login_is "$old" 401 "the old token, after the restart"
+echo "secrets-end-to-end: passed in $((SECONDS - started))s"
