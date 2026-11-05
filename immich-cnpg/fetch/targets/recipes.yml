@@ -1,0 +1,17 @@
+# The recipes and the recipes they include, at the digests the index lists.
+# immich includes postgresql 1.1.0 and valkey 1.0.2 at these digests.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/immich:1.0.0@sha256:7a3d4b118f952edb9606cb176769ebf1a7675a8a76f0a993083ec25c0d183bb6
+        output_path: inventory/classes/recipes/immich
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/postgresql:1.1.0@sha256:4af1be4c0e95e21fdc5f4029a9509364df93e995be83b8673e15a71dc08abf27
+        output_path: inventory/classes/recipes/postgresql
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/valkey:1.0.2@sha256:263dfc2e41097c7c6bd016baadcc8384e79afd10910506a892e9994ee7ece918
+        output_path: inventory/classes/recipes/valkey
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/cnpg:1.0.2@sha256:76038710239a93ead3d44c0162aee4396fa0ab9f96b160b6487d2d437152f4da
+        output_path: inventory/classes/recipes/cnpg

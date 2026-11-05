@@ -1,0 +1,424 @@
+#!/usr/bin/env bash
+# Immich, the self-hosted photo library, from the published recipes immich,
+# postgresql, valkey and cnpg (EX-18). Verifies the latest signed index, the
+# recipes pinned in fetch/targets/recipes.yml and the generators they pin,
+# pulls all of them by digest, compiles the targets cnpg and immich and
+# deploys them in that order to a new kind cluster (EX-12). Exits 0 only if,
+# through Immich's API, four generated JPEGs land in the timeline by their
+# EXIF dates with their GPS positions reverse-geocoded, a second user sees
+# the album shared with them and no other photo, smart search ranks each
+# photo first for its colour, a database backup restores with every photo,
+# and photos, album and metadata survive deleting the server pod and the
+# PostgreSQL pod.
+# Set KEEP=1 to keep the cluster.
+# Needs gh (authenticated), jq, oras, uv, kind, kubectl, curl, docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+min_serial=107
+tmp=$(mktemp -d)
+cluster=immich-cnpg
+export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
+cleanup() {
+  kill "${watcher:-}" "${forward:-}" 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf lib compiled inventory/classes/recipes
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+
+# EX-4: index signature, digests and attestations, then pull by digest, as
+# "Verifying a recipe by hand" in the registry's docs/consumers.md does it.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+if ((serial < min_serial)); then
+  echo "index serial $serial is lower than $min_serial" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+
+pins=$(sed -nE 's|^ *source: ghcr\.io/kadet-hub/recipes/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  fetch/targets/recipes.yml)
+while read -r name version digest; do
+  record=$(jq -ec --arg n "$name" --arg v "$version" \
+    '.recipes[$n][$v] | select(.yanked == null)' "$tmp/index.json") || {
+    echo "recipe $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  want=$(jq -r .digest <<<"$record")
+  if [[ $want != "$digest" ]]; then
+    echo "recipe $name $version: index has $want, fetch/targets/recipes.yml pins $digest" >&2
+    exit 1
+  fi
+  # An included recipe shares inventory/classes/recipes/ and must be pinned at
+  # the digest the record lists.
+  while read -r iname idigest; do
+    grep -qE "^$iname [^ ]+ $idigest$" <<<"$pins" || {
+      echo "recipe $name $version includes $iname at $idigest, which fetch/targets/recipes.yml does not pin" >&2
+      exit 1
+    }
+  done < <(jq -r '.includes[] | "\(.name) \(.digest)"' <<<"$record")
+  gh attestation verify "oci://ghcr.io/kadet-hub/recipes/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/recipes/$name" "ghcr.io/kadet-hub/recipes/$name@$digest" >/dev/null
+  mkdir -p "inventory/classes/recipes/$name"
+  tar -xf "$tmp/recipes/$name/$name.tar" -C "inventory/classes/recipes/$name" --no-same-owner
+  echo "recipe $name $version verified and unpacked"
+done <<<"$pins"
+if (($(wc -l <<<"$pins") != 4)); then
+  echo "expected 4 recipes in fetch/targets/recipes.yml, found $(wc -l <<<"$pins")" >&2
+  exit 1
+fi
+
+# The generators the recipes pin, which Kapitan would otherwise fetch unverified.
+generators=$(cat inventory/classes/recipes/*/*.yml |
+  sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' | sort -u)
+[[ -n $generators ]] || { echo "the recipes pin no generator" >&2; exit 1; }
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "generator $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "generator $name $version: index has $want, a recipe pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/generators/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/generators/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "generator $name $version verified and unpacked"
+done <<<"$generators"
+
+# The first compile creates the ref with a random value in the temporary
+# directory, the second writes it into the Secret.
+compile() {
+  "${py[@]}" kapitan compile --refs-path "$tmp/refs" "$@" >"$tmp/compile.log" 2>&1 ||
+    { cat "$tmp/compile.log"; exit 1; }
+}
+compile
+compile --reveal
+echo "compiled $(find compiled/cnpg -type f | wc -l) files for cnpg, $(find compiled/immich -type f | wc -l) for immich"
+
+# EX-6: what a broken or not ready pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop the rollout status as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$ # check's children: the command it waits for and this watch
+    return
+  done
+}
+# EX-6: a kubectl rollout status or wait that prints the namespace on a timeout.
+install_wait() { # namespace kubectl-arguments
+  local ns=$1 s
+  shift
+  kubectl -n "$ns" "$@" && return
+  s=$?
+  kubectl -n "$ns" get events --sort-by=.lastTimestamp >&2 || true
+  kubectl -n "$ns" get pods -o wide >&2 || true
+  # shellcheck disable=SC2046 # one pod name per word
+  describe_pods "$ns" $(kubectl -n "$ns" get pods -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded" and (any(.status.conditions[]?;
+        .type == "Ready" and .status == "True") | not)) | .metadata.name')
+  return "$s"
+}
+# EX-6: the operator's webhooks can refuse connections for a few seconds
+# after its rollout reports done; repeat the (idempotent) apply until the API
+# server accepts it.
+apply() { # kubectl apply arguments
+  local i
+  for i in $(seq 30); do
+    kubectl apply "$@" && return
+    ((i < 30)) && sleep 2
+  done
+  return 1
+}
+
+# EX-12: cnpg first, then immich, each in its namespace. The operator runs
+# under the Pod Security level restricted, immich under baseline, because
+# Immich's server and machine learning images run as root. Server-side,
+# because a client-side apply stores the object in an annotation, which the
+# API server refuses for CRDs above 256 KiB, such as CloudNativePG's.
+# The node image of the workflow's kind release; Renovate updates both together.
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
+watch_pods &
+watcher=$!
+start=$(date +%s)
+kubectl create namespace cnpg-system >/dev/null
+kubectl label namespace cnpg-system pod-security.kubernetes.io/enforce=restricted >/dev/null
+apply --server-side -R -f compiled/cnpg >/dev/null
+install_wait cnpg-system rollout status deploy/cnpg-cloudnative-pg --timeout=300s
+kubectl create namespace immich >/dev/null
+kubectl label namespace immich pod-security.kubernetes.io/enforce=baseline >/dev/null
+# The Cluster first: Immich's server exits while it cannot reach PostgreSQL,
+# and the kubelet waits longer before each restart.
+apply --server-side -f compiled/immich/manifests/immich/postgresql-cluster-cluster.yml >/dev/null
+install_wait immich wait cluster/postgresql-cluster --for=condition=Ready --timeout=600s
+apply --server-side -R -f compiled/immich >/dev/null
+install_wait immich rollout status deploy/valkey --timeout=300s
+install_wait immich rollout status deploy/immich-machine-learning --timeout=600s
+install_wait immich rollout status deploy/immich-server --timeout=600s
+ready=$(date +%s)
+echo "deployed in $((ready - start))s"
+
+# A port-forward ends with its pod, so it starts again after each restart.
+forward() {
+  kill "${forward:-}" 2>/dev/null || true
+  kubectl -n immich port-forward service/immich-server 12283:2283 >/dev/null &
+  forward=$!
+  for _ in $(seq 60); do
+    curl -fsS "$url/server/ping" 2>/dev/null | jq -e '.res == "pong"' >/dev/null && return
+    sleep 2
+  done
+  echo "Immich does not answer /api/server/ping" >&2
+  return 1
+}
+url=http://127.0.0.1:12283/api
+forward
+api() { # token path [curl arguments]: the body of a 2xx answer
+  local token=$1 path=$2
+  shift 2
+  curl -fsS --max-time 600 -H "Authorization: Bearer $token" "$@" "$url$path"
+}
+post() { # token path json
+  api "$1" "$2" -H 'Content-Type: application/json' -d "$3"
+}
+status() { # token path: the HTTP status only
+  curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $1" "$url$2"
+}
+login() { # email password
+  jq -nc --arg email "$1" --arg password "$2" '{$email, $password}' |
+    curl -fsS -H 'Content-Type: application/json' -d @- "$url/auth/login" | jq -er .accessToken
+}
+
+# The first account becomes admin.
+admin_email=admin@example.com
+admin_password=Check-Passw0rd
+jq -nc --arg email "$admin_email" --arg password "$admin_password" '{$email, $password, name: "Admin"}' |
+  curl -fsS -H 'Content-Type: application/json' -d @- "$url/auth/admin-sign-up" | jq -e .isAdmin >/dev/null
+admin=$(login "$admin_email" "$admin_password")
+
+# Reverse geocoding works offline, from the GeoNames places in the server
+# image, which the server imports into PostgreSQL on its first start.
+t=$(date +%s)
+for _ in $(seq 150); do
+  api "$admin" /system-metadata/reverse-geocoding-state | jq -e '.lastUpdate != null' >/dev/null && break
+  sleep 2
+done
+api "$admin" /system-metadata/reverse-geocoding-state | jq -e '.lastUpdate != null' >/dev/null
+echo "geodata imported $(($(date +%s) - t))s after the admin signed up"
+
+# Four photos, each filled with one colour, with the time, its UTC offset
+# and the GPS position in their EXIF data, and the country Immich must find
+# for the position. The New Year's Eve photo in New York is taken on
+# 1 January in UTC, and its local date puts it in December.
+photos='eiffel-tower red 2024-07-14T10:12:00+02:00 48.85826 2.2945 France
+louvre green 2024-07-15T16:40:00+02:00 48.8611 2.3358 France
+times-square blue 2023-12-31T23:30:00-05:00 40.758 -73.9855 United States
+opera-house yellow 2025-01-26T12:00:00+11:00 -33.8568 151.2153 Australia'
+mkdir "$tmp/photos"
+uv run --quiet --python 3.13 --with pillow==13.0.0 python -I - "$tmp/photos" "$photos" <<'PY'
+import sys
+from fractions import Fraction
+from PIL import ExifTags, Image
+
+
+def dms(value):
+    value = abs(value)
+    d = int(value)
+    m = int((value - d) * 60)
+    return (Fraction(d), Fraction(m), Fraction(round((value - d - m / 60) * 3600 * 1000), 1000))
+
+
+for line in sys.argv[2].splitlines():
+    name, colour, taken, lat, lon = line.split()[:5]
+    lat, lon = float(lat), float(lon)
+    exif = Image.Exif()
+    exif[ExifTags.Base.Make] = "kadet-hub"
+    exif[ExifTags.Base.Model] = "examples check"
+    ifd = exif.get_ifd(ExifTags.IFD.Exif)
+    ifd[ExifTags.Base.DateTimeOriginal] = taken[:19].replace("-", ":", 2).replace("T", " ")
+    ifd[ExifTags.Base.OffsetTimeOriginal] = taken[19:]
+    gps = exif.get_ifd(ExifTags.IFD.GPSInfo)
+    gps[ExifTags.GPS.GPSLatitudeRef] = "N" if lat >= 0 else "S"
+    gps[ExifTags.GPS.GPSLatitude] = dms(lat)
+    gps[ExifTags.GPS.GPSLongitudeRef] = "E" if lon >= 0 else "W"
+    gps[ExifTags.GPS.GPSLongitude] = dms(lon)
+    Image.new("RGB", (640, 480), colour).save(f"{sys.argv[1]}/{name}.jpg", exif=exif, quality=90)
+PY
+
+# The upload sets the file dates to now, so the timeline can only take the
+# dates from the EXIF data.
+now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+declare -A asset
+t=$(date +%s)
+while read -r name _; do
+  asset[$name]=$(api "$admin" /assets -F "assetData=@$tmp/photos/$name.jpg" \
+    -F "fileCreatedAt=$now" -F "fileModifiedAt=$now" | jq -er 'select(.status == "created") | .id')
+done <<<"$photos"
+uploaded=$(date +%s)
+while read -r name _ taken lat lon country; do
+  when=${taken::19}
+  for _ in $(seq 60); do
+    api "$admin" "/assets/${asset[$name]}" >"$tmp/asset.json"
+    jq -e '.exifInfo.country != null' "$tmp/asset.json" >/dev/null && break
+    sleep 2
+  done
+  jq -e --arg when "$when" --argjson lat "$lat" --argjson lon "$lon" --arg country "$country" '
+    (.localDateTime | startswith($when)) and .exifInfo.country == $country and
+    (.exifInfo.latitude - $lat | fabs) < 0.00001 and (.exifInfo.longitude - $lon | fabs) < 0.00001' \
+    "$tmp/asset.json" >/dev/null || {
+    echo "$name: expected $when, $lat, $lon, $country, got:" >&2
+    jq -c '{localDateTime, exifInfo}' "$tmp/asset.json" >&2
+    exit 1
+  }
+  echo "$name: $(jq -r '"\(.localDateTime) local, \(.exifInfo.timeZone), \(.exifInfo.city), \(.exifInfo.state), \(.exifInfo.country)"' "$tmp/asset.json")"
+done <<<"$photos"
+extracted=$(date +%s)
+echo "uploaded 4 photos in $((uploaded - t))s, metadata extracted and reverse-geocoded $((extracted - uploaded))s later"
+buckets=$(api "$admin" /timeline/buckets | jq -c 'map({(.timeBucket[:7]): .count}) | add')
+[[ $buckets == '{"2025-01":1,"2024-07":2,"2023-12":1}' ]] ||
+  { echo "timeline buckets: $buckets" >&2; exit 1; }
+echo "timeline buckets: $buckets"
+
+# A second user sees the album shared with them, and only its photos.
+family_email=family@example.com
+family_password=Family-Passw0rd
+family_id=$(post "$admin" /admin/users "$(jq -nc --arg email "$family_email" --arg password "$family_password" \
+  '{$email, $password, name: "Family"}')" | jq -er .id)
+family=$(login "$family_email" "$family_password")
+[[ $(status "$family" "/assets/${asset[eiffel-tower]}") == 400 ]] ||
+  { echo "family reads the Eiffel Tower photo before it is shared" >&2; exit 1; }
+album=$(post "$admin" /albums "$(jq -nc --arg a "${asset[eiffel-tower]}" --arg b "${asset[louvre]}" --arg u "$family_id" \
+  '{albumName: "Paris 2024", assetIds: [$a, $b], albumUsers: [{userId: $u, role: "viewer"}]}')" | jq -er .id)
+shared() { # what the second user must see
+  api "$family" "/albums?isShared=true" | jq -e --arg album "$album" 'map(.id) == [$album]' >/dev/null
+  api "$family" "/timeline/bucket?albumId=$album&timeBucket=2024-07-01" |
+    jq -e --arg a "${asset[eiffel-tower]}" --arg b "${asset[louvre]}" '.id | sort == ([$a, $b] | sort)' >/dev/null
+  [[ $(curl -sS -o /dev/null -w '%{http_code} %{content_type}' -H "Authorization: Bearer $family" \
+    "$url/assets/${asset[louvre]}/thumbnail") == "200 image/"* ]]
+  [[ $(status "$family" "/assets/${asset[times-square]}") == 400 ]]
+}
+shared || { echo "family does not see exactly the album Paris 2024" >&2; exit 1; }
+echo "family sees the album Paris 2024 with its 2 photos and gets 400 for the photo from New York"
+
+# Smart search: machine learning downloads the CLIP model from Hugging Face
+# when the first photo needs it. A search finds only photos it has embedded.
+t=$(date +%s)
+smart() { post "$admin" /search/smart "$(jq -nc --arg q "a $1 photo" '{query: $q}')" | jq -c '[.assets.items[].id]'; }
+for _ in $(seq 120); do
+  (($(smart red | jq length) == 4)) && break
+  sleep 5
+done
+embedded=$(date +%s)
+while read -r name colour _; do
+  found=$(smart "$colour")
+  [[ $(jq -r '.[0]' <<<"$found") == "${asset[$name]}" ]] ||
+    { echo "smart search for a $colour photo does not rank $name first: $found" >&2; exit 1; }
+done <<<"$photos"
+# Not part of the claim: the models machine learning has downloaded so far.
+models=$(kubectl -n immich exec deploy/immich-machine-learning -- find /cache -name model.onnx -not -path '*/cpu/*' \
+  -printf '%s %h\n' | awk '{sub("^/cache/", "", $2); printf "%s%s %.0f MB", sep, $2, $1 / 1e6; sep = ", "}')
+echo "smart search found all 4 photos $((embedded - t))s after the metadata, and each colour ranks its photo first; models downloaded: $models"
+
+# Backup: Immich dumps the database into the library claim, so a copy of the
+# claim holds the photos and the database.
+t=$(date +%s)
+post "$admin" /jobs '{"name": "backup-database"}' >/dev/null
+for _ in $(seq 60); do
+  dump=$(api "$admin" /admin/database-backups | jq -r '.backups[0].filename // empty')
+  [[ -n $dump ]] && break
+  sleep 2
+done
+[[ -n $dump ]] || { echo "no database backup after 120s" >&2; exit 1; }
+kubectl -n immich exec deploy/immich-server -c immich-server -- tar -C /data -cf - . >"$tmp/library.tar"
+mkdir "$tmp/library"
+tar -xf "$tmp/library.tar" -C "$tmp/library"
+[[ -s $tmp/library/backups/$dump ]]
+want=$(cd "$tmp/photos" && sha1sum ./*.jpg | cut -d' ' -f1 | sort)
+have=$(find "$tmp/library" -path "$tmp/library/backups" -prune -o -type f -print0 | xargs -0 sha1sum | cut -d' ' -f1 | sort)
+[[ $(comm -23 <(cat <<<"$want") <(cat <<<"$have")) == '' ]] ||
+  { echo "the copy of the library claim lacks an original" >&2; exit 1; }
+# The dump, restored as the superuser into an empty database, holds the four
+# photos by checksum and the album's viewer.
+primary=$(kubectl -n immich get cluster postgresql-cluster -o jsonpath='{.status.currentPrimary}')
+psql() { kubectl -n immich exec -i "$primary" -c postgres -- psql -v ON_ERROR_STOP=1 -qtA "$@"; }
+psql -c 'create database restore_check' >/dev/null
+gunzip -c "$tmp/library/backups/$dump" | psql -d restore_check >/dev/null
+checksums=$(psql -d restore_check -c "select encode(checksum, 'hex') from asset order by 1")
+viewer=$(psql -d restore_check -c "select a.\"albumName\" || ' ' || u.email from album_user au
+  join album a on a.id = au.\"albumId\" join \"user\" u on u.id = au.\"userId\" where au.role = 'viewer'")
+psql -c 'drop database restore_check' >/dev/null
+[[ $checksums == "$want" && $viewer == "Paris 2024 $family_email" ]] ||
+  { echo "the restored dump has the checksums $checksums and the viewer $viewer" >&2; exit 1; }
+echo "backup $dump, $(stat -c %s "$tmp/library/backups/$dump") bytes, in $(($(date +%s) - t))s; the copy of the claim holds the 4 originals, and the dump restores their checksums and the album's viewer"
+
+# The data outlives the server pod and the PostgreSQL pod.
+library() { # the four photos, their metadata and the album, through the API
+  api "$admin" /timeline/buckets | jq -e 'map(.count) | add == 4' >/dev/null
+  api "$admin" "/assets/${asset[opera-house]}" | jq -e '.exifInfo.country == "Australia"' >/dev/null
+  api "$admin" "/assets/${asset[eiffel-tower]}/original" -o "$tmp/original"
+  cmp -s "$tmp/photos/eiffel-tower.jpg" "$tmp/original"
+  shared
+}
+old=$(kubectl -n immich get pods -l name=immich-server -o jsonpath='{.items[0].metadata.name}')
+t=$(date +%s)
+kubectl -n immich delete pod "$old" >/dev/null
+install_wait immich wait pods -l name=immich-server --for=condition=Ready --timeout=300s >/dev/null
+forward
+library || { echo "the library changed after the server pod was deleted" >&2; exit 1; }
+echo "server pod deleted, the new one served the library $(($(date +%s) - t))s later"
+
+# With one instance the operator creates the pod again on the same claim.
+# kubectl delete waits for the instance manager, which shuts PostgreSQL
+# down smart first: up to smartShutdownTimeout, 180s by default, for the
+# clients to disconnect.
+t=$(date +%s)
+kubectl -n immich delete pod "$primary" >/dev/null
+deleted=$(date +%s)
+for _ in $(seq 60); do
+  kubectl -n immich get pod "$primary" >/dev/null 2>&1 && break
+  sleep 2
+done
+install_wait immich wait "pod/$primary" --for=condition=Ready --timeout=300s >/dev/null
+install_wait immich wait cluster/postgresql-cluster --for=condition=Ready --timeout=300s >/dev/null
+back=$(date +%s)
+for _ in $(seq 60); do
+  library 2>/dev/null && break
+  sleep 2
+  forward 2>/dev/null || true
+done
+library || { echo "the library changed after the PostgreSQL pod was deleted" >&2; exit 1; }
+restarts=$(kubectl -n immich get pods -l name=immich-server -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}')
+echo "PostgreSQL pod deleted in $((deleted - t))s, ready again $((back - deleted))s later, the library answered after $(($(date +%s) - back))s more; the server restarted $restarts times"
+echo "immich-cnpg: timeline, reverse geocoding, sharing, smart search, backup and restarts passed"

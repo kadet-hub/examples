@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -59,7 +59,8 @@ schedule instead of trusting the state on the publishing day.
   EX-9 and EX-10 hold, `cert-manager-mutate` unless EX-11 holds,
   `first-platform` and `helm-vs-terraform` unless EX-12 holds,
   `kubevirt-csi` unless EX-14 and EX-14a hold, `open-webui-searxng`
-  unless EX-17 holds, `platform-baseline` unless EX-18 and EX-18a hold.
+  unless EX-17 holds, `platform-baseline` unless EX-18 and EX-18a hold,
+  `immich-cnpg` unless EX-19 holds.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -130,8 +131,9 @@ schedule instead of trusting the state on the publishing day.
   kubeconform and an API server accept manifests that the kubelet cannot
   run, such as a readiness probe on a port the app does not listen on.
   `argocd-vs-flux`, `helm-mutate`, `cert-manager-mutate`,
-  `kubevirt-csi`, `open-webui-searxng` and `platform-baseline` deploy
-  their workloads under EX-7, EX-10, EX-11, EX-14, EX-17 and EX-18.
+  `kubevirt-csi`, `open-webui-searxng`, `platform-baseline` and
+  `immich-cnpg` deploy their workloads under EX-7, EX-10, EX-11, EX-14,
+  EX-17, EX-18 and EX-19.
   `first-platform/check` deploys `compiled/prod/apps` (Namespace,
   Deployment, Service, PodDisruptionBudget), `helm-vs-terraform/check`
   the Deployment, Service and ConfigMap of its first compile. Both create
@@ -232,8 +234,8 @@ schedule instead of trusting the state on the publishing day.
 
   Pins in Kapitan inventories and Kubernetes manifests are updated with
   `datasource=docker` by regex managers: generators through the org preset;
-  recipes in a fetch inventory (`open-webui-searxng`, `platform-baseline`)
-  by a manager of their own, because the preset reads `**/inventory/**` only and allows no
+  recipes in a fetch inventory (`open-webui-searxng`, `platform-baseline`,
+  `immich-cnpg`) by a manager of their own, because the preset reads `**/inventory/**` only and allows no
   `/` in a name;
   charts by version and the digest of their OCI artifact (podinfo in
   `helm-mutate`, cert-manager and trust-manager in `cert-manager-mutate`); images wherever an `image:` or
@@ -249,8 +251,9 @@ schedule instead of trusting the state on the publishing day.
   trust-manager classes of `cert-manager-mutate`, so that a chart's CRDs
   never run with another operator version; kind and its
   node image; podinfo's chart and image; `@pulumi/kubernetes` and its
-  plugin; the four recipes of `open-webui-searxng`, whose includes must
-  be pinned at the digests the index lists (EX-17); the velero CLI and the
+  plugin; the four recipes of `open-webui-searxng` and those of
+  `immich-cnpg`, whose includes must be pinned at the digests the index
+  lists (EX-17, EX-19); the velero CLI and the
   server image `platform-baseline/check` installs with it (EX-18).
 
   Two values follow another pin, and the pull request that changes that
@@ -1343,6 +1346,106 @@ so none of them is in the repository.
   - Test: `examples` workflow, job `platform-baseline`
   - Since: #135
 
+## Immich and CloudNativePG
+
+`immich-cnpg/` backs the kadet-hub.org blog post on a self-hosted photo
+library, put together from published recipes of kadet-hub/recipes.
+Immich is the photo server with its web interface and API, and runs its
+machine learning service on the CPU. PostgreSQL runs as a CloudNativePG
+Cluster, and Valkey holds Immich's job queue.
+
+The fetch inventory `fetch/targets/recipes.yml` pins `immich`,
+`postgresql`, `valkey` and `cnpg` by version and digest. `immich`
+includes `postgresql` and `valkey` at the digests pinned there.
+`postgresql` requires the operator `cnpg`, which runs once per cluster
+and gets a target of its own. `check` verifies and pulls the recipes and
+generators as `open-webui-searxng/check` does.
+
+The target `cnpg` deploys to the namespace `cnpg-system`, which enforces
+the Pod Security level `restricted`. The target `immich` deploys to
+`immich`, which enforces `baseline`, because Immich's server and machine
+learning images run as root. `check` applies both server-side, because a
+client-side apply stores the object in an annotation, which the API
+server refuses for CRDs above 256 KiB, such as CloudNativePG's.
+It applies the Cluster of `immich` first and waits until it is ready.
+Immich's server exits while PostgreSQL refuses connections. In the first
+local run it had restarted twice and waited in `CrashLoopBackOff` when
+EX-6 stopped the check. The target sets one PostgreSQL instance, because
+further instances on the one kind node would share its disk. The Valkey
+password is a ref as in EX-17.
+
+- EX-19: `immich-cnpg/check` MUST fail unless the recipes and generators
+  pass the checks of EX-17 and, deployed to a new kind cluster with
+  `cnpg` first, Immich sorts uploaded photos into its timeline by their
+  EXIF dates and reverse-geocodes their GPS positions, a second user sees
+  an album shared with them and no other photo, smart search finds a
+  photo by its colour, a database backup in the library claim restores
+  the photos' records, and photos, metadata and album survive deleting
+  the server pod and the PostgreSQL pod.
+
+  `check` generates four JPEGs with Pillow, each filled with one colour,
+  with `DateTimeOriginal`, `OffsetTimeOriginal` and a GPS position in
+  their EXIF data. It uploads them with the file dates set to the time of
+  the upload, so the timeline can take their dates from the EXIF data
+  only. The photo taken in New York at 23:30 on 31 December 2023, UTC-5,
+  falls on 1 January in UTC and must land in the December bucket, because
+  Immich buckets by local time. Each photo's position must match its
+  EXIF data to 0.00001 degrees, and its country must be the expected one.
+
+  Immich reverse-geocodes offline. On its first start the server imports
+  the GeoNames places with 500 or more inhabitants that its image ships
+  into PostgreSQL, and it looks up the nearest one with `earthdistance`,
+  the extension of the option `earthdistance` of `postgresql`. `check`
+  prints the city and does not compare it, because the nearest place is
+  not always the expected one: in the first CI run of #137, on an
+  ubuntu-24.04 runner, Times Square resolved to Weehawken, New Jersey,
+  across the Hudson.
+
+  The admin creates the second user, who gets 400 for the photo of the
+  Eiffel Tower before the album `Paris 2024` with it is shared with them
+  as viewer. Afterwards they must see the album, its two photos in its
+  timeline bucket and the thumbnail of one, and still get 400 for the
+  photo from New York.
+
+  Smart search embeds each photo with the CLIP model `ViT-B-32__openai`
+  and stores the vectors with pgvector, the extension of the option
+  `pgvector`. Machine learning downloads the model from Hugging Face when
+  the first photo needs it. `check` waits until a search finds all four
+  photos, then requires the photo of each colour first for "a red photo"
+  and the three other colours. In the first CI run of #137 the search
+  found all four photos 16 seconds after their metadata, with 606 MB of
+  CLIP model downloaded. Hugging Face is outside the cluster, so this
+  step can fail without a change to the repository, as the web search of
+  EX-17 can.
+
+  `check` starts Immich's job `backup-database`, which writes a `pg_dump`
+  of the database as its owner into `backups/` on the library claim.
+  Immich runs the same job every night at 02:00 and keeps the last 14
+  dumps. `check` copies the claim with `tar` through `kubectl exec`; the
+  copy must hold every original byte for byte. It restores the dump with
+  `psql` as the superuser into an empty database of the same Cluster,
+  which must hold the four photos' checksums and the album's viewer. A
+  CloudNativePG backup needs an object store or volume snapshots, and
+  kind offers neither. It is not tested, and neither is a restore through
+  Immich, which the README of the `immich` recipe expects to fail as the
+  owner.
+
+  After deleting the server pod, and again after deleting the PostgreSQL
+  pod, `check` requires the four photos in the timeline, the country of
+  one, the original of another byte for byte and the album as the second
+  user sees it. With one instance, CloudNativePG creates the PostgreSQL
+  pod again on the same claim. `kubectl delete` of that pod waits for the
+  instance manager, which shuts PostgreSQL down smart first and waits up
+  to `smartShutdownTimeout`, 180 seconds by default, for the clients to
+  disconnect. Immich keeps its connections open, so the delete took 182
+  seconds in the first CI run of #137.
+
+  - Test: `examples` workflow, job `immich-cnpg`; `manual:` with cnpg set
+    back to 1.0.1 in the fetch inventory, Renovate 44.194.0
+    (`--platform=local --dry-run=lookup`, 2026-11-05) proposed 1.0.2 at
+    its digest on the branch `renovate/immich-cnpg-recipes`
+  - Since: #137
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -1378,4 +1481,5 @@ so none of them is in the repository.
 | `kubevirt-csi/` | One Kapitan project (targets `infra`, `tenant`) with the kubevirt generator pinned in `inventory/classes/generators.yml`, `infra.yaml`, the tenant workload in `tests/pvc.yaml`, the negative case's claim in `tests/static-pvc.yaml`; `check` (EX-14, EX-14a) |
 | `open-webui-searxng/` | One Kapitan project (targets `open-webui`, `searxng`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-17) |
 | `platform-baseline/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `kyverno`, `monitoring`, `external-secrets`, `velero`, `argocd`, `podinfo`), the shared class `inventory/classes/platform.yml`, the cert-manager recipe pinned in `fetch/targets/recipes.yml`, the stand-ins `git-server.yaml` and `s3-server.yaml`; `check` (EX-18, EX-18a) |
+| `immich-cnpg/` | One Kapitan project (targets `cnpg`, `immich`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-19) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
