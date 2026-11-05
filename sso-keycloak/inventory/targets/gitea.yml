@@ -41,8 +41,8 @@ parameters:
             GITEA__OAUTH2_CLIENT__ENABLE_AUTO_REGISTRATION: "true"
             GITEA__OAUTH2_CLIENT__USERNAME: preferred_username
         # The login source keycloak, which the redirect URI of the class sso
-        # names. Gitea configures login sources through its CLI only, and the
-        # CLI reads the discovery document.
+        # names. app.ini has no setting for login sources, so the CLI adds it
+        # or updates it. The CLI reads the discovery document.
         configure-oauth:
           image: ${components.gitea.image}
           command:

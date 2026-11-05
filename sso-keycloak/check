@@ -230,6 +230,8 @@ kubectl -n kube-system get configmap coredns -o json |
   jq --arg r "rewrite name exact $host keycloak-service.keycloak.svc.cluster.local answer auto" \
     '.data.Corefile |= sub("\n    ready\n"; "\n    ready\n    \($r)\n")' |
   kubectl replace -f - >/dev/null
+kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}' | grep -qF "rewrite name exact $host " ||
+  { echo "the rewrite rule for $host is not in CoreDNS's Corefile" >&2; exit 1; }
 kubectl -n kube-system rollout restart deployment/coredns >/dev/null
 install_wait kube-system rollout status deployment/coredns --timeout=120s >/dev/null
 
@@ -256,19 +258,20 @@ keycloak=$(date +%s)
 echo "Keycloak ready with the realm imported $((keycloak - start))s after the cluster"
 
 # Gitea's init container reads Keycloak's discovery document, so the apps
-# come after the import. Gitea and Miniflux exit while their database refuses
-# connections, so the databases first.
+# come after the import. Gitea exits while its database or Valkey refuses
+# connections, Miniflux while its database does, so those first. Everything
+# of gitea but the objects named gitea is its database, Valkey and Secrets.
 namespace gitea baseline
 namespace open-webui baseline
 namespace miniflux baseline
-apply -f compiled/gitea/manifests/gitea/postgresql-cluster-cluster.yml
+apply -R -f compiled/gitea -l 'name!=gitea'
 apply -R -f compiled/miniflux -l name=miniflux-db
 install_wait gitea wait cluster/postgresql-cluster --for=condition=Ready --timeout=600s
+install_wait gitea rollout status deployment/valkey --timeout=600s
 install_wait miniflux rollout status statefulset/miniflux-db --timeout=600s
 for app in gitea open-webui miniflux; do
   apply -R -f "compiled/$app"
 done
-install_wait gitea rollout status deployment/valkey --timeout=600s
 install_wait gitea rollout status deployment/gitea --timeout=600s
 install_wait open-webui rollout status deployment/valkey --timeout=600s
 install_wait open-webui rollout status statefulset/open-webui --timeout=600s
@@ -290,7 +293,7 @@ echo "apps ready $((ready - keycloak))s later"
 reveal sso/ca.crt >"$tmp/ca.pem"
 chat=$(sso clients.open-webui.url) rss=$(sso clients.miniflux.url)
 declare -A local_port
-forward() { # namespace service port
+port_forward() { # namespace service port
   local _
   kubectl -n "$1" port-forward "service/$2" ":$3" >"$tmp/forward-$2" 2>&1 &
   forward+=($!)
@@ -302,10 +305,10 @@ forward() { # namespace service port
   cat "$tmp/forward-$2" >&2
   return 1
 }
-forward keycloak keycloak-service 8443
-forward gitea gitea-http 3000
-forward open-webui open-webui 80
-forward miniflux miniflux 80
+port_forward keycloak keycloak-service 8443
+port_forward gitea gitea-http 3000
+port_forward open-webui open-webui 80
+port_forward miniflux miniflux 80
 browser() { # cookie-jar curl-arguments
   local jar=$1
   shift
@@ -331,11 +334,11 @@ echo "issuer $(browser /dev/null -f "$issuer/.well-known/openid-configuration" |
 # a code, which the app exchanges for tokens over its own connection to
 # Keycloak. Prints where the browser ended.
 login() { # jar login-url [user password]
-  local jar=$1 page action
-  page=$(browser "$jar" -L -o "$tmp/page" -w '%{url_effective}' "$2")
+  local jar=$1 url action
+  url=$(browser "$jar" -L -o "$tmp/page" -w '%{url_effective}' "$2")
   action=$(sed -nE 's/.*<form id="kc-form-login"[^>]* action="([^"]+)".*/\1/p' "$tmp/page" | sed 's/&amp;/\&/g')
   if [[ -z $action ]]; then # no form: Keycloak's session signed the browser in
-    echo "$page"
+    echo "$url"
     return
   fi
   [[ -n ${3:-} ]] || { echo "Keycloak asked for a password at $2" >&2; return 1; }
@@ -344,7 +347,7 @@ login() { # jar login-url [user password]
 }
 # Who the app's session belongs to, empty without one. Gitea 28's API takes
 # tokens only, so its settings page names the user.
-whoami() { # app jar
+session_user() { # app jar
   case $1 in
     gitea) browser "$2" "$git/user/settings" | sed -nE 's/.*<input id="username"[^>]* value="([^"]*)".*/\1/p' ;;
     open-webui) browser "$2" "$chat/api/v1/auths/" | jq -r '.email // empty' ;;
@@ -366,7 +369,7 @@ for app in gitea open-webui miniflux; do
   else
     end=$(login "$jar" "${login_url[$app]}")
   fi
-  user=$(whoami "$app" "$jar")
+  user=$(session_user "$app" "$jar")
   [[ $user == alice || $user == alice@example.test ]] || fail "$app: alice ended at $end as '$user'"
   echo "$app: alice signed in as $user$([[ $app == gitea ]] && echo " with her password" || echo " through Keycloak's session"), ended at ${end%%\?*}"
 done
@@ -379,7 +382,7 @@ for app in gitea open-webui miniflux; do
   end=$(login "$jar" "${login_url[$app]}" alice "$(openssl rand -hex 12)")
   grep -qF 'Invalid username or password.' "$tmp/page" && [[ $end == "$issuer/"* ]] ||
     fail "$app: a wrong password ended at $end"
-  [[ -z $(whoami "$app" "$jar") ]] || fail "$app: a session after a wrong password"
+  [[ -z $(session_user "$app" "$jar") ]] || fail "$app: a session after a wrong password"
 done
 echo "a wrong password: Keycloak answered 'Invalid username or password.' and no app has a session"
 
@@ -387,15 +390,15 @@ echo "a wrong password: Keycloak answered 'Invalid username or password.' and no
 # Open WebUI chat. Miniflux checks no group.
 jar=$tmp/bob
 end=$(login "$jar" "${login_url[gitea]}" bob "$password_bob")
-grep -qF '<title>Sign-In Prohibited' "$tmp/page" && [[ -z $(whoami gitea "$jar") ]] ||
-  fail "gitea: bob ended at $end as '$(whoami gitea "$jar")'"
+grep -qF '<title>Sign-In Prohibited' "$tmp/page" && [[ -z $(session_user gitea "$jar") ]] ||
+  fail "gitea: bob ended at $end as '$(session_user gitea "$jar")'"
 echo "gitea: bob, not in git, got 'Sign-In Prohibited' and no session"
 end=$(login "$jar" "${login_url[open-webui]}")
-[[ $end == "$chat/auth?error="* && -z $(whoami open-webui "$jar") ]] ||
-  fail "open-webui: bob ended at $end as '$(whoami open-webui "$jar")'"
+[[ $end == "$chat/auth?error="* && -z $(session_user open-webui "$jar") ]] ||
+  fail "open-webui: bob ended at $end as '$(session_user open-webui "$jar")'"
 echo "open-webui: bob, not in chat, was sent to /auth with '$(error=${end#*error=} && echo "${error//+/ }")' and no session"
 end=$(login "$jar" "${login_url[miniflux]}")
-[[ $(whoami miniflux "$jar") == bob ]] || fail "miniflux: bob ended at $end"
+[[ $(session_user miniflux "$jar") == bob ]] || fail "miniflux: bob ended at $end"
 echo "miniflux: bob signed in as bob"
 
 # The classic pitfall: an app that reads Keycloak's in-cluster name. Keycloak
@@ -406,7 +409,7 @@ internal=https://keycloak-service.keycloak.svc:8443/realms/$(sso realm)
 kubectl -n miniflux set env deployment/miniflux "OAUTH2_OIDC_DISCOVERY_ENDPOINT=$internal" >/dev/null
 install_wait miniflux rollout status deployment/miniflux --timeout=300s >/dev/null
 pod=$(kubectl -n miniflux get pods -l name=miniflux --sort-by=.metadata.creationTimestamp -o name | tail -n 1)
-forward miniflux miniflux 80
+port_forward miniflux miniflux 80
 since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 end=$(browser "$tmp/pitfall" -L -o /dev/null -w '%{url_effective}' "${login_url[miniflux]}")
 [[ $end != "$issuer/"* ]] || fail "miniflux with the issuer $internal sent the browser to $end"

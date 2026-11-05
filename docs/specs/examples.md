@@ -2481,7 +2481,10 @@ group restriction. It creates a user on the first login. Miniflux reads
 Keycloak's discovery document on every login request (`getOAuth2Manager`
 in `internal/ui/auth.go`) and logs an error when that fails. Gitea's init
 container reads it before Gitea starts, so the apps start after the realm
-import.
+import. Gitea exits while its database or Valkey refuses connections, and
+Miniflux while its database does, so `check` applies and waits for those
+first. In a local run where Valkey's image took minutes to pull, Gitea
+waited in `CrashLoopBackOff` and EX-6 stopped the check.
 
 Keycloak, its operator, Open WebUI and the PostgreSQL of Miniflux do not
 meet the Pod Security level `restricted`. Their namespaces enforce
