@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `argocd-cmp/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `argocd-cmp/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -1815,6 +1815,32 @@ resources.
     every pod of the exporter's ReplicaSet
   - Since: #144
 
+## Compile diff
+
+The registry's compile-diff actions compile the base and the merge commit
+of a pull request in the consumer sandbox and post the difference of
+`compiled/` as one comment (kadet-hub/registry
+[`docs/specs/compile-diff.md`](https://github.com/kadet-hub/registry/blob/main/docs/specs/compile-diff.md)).
+`first-platform` is a consumer project with its own
+`.kapitan-sandbox.yaml`, so this repository runs them on it.
+`compile-diff.yml` compiles every pull request that touches
+`first-platform/` with read permissions and uploads the diff;
+`compile-diff-comment.yml` posts it through `workflow_run`, which GitHub
+runs from the default branch only.
+
+- EX-25: A pull request that changes `first-platform/` MUST get one comment
+  with the diff of first-platform's `compiled/` between its base and its
+  merge commit, edited on every push.
+
+  The pull request that adds the two workflows gets no comment, because the
+  comment workflow is not on the default branch yet. Its compile run
+  uploads the artifact the comment would show.
+
+  - Test: manual: the `compile-diff` run of the pull request that added this
+    uploads a `dev.diff` with the replica change; the comment on the first
+    pull request after the merge
+  - Since: #143
+
 ## Talos and the app on top
 
 `talos-apps/` backs the kadet-hub.org blog post on a Talos cluster whose
@@ -1930,6 +1956,7 @@ once when the module is missing, and the job loads it.
 | Path | Content |
 |---|---|
 | `.github/workflows/request-review.yml` | requests `neat-bot` (EX-15) |
+| `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml` | compile diff of `first-platform` on pull requests, pinned to a registry commit (EX-25) |
 | `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3), `advisories` (EX-3f), `ci` (EX-16) |
 | `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins, cert-manager's in `chart-vs-kapitan` included, and leave the rest of its Kapitan side to the chart (EX-3), keep the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
