@@ -1922,6 +1922,8 @@ the ref goes to a temporary refs path. A repository commits `refs/`.
   the ExternalSecret first and the whole target once the Secret
   `vaultwarden` exists, so that Vaultwarden's pod does not wait for it
   with `CreateContainerConfigError` (EX-6).
+  `kapitan refs --reveal` writes the revealed manifests to a pipe into
+  `kubectl apply`, not to a file.
 
   Vaultwarden answers the fourth admin login from one address within 300
   seconds with 429, its defaults `ADMIN_RATELIMIT_MAX_BURST` 3 and
@@ -1929,8 +1931,7 @@ the ref goes to a temporary refs path. A repository commits `refs/`.
   over with the pod. `check` therefore logs in three times before the
   restart and twice after it, and a wrong token is tested as the new token
   before the restart and the old one after it. The first local run logged
-  in a fourth time and got 429. `kapitan refs --reveal` writes
-  the revealed manifests to a pipe into `kubectl apply`, not to a file.
+  in a fourth time and got 429.
 
   The token is stored as plain text. Vaultwarden also accepts an Argon2id
   PHC string, which the recipe's README recommends. Not tested: the PHC
