@@ -1560,7 +1560,7 @@ changes with every commit.
   such as the probe thresholds and `defaultMode: 420`.
 
   - Test: `examples` workflow, job `timoni-vs-kapitan`
-  - Since: #tbd
+  - Since: #142
 
 - EX-22a: `timoni-vs-kapitan/check` MUST fail unless Timoni refuses the
   pinned bundle after a second push moved the tag 1.0.0, and builds the
@@ -1571,7 +1571,7 @@ changes with every commit.
   pinned one and reports that they do not match.
 
   - Test: `examples` workflow, job `timoni-vs-kapitan`
-  - Since: #tbd
+  - Since: #142
 
 - EX-22b: `timoni-vs-kapitan/check` MUST fail unless Timoni rejects the
   prod bundle with `replica: 3` in place of `replicas: 3` for web, and
@@ -1585,7 +1585,7 @@ changes with every commit.
   eviction, a warning that the compile does not fail on.
 
   - Test: `examples` workflow, job `timoni-vs-kapitan`
-  - Since: #tbd
+  - Since: #142
 
 Not tested: signing and verifying the module with cosign, `timoni bundle
 apply` on a cluster, and runtime values in bundles.
@@ -1609,7 +1609,7 @@ directory, so every run downloads the module.
   the same manifests for dev and prod, normalized as in EX-22.
 
   - Test: `examples` workflow, job `kcl-vs-kapitan`
-  - Since: #tbd
+  - Since: #142
 
 - EX-23a: `kcl-vs-kapitan/check` MUST fail unless KCL rejects
   `replica = 3` in place of `replicas = 3` for web in prod, and Kapitan
@@ -1619,7 +1619,7 @@ directory, so every run downloads the module.
   schema 'App'` at the line in `prod.k` and suggests `replicas`.
 
   - Test: `examples` workflow, job `kcl-vs-kapitan`
-  - Since: #tbd
+  - Since: #142
 
 - EX-23b: `kcl-vs-kapitan/check` MUST fail unless kcl, given a wrong
   `sum` for the `k8s` module in `kcl.mod.lock` and an empty module
@@ -1634,7 +1634,7 @@ directory, so every run downloads the module.
   - Test: `examples` workflow, job `kcl-vs-kapitan`; `manual:` with
     `KPM_FEATURE_GATES=SupportModCheck=true` and a wrong sum, `kcl run`
     still rendered on 2026-11-05
-  - Since: #tbd
+  - Since: #142
 
 Not tested: publishing the app as a KCL module with `kcl mod push`, and
 KCL's other outputs than YAML.
