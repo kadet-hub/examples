@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -61,7 +61,8 @@ schedule instead of trusting the state on the publishing day.
   `kubevirt-csi` unless EX-14 and EX-14a hold, `open-webui-searxng`
   unless EX-17 holds, `platform-baseline` unless EX-18 and EX-18a hold,
   `immich-cnpg` unless EX-19 holds, `pihole-powerdns` unless EX-20 holds,
-  `helmfile-vs-kapitan` unless EX-21 holds.
+  `helmfile-vs-kapitan` unless EX-21 holds, `timoni-vs-kapitan` unless
+  EX-22 to EX-22b hold, `kcl-vs-kapitan` unless EX-23 to EX-23b hold.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -149,8 +150,9 @@ schedule instead of trusting the state on the publishing day.
   Application points to a Git server that does not exist. `dev` differs
   from `prod` only in replicas and the PodDisruptionBudget.
 
-  The other examples have no workload of their own to deploy. `same-app`
-  and `config-tools` render the placeholder images `ghcr.io/example/*`
+  The other examples have no workload of their own to deploy. `same-app`,
+  `config-tools`, `timoni-vs-kapitan` and `kcl-vs-kapitan` render the
+  placeholder images `ghcr.io/example/*`
   (EX-3a), `apiserver-dry-run` sends its documents to an API server
   without a kubelet, `talos-machine-config` renders node configs, and
   `verify-oci` and `gvisor-ci` render no manifests. `bitnami` renders a
@@ -189,8 +191,8 @@ schedule instead of trusting the state on the publishing day.
   request. Each pin uses one of four mechanisms:
 
   - Release asset: uv, oras, kubeconform, Helmfile, Pulumi and its
-    Kubernetes plugin, etcd, tk, jb, kind, chainsaw, talosctl, tofu and
-    gVisor are GitHub release assets, and so are the install manifest of
+    Kubernetes plugin, etcd, tk, jb, Timoni, KCL, kind, chainsaw, talosctl,
+    tofu and gVisor are GitHub release assets, and so are the install manifest of
     Flux and the CRDs of cert-manager and Prometheus Operator in
     `chart-vs-kapitan`, and the install manifests of Kyverno, the
     Prometheus Operator, External Secrets and the Grafana Operator and the
@@ -213,7 +215,8 @@ schedule instead of trusting the state on the publishing day.
     is a separate build of the same version. The check scripts pin kind's
     node image and the redis image of EX-7 the same way, `gvisor-ci/run`
     the image of its sandbox rootfs, `platform-baseline/check` the Velero
-    server and AWS plugin images.
+    server and AWS plugin images, `timoni-vs-kapitan/check` the registry
+    image of EX-22.
   - Commit: Argo CD's `install.yaml` and kubeconform's
     `openapi2jsonschema.py` are files in the projects' repositories, not
     release assets. They are fetched from raw.githubusercontent.com at the
@@ -300,6 +303,12 @@ schedule instead of trusting the state on the publishing day.
   When they are equal and the pull request is merged as it is, the CRD pin
   stays one release behind until the next release, because one update
   stays below the group size.
+
+  Two pins are updated by hand, because Renovate has no manager for
+  them: the Kubernetes API schemas that `timoni mod vendor k8s` wrote into
+  the Timoni module of `timoni-vs-kapitan` (EX-22), and the `k8s` module
+  in `kcl-vs-kapitan/kcl/kcl.mod` with its checksum in `kcl.mod.lock`
+  (EX-23).
 
   Kapitan and Python packages are pinned by version through uv or with
   `==` in the scripts' `uv run --with` and `uvx`, which a regex manager
@@ -392,7 +401,8 @@ schedule instead of trusting the state on the publishing day.
   updates the digest of `3.13-slim` and proposes no `3.14-slim`.
 
   Three kinds of reference carry no digest. The `ghcr.io/example/*` images
-  in `same-app` and `config-tools` are placeholders that no registry holds;
+  in `same-app`, `config-tools`, `timoni-vs-kapitan` and `kcl-vs-kapitan`
+  are placeholders that no registry holds;
   Renovate skips them. The documents in `apiserver-dry-run/manifests/` only
   reach kubeconform and an API server without a kubelet, so nothing pulls
   their images. Images that a chart or a release
@@ -513,8 +523,9 @@ schedule instead of trusting the state on the publishing day.
   release workflow identity, pull by digest with `oras` and compile without
   `--fetch`.
 
-  `chart-vs-kapitan/check`, `same-app/check` and `config-tools/check` keep
-  the generators they pulled in `kapitan/lib/`, each with the reference it
+  `chart-vs-kapitan/check`, `same-app/check`, `config-tools/check`,
+  `timoni-vs-kapitan/check` and `kcl-vs-kapitan/check` keep the generators
+  they pulled in `kapitan/lib/`, each with the reference it
   was pulled by. When a pin in `kapitan/inventory/classes/` names another
   digest, or a generator in `kapitan/lib/` has no reference, they verify
   and pull that generator again.
@@ -1606,6 +1617,119 @@ own labels. An empty object list fails the check.
     `renovate/helmfile-vs-kapitan-charts`
   - Since: #140
 
+## Timoni modules and bundles
+
+`timoni-vs-kapitan/` backs the kadet-hub.org blog post that compares
+Timoni with Kapitan. Both sides render the app of `same-app`: namespace
+`shop`, apps `web` and `api`, environments dev and prod. The Kapitan side
+is the inventory of `config-tools`.
+
+The Timoni module `timoni/app` declares the values schema `#Config` and
+one template per kind. The templates are typed with the Kubernetes 1.37
+API schemas that `timoni mod vendor k8s -v 1.37` wrote to `cue.mod/gen`.
+The bundle `timoni/shop.cue` declares the instances `web` and `api` and the
+values both environments share, and `timoni/dev.cue` and `timoni/prod.cue`
+add the values of one environment. The api's `web_url` is built in the
+bundle from the web instance's namespace and Service port, as the
+inventory builds it with interpolation.
+
+The bundle names the module by registry URL and version,
+`oci://localhost:5001/modules/app` at 1.0.0. `check` starts a registry
+from the `registry` image on that port, pushes `timoni/app` with
+`timoni mod push` and pins the bundle to the digest of that push through
+a bundle file it writes. The digest is not committed: `timoni mod push`
+annotates the artifact with the Git commit and its time, so the digest
+changes with every commit.
+
+- EX-22: `timoni-vs-kapitan/check` MUST fail unless Timoni and Kapitan
+  render the same manifests for dev and prod.
+
+  Both renderings are normalized as in `config-tools`: one document per
+  object, sorted, keys sorted. Only the label `app.kubernetes.io/managed-by`
+  is dropped, which the Kapitan generator alone sets. The module sets the
+  Service port's `appProtocol` and the fields the generator writes out,
+  such as the probe thresholds and `defaultMode: 420`.
+
+  - Test: `examples` workflow, job `timoni-vs-kapitan`
+  - Since: #142
+
+- EX-22a: `timoni-vs-kapitan/check` MUST fail unless Timoni refuses the
+  pinned bundle after a second push moved the tag 1.0.0, and builds the
+  second push from the bundle without the pin.
+
+  The second push sets `imagePullPolicy: Always` in the module. Timoni
+  compares the digest the registry returns for the version with the
+  pinned one and reports that they do not match.
+
+  - Test: `examples` workflow, job `timoni-vs-kapitan`
+  - Since: #142
+
+- EX-22b: `timoni-vs-kapitan/check` MUST fail unless Timoni rejects the
+  prod bundle with `replica: 3` in place of `replicas: 3` for web, and
+  Kapitan compiles the same change in its prod target to a Deployment
+  `web` with `replicas: 1`.
+
+  `#Config` is a CUE definition, and a definition is closed, so Timoni
+  reports `replica: field not allowed`. Kapitan 0.36.3 and the kubernetes
+  generator 1.14.0 ignore a key they do not know. The generator falls
+  back to one replica and logs that `pdb_min_available` 2 then allows no
+  eviction, a warning that the compile does not fail on.
+
+  - Test: `examples` workflow, job `timoni-vs-kapitan`
+  - Since: #142
+
+Not tested: signing and verifying the module with cosign, `timoni bundle
+apply` on a cluster, and runtime values in bundles.
+
+## KCL modules
+
+`kcl-vs-kapitan/` backs the kadet-hub.org blog post that compares KCL
+with Kapitan, on the app and the Kapitan inventory of
+`timoni-vs-kapitan`.
+
+`kcl/app/app.k` declares the schema `App` and a function that renders an
+app's objects with the schemas of the `k8s` module. `kcl/shop.k` declares
+`web` and `api` with the values both environments share and prints their
+objects as one YAML stream. `kcl run shop.k prod.k` merges the values of
+`prod.k` into `web` and `api`. `kcl.mod` declares `k8s = "1.36"`, which
+kcl pulls from `ghcr.io/kcl-lang/k8s` by that tag, and `kcl.mod.lock`
+records its checksum. `check` sets `KCL_PKG_PATH` to a temporary
+directory, so every run downloads the module.
+
+- EX-23: `kcl-vs-kapitan/check` MUST fail unless KCL and Kapitan render
+  the same manifests for dev and prod, normalized as in EX-22.
+
+  - Test: `examples` workflow, job `kcl-vs-kapitan`
+  - Since: #142
+
+- EX-23a: `kcl-vs-kapitan/check` MUST fail unless KCL rejects
+  `replica = 3` in place of `replicas = 3` for web in prod, and Kapitan
+  compiles the same change as in EX-22b.
+
+  A KCL schema is closed. kcl reports `Cannot add member 'replica' to
+  schema 'App'` at the line in `prod.k` and suggests `replicas`.
+
+  - Test: `examples` workflow, job `kcl-vs-kapitan`
+  - Since: #142
+
+- EX-23b: `kcl-vs-kapitan/check` MUST fail unless kcl, given a wrong
+  `sum` for the `k8s` module in `kcl.mod.lock` and an empty module
+  directory, downloads the module and renders the same prod manifests.
+
+  The post states that the lock file records the checksum and that kcl
+  0.13.3 does not compare it, and this check fails once that changes.
+  kcl 0.13.3 builds on kpm 0.13.2, which checks a dependency's sum only
+  behind the feature gate `SupportModCheck` (`KPM_FEATURE_GATES`), off by
+  default.
+
+  - Test: `examples` workflow, job `kcl-vs-kapitan`; `manual:` with
+    `KPM_FEATURE_GATES=SupportModCheck=true` and a wrong sum, `kcl run`
+    still rendered on 2026-11-05
+  - Since: #142
+
+Not tested: publishing the app as a KCL module with `kcl mod push`, and
+KCL's other outputs than YAML.
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -1644,4 +1768,6 @@ own labels. An empty object list fails the check.
 | `immich-cnpg/` | One Kapitan project (targets `cnpg`, `immich`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-19) |
 | `pihole-powerdns/` | One Kapitan project (targets `dns`, `pihole`) on the omegaconf backend, the zone in `inventory/classes/home.yml`, the three recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-20) |
 | `helmfile-vs-kapitan/` | `helmfile/` (releases, environments, values templates) and `kapitan/` (targets `dev`, `prod`, classes `common`, `podinfo`, `valkey`), both pinning podinfo and Valkey; `check` (EX-21) |
+| `timoni-vs-kapitan/` | The Timoni module `timoni/app` with its vendored Kubernetes schemas, the bundle `timoni/shop.cue` with `dev.cue` and `prod.cue`, the Kapitan project of `config-tools`; `check` (EX-22 to EX-22b) |
+| `kcl-vs-kapitan/` | The KCL module `kcl/` (`app/app.k`, `shop.k`, `dev.k`, `prod.k`, `kcl.mod`, `kcl.mod.lock`), the Kapitan project of `config-tools`; `check` (EX-23 to EX-23b) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
