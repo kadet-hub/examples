@@ -240,9 +240,8 @@ schedule instead of trusting the state on the publishing day.
 
   Pins in Kapitan inventories and Kubernetes manifests are updated with
   `datasource=docker` by regex managers: generators through the org preset;
-  recipes in a fetch inventory (`open-webui-searxng`, `platform-baseline`,
-  `immich-cnpg`, `pihole-powerdns`, `argocd-cmp`) by a manager of their own, because the preset reads `**/inventory/**` only and allows no
-  `/` in a name;
+  recipes in the fetch inventories (`**/fetch/**/*.yml`) through the org
+  preset as well, which reads them since kadet-hub/renovate-config#21;
   charts by version and the digest of their OCI artifact (podinfo in
   `helm-mutate`, cert-manager and trust-manager in `cert-manager-mutate`,
   podinfo and Valkey in the classes and in `helmfile/helmfile.yaml` of
@@ -260,9 +259,10 @@ schedule instead of trusting the state on the publishing day.
   trust-manager classes of `cert-manager-mutate`, so that a chart's CRDs
   never run with another operator version; kind and its
   node image; podinfo's chart and image; `@pulumi/kubernetes` and its
-  plugin; the four recipes of `open-webui-searxng` and those of
-  `immich-cnpg` and `pihole-powerdns`, whose includes must be pinned at
-  the digests the index lists (EX-17, EX-19, EX-20); the velero CLI and the
+  plugin; the recipes of `immich-cnpg` and `pihole-powerdns`, which pin
+  their includes, and those must stay at the digests the index lists
+  (EX-19, EX-20); `open-webui` and `searxng` of `open-webui-searxng`,
+  which both include valkey (EX-17); the velero CLI and the
   server image `platform-baseline/check` installs with it (EX-18); the
   charts of both sides of `helmfile-vs-kapitan`, outside the podinfo group
   (EX-21).
@@ -370,6 +370,7 @@ schedule instead of trusting the state on the publishing day.
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
     cryptography override: #86; recipes in a fetch inventory: #132;
+    recipe pins through the org preset: #154;
     `platform-baseline`: #135; `helmfile-vs-kapitan`: #140
 
 - EX-3h: Renovate MUST merge its own pull request once every check on it
@@ -1182,10 +1183,13 @@ chat assistant with web search, put together from published recipes of
 kadet-hub/recipes. Open WebUI is the chat interface and API, Ollama runs
 the model on the CPU and SearXNG is Open WebUI's web search.
 
-The fetch inventory `fetch/targets/recipes.yml` pins `open-webui`,
-`ollama`, `searxng` and `valkey` by version and digest. `open-webui`
-includes `ollama` and `valkey`, `searxng` includes `valkey`, both at the
-digest of valkey 1.0.2, so the two share one
+The fetch inventory `fetch/targets/recipes.yml` pins `open-webui` and
+`searxng` by version and digest, the recipes the targets include, as the
+registry's `docs/consumers.md` asks since kadet-hub/registry#536. `check`
+adds the recipes their index records list under `includes`, at the
+versions and digests listed there, as the consumer workflow does.
+`open-webui` includes `ollama` and `valkey`, `searxng` includes `valkey`,
+both at the digest of valkey 1.0.2, so the two share one
 `inventory/classes/recipes/valkey`. `check` does not compile the fetch
 inventory. It verifies and pulls each recipe as "Verifying a recipe by
 hand" in the registry's `docs/consumers.md` describes, and each generator
@@ -1205,10 +1209,11 @@ SearXNG, Open WebUI and Ollama run as root, so both namespaces enforce the
 Pod Security level `baseline`.
 
 - EX-17: `open-webui-searxng/check` MUST fail unless every recipe of the
-  fetch inventory is listed in the attested index at its version and
-  digest, is not yanked and has a valid attestation, every recipe it
-  includes is pinned at the digest its record lists, every generator the
-  recipes pin passes EX-4, and, deployed to a new kind cluster, Open WebUI's
+  fetch inventory, and every recipe its record lists under `includes` at
+  the version and digest listed there, is listed in the attested index at
+  that version and digest, is not yanked and has a valid attestation, no
+  recipe is wanted at two digests, the recipes come to four, every
+  generator the recipes pin passes EX-4, and, deployed to a new kind cluster, Open WebUI's
   web search returns at least one result, the same search fails once
   SearXNG is scaled to zero, and `smollm:135m`, pulled into Ollama through
   Open WebUI, answers a chat completion through Open WebUI.
@@ -1222,11 +1227,13 @@ Pod Security level `baseline`.
   `SEARXNG_QUERY_URL`. SearXNG is the only search engine Open WebUI is
   configured with, so the results of the first call come from SearXNG.
 
-  Neither SearXNG nor Open WebUI has a readiness probe, so their rollouts
-  end before they listen. `check` waits for SearXNG's `/healthz` and Open
-  WebUI's `/health` through the API server, and starts the port-forward to
-  Open WebUI only then, because a port-forward ends at the first
-  connection the pod refuses. That ended the first run of #132.
+  searxng 1.0.1 has a readiness probe on `/healthz` (RCP-185 in
+  kadet-hub/recipes), so the rollout of SearXNG ends once it answers.
+  open-webui 1.0.0 has none, so its rollout ends before Open WebUI
+  listens. `check` waits for Open WebUI's `/health` through the API server
+  and starts the port-forward only then, because a port-forward ends at
+  the first connection the pod refuses. That ended the first run of #132.
+  kadet-hub/recipes#109 adds the probe to open-webui.
 
   The results, and the pages Open WebUI loads for them, come from outside
   the cluster, so this step can fail without a change to the repository.
@@ -1240,10 +1247,11 @@ Pod Security level `baseline`.
   so the job logs show how often that happens.
 
   - Test: `examples` workflow, job `open-webui-searxng`; `manual:` with
-    valkey set back to 1.0.1 in the fetch inventory, Renovate 44.194.0
-    (`--platform=local --dry-run=lookup`, 2026-11-04) proposed 1.0.2 at
-    its digest on the branch `renovate/open-webui-searxng-recipes`
-  - Since: #132
+    searxng set back to 1.0.0 in the fetch inventory, Renovate 44.194.0
+    (`--platform=local --dry-run=lookup`, 2026-11-05) with the org preset
+    alone proposed 1.0.1 at its digest on the branch
+    `renovate/open-webui-searxng-recipes`
+  - Since: #132; includes from the index and searxng 1.0.1: #154
 
 ## Platform baseline
 
@@ -1841,6 +1849,222 @@ runs from the default branch only.
     pull request after the merge
   - Since: #143
 
+## Policy checks
+
+`policy-checks/` backs the kadet-hub.org blog post on policy checks of
+Kapitan's compiled output in a pull request, compared with the same
+policies at admission. One Kapitan project renders podinfo with the
+kubernetes generator in two targets. `compliant` pins the image by tag and
+digest, sets requests and a memory limit, uses the generator's
+`security_profile: restricted` and gets a PodDisruptionBudget.
+`noncompliant` uses the tag `latest`, sets no resources, runs the
+container privileged and has no PodDisruptionBudget. Its image carries no
+digest, unlike EX-3a asks, because nothing pulls it: the cluster sees it
+in a server-side dry run only.
+
+The Kyverno policies come from kyverno/policies, which publishes no
+release or tag, only a release branch per Kyverno minor version. `check`
+downloads the repository's archive at the commit `KYVERNO_POLICIES_COMMIT`,
+the head of `release-1.19` when it was pinned, and uses the ValidatingPolicy
+versions: `best-practices-vpol/disallow-latest-tag`,
+`best-practices-vpol/require-pod-requests-limits` and every policy under
+`pod-security-vpol/baseline` and `pod-security-vpol/restricted`, 18 files at
+that commit. They ship with `validationActions: [Audit]`. The ClusterPolicy
+versions in `best-practices/` and `pod-security/` were not chosen, because
+the Kyverno CLI 1.19.2 warns that `kyverno.io/v1 ClusterPolicy is
+deprecated and will be removed in a future release`.
+
+Renovate moves the commit along the branch with `datasource=github-digest`
+through the `_COMMIT` match string of EX-3, and never to another branch.
+The pull request that moves Kyverno to a new minor version has to move the
+branch in the comment of the pin. `check` fails until it does, and when the
+CLI version the workflow installs differs from the `install.yaml` version
+in `check`.
+
+conftest runs `policy/compiled.rego` with `--combine`, so one evaluation
+reads every file of a target. One rule requires every image to be pinned
+by digest. The other requires, for every Deployment with more than one
+replica, a PodDisruptionBudget in its namespace whose selector matches the
+Deployment's pod labels, which takes two files at once.
+
+- EX-27: `policy-checks/check` MUST fail unless `kapitan compile` exits 0
+  for both targets and logs the generator's warnings for `noncompliant`'s
+  tag and resources, and:
+
+  - `kyverno apply` with the policies and `--resource` for every file of
+    `compliant` exits 0;
+  - the same for `noncompliant` exits non-zero and reports
+    `disallow-latest-tag`, `require-requests-limits` and
+    `disallow-privileged-containers` for the Deployment `web`, and not
+    `restrict-seccomp-strict`;
+  - `kyverno apply` with `--resource=compiled` applies the policies to 0
+    resources and exits 0;
+  - `conftest test --combine` with `policy/` exits 0 for
+    `compiled/compliant`, and non-zero for `compiled/noncompliant` with the
+    findings for the image digest and the PodDisruptionBudget.
+
+  The CLI counts the violation of a policy in `Audit` as a failure unless
+  `--audit-warn` is set. Kyverno derives rules for Deployments and the
+  other pod controllers from the Pod policies, so the CLI judges the
+  Deployment's pod template. `--resource` reads the files of a directory,
+  not those of its subdirectories, and Kapitan writes a target's objects
+  into a subdirectory per namespace. `check` therefore names every file.
+
+  `restrict-seccomp-strict` at the pinned commit reads a missing
+  `seccompProfile` as `RuntimeDefault`, so it passes `noncompliant`, whose
+  pod sets no seccomp profile. The Pod Security Standards' restricted
+  profile forbids the absence of a profile. The post says so, and `check`
+  fails once the policy changes.
+
+  - Test: `examples` workflow, job `policy-checks`; `manual:` with the
+    resources removed from `compliant`, `check` failed on
+    `require-requests-limits`, and with `privileged: false` in
+    `noncompliant`, it failed because Kyverno no longer reported
+    `disallow-privileged-containers`; `manual:` the CLI 1.19.2 printed the
+    ClusterPolicy deprecation warning for
+    `best-practices/disallow-latest-tag` (2026-11-05); `manual:` Renovate
+    44.216.6 (`--platform=local --dry-run=lookup`, 2026-11-05) proposed
+    282e77f on `renovate/kyverno-policies-digest` with the policies pin set
+    back to 790d5e5, and v1.19.2 and v0.71.1 with the sha256 of their
+    linux x86_64 archives with the CLI at v1.19.1 and conftest at v0.71.0
+  - Since: #148
+
+- EX-27a: `policy-checks/check` MUST fail unless, in a new kind cluster
+  with Kyverno from the `install.yaml` of the CLI's version and the same
+  policies:
+
+  - a server-side dry run of `noncompliant`'s Deployment is rejected with
+    the three policies of EX-27 once every policy's `validationActions` is
+    `[Deny]`, and admitted after the policies are applied again as
+    shipped;
+  - `compliant`'s objects apply under `[Deny]` and its Deployment becomes
+    available (EX-12);
+  - `kubectl run --privileged` of `podinfo:latest` is rejected with
+    `disallow-privileged-containers`.
+
+  The dry run takes the Deployment through admission without creating it,
+  so nothing pulls the `latest` image. Kyverno takes a changed
+  `validationActions` within seconds, and `check` repeats the dry run for
+  up to a minute until the result changes. The denied run comes first, so
+  the admitted one shows Kyverno auditing and not a webhook that is not
+  configured yet.
+
+  Not tested: the workflow template `.github/workflows/policy.yml`, which
+  needs a repository whose root the consumer workflow compiles; whether the
+  consumer workflow's output rules (registry SEC-12) stop `noncompliant` on
+  its privileged container before the policy job runs; Kyverno's policy
+  reports; Kubernetes' built-in Pod Security Admission.
+
+  Related: EX-4, EX-6, EX-12
+
+  - Test: `examples` workflow, job `policy-checks`
+  - Since: #148
+
+## Kapitan refs and External Secrets
+
+`secrets-end-to-end/` backs the kadet-hub.org blog post on which secrets of
+an app belong in Kapitan refs and which in External Secrets. Vaultwarden,
+from the recipe `vaultwarden`, takes its admin token from Vault through an
+ExternalSecret. External Secrets logs in to Vault with an AppRole, and the
+AppRole's secret ID is the one secret the inventory carries, as a gpg ref.
+
+The secret ID is a bootstrap secret. External Secrets needs it before it
+can read anything from Vault, so it cannot come from Vault through
+External Secrets. The admin token is a runtime secret. Whoever runs Vault
+changes it, and the change reaches the cluster without a commit or a
+compile.
+
+The target `vaultwarden` renders the Secret `vault-approle` with the ref
+`?{gpg:vaultwarden/vault-secret-id}` through the kubernetes generator, and
+the SecretStore `vault` and the ExternalSecret `vaultwarden` through the
+external-secrets generator. The recipe renders a Secret `vaultwarden` with
+`ADMIN_TOKEN` from the parameter `applications.vaultwarden.admin_token`.
+The target drops that file with the `remove` input, and the ExternalSecret
+writes a Secret of the same name with the same key, which the StatefulSet
+reads unchanged. The recipe still requires the parameter, so the target
+sets a placeholder.
+
+The generators render custom resources only. `check` installs External
+Secrets from its release manifest `external-secrets.yaml`, pinned by
+version and sha256, as `platform-baseline/check` does. `vault-server.yaml`
+stands in for a Vault outside the cluster. It runs Vault's dev server,
+which keeps everything in memory, with the root token from a Secret that
+`check` creates with a random value, and `-dev-no-store-token`, so the
+server writes no token file. Its Service is a ClusterIP Service, and
+`check` runs the vault CLI in the server's container with `kubectl exec`.
+No Vault address leaves the cluster, and the Vault environment of the
+machine that runs `check` plays no part. Vault is licensed BUSL-1.1.
+
+`check` sets up Vault as its admin would. The dev server mounts KV version
+2 at `secret/`. The admin token goes to `secret/vaultwarden`, a policy
+reads only that path, and the AppRole `vaultwarden` gets the policy and the
+role ID `vaultwarden`, which the SecretStore names. Vault issues the secret
+ID. `check` writes it with `kapitan refs --write
+gpg:vaultwarden/vault-secret-id -t vaultwarden`, which encrypts it for the
+recipient the target lists under `kapitan.secrets.gpg.recipients`. The key
+is created by `check` in a keyring of its own and exists for one run, so
+the ref goes to a temporary refs path. A repository commits `refs/`.
+
+- EX-26: `secrets-end-to-end/check` MUST fail unless the recipe and the
+  generators pass the checks of EX-17 and EX-4, and:
+
+  - `kapitan compile` without `--reveal` and with an empty gpg keyring
+    succeeds, and its output holds the ref's tag in the Secret
+    `vault-approle`, neither the secret ID nor its base64 encoding, and no
+    Secret `vaultwarden`;
+  - `kapitan refs --reveal` of the Secret `vault-approle` fails with the
+    empty keyring;
+  - deployed to a new kind cluster with that Secret revealed by the run's
+    key, External Secrets reports the SecretStore and the ExternalSecret
+    ready and writes the admin token from Vault into the Secret
+    `vaultwarden`, and Vaultwarden's admin page accepts that token;
+  - after a new token is written to Vault, the Secret holds it within 60
+    seconds, the running Vaultwarden still accepts the old token and
+    refuses the new one, and after `kubectl rollout restart` it accepts
+    the new token and refuses the old one.
+
+  The compile shows for the gpg backend what kapicorp/kapitan#1646 adds
+  to Kapitan's documentation. Without `--reveal`, Kapitan reads existing
+  ref files and writes their tags, so the compile needs no key. Writing
+  the ref needed the recipient's public key, and the reveal needs the
+  private key. The other backends are not tested here. #1646 names what
+  creating a ref needs for them: a Vault token, or cloud KMS credentials.
+
+  Vaultwarden reads `ADMIN_TOKEN` from its environment, which the kubelet
+  sets from the Secret when it starts the container. A changed Secret
+  reaches Vaultwarden with the next start only. `check` asserts that the
+  old token works until the restart, because the post shows it. Settings
+  saved on the admin page go to `config.json` and take precedence over the
+  environment, as the recipe's README says. `check` saves none.
+
+  `check` applies the revealed Secret `vault-approle`, the SecretStore and
+  the ExternalSecret first and the whole target once the Secret
+  `vaultwarden` exists, so that Vaultwarden's pod does not wait for it
+  with `CreateContainerConfigError` (EX-6).
+  `kapitan refs --reveal` writes the revealed manifests to a pipe into
+  `kubectl apply`, not to a file.
+
+  Vaultwarden answers the fourth admin login from one address within 300
+  seconds with 429, its defaults `ADMIN_RATELIMIT_MAX_BURST` 3 and
+  `ADMIN_RATELIMIT_SECONDS` 300. The counter is kept in memory and starts
+  over with the pod. `check` therefore logs in three times before the
+  restart and twice after it, and a wrong token is tested as the new token
+  before the restart and the old one after it. The first local run logged
+  in a fourth time and got 429.
+
+  The token is stored as plain text. Vaultwarden also accepts an Argon2id
+  PHC string, which the recipe's README recommends. Not tested: the PHC
+  string, Vault's Kubernetes auth method, which needs no secret in the
+  inventory, rotating the secret ID, a reveal in Argo CD, ref backends
+  other than gpg, and a Vault outside the cluster behind TLS.
+
+  Related: EX-4, EX-6, EX-12, EX-17
+
+  - Test: `examples` workflow, job `secrets-end-to-end`; `manual:` with
+    `refresh_interval: 1h` in the target, a local run on 2026-11-05 timed
+    out waiting for the new token in the Secret `vaultwarden`
+  - Since: #146
+
 ## One inventory, three environments, two clusters
 
 `multi-env/` backs the kadet-hub.org blog post on one app in dev, stage
@@ -1983,13 +2207,15 @@ enforce the Pod Security level `baseline`.
 | `chart-vs-kapitan/` | One Kapitan project on the omegaconf backend, one target per chart, chart values in `values/`, CRDs and jsonnet libraries fetched by `check` into `kapitan/vendor/`; `check <chart>` (EX-13, EX-13a) |
 | `chart-vs-kapitan/kapitan/components/kube-prometheus-stack.jsonnet`, `chart-vs-kapitan/kapitan/jsonnetfile.json`, `chart-vs-kapitan/kapitan/jsonnetfile.lock.json` | Rules and dashboards of kube-prometheus-stack and the pins of their sources (EX-13a) |
 | `kubevirt-csi/` | One Kapitan project (targets `infra`, `tenant`) with the kubevirt generator pinned in `inventory/classes/generators.yml`, `infra.yaml`, the tenant workload in `tests/pvc.yaml`, the negative case's claim in `tests/static-pvc.yaml`; `check` (EX-14, EX-14a) |
-| `open-webui-searxng/` | One Kapitan project (targets `open-webui`, `searxng`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-17) |
+| `open-webui-searxng/` | One Kapitan project (targets `open-webui`, `searxng`) on the omegaconf backend, `open-webui` and `searxng` pinned in the fetch inventory `fetch/targets/recipes.yml`, the recipes they include taken from the index; `check` (EX-17) |
 | `platform-baseline/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `kyverno`, `monitoring`, `external-secrets`, `velero`, `argocd`, `podinfo`), the shared class `inventory/classes/platform.yml`, the cert-manager recipe pinned in `fetch/targets/recipes.yml`, the stand-ins `git-server.yaml` and `s3-server.yaml`; `check` (EX-18, EX-18a) |
 | `immich-cnpg/` | One Kapitan project (targets `cnpg`, `immich`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-19) |
 | `pihole-powerdns/` | One Kapitan project (targets `dns`, `pihole`) on the omegaconf backend, the zone in `inventory/classes/home.yml`, the three recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-20) |
 | `helmfile-vs-kapitan/` | `helmfile/` (releases, environments, values templates) and `kapitan/` (targets `dev`, `prod`, classes `common`, `podinfo`, `valkey`), both pinning podinfo and Valkey; `check` (EX-21) |
 | `timoni-vs-kapitan/` | The Timoni module `timoni/app` with its vendored Kubernetes schemas, the bundle `timoni/shop.cue` with `dev.cue` and `prod.cue`, the Kapitan project of `config-tools`; `check` (EX-22 to EX-22b) |
 | `kcl-vs-kapitan/` | The KCL module `kcl/` (`app/app.k`, `shop.k`, `dev.k`, `prod.k`, `kcl.mod`, `kcl.mod.lock`), the Kapitan project of `config-tools`; `check` (EX-23 to EX-23b) |
-| `multi-env/` | One Kapitan project on the omegaconf backend (targets `dev`, `stage`, `prod`; classes `common`, `env/*`, `cluster/*`), the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, `guard` with `guard-allowed.txt`, `storage-class.yaml`; `check` (EX-28 to EX-28b) |
 | `argocd-cmp/` | One Kapitan project (target `blackbox-exporter`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the plugin's ConfigMap `kapitan-plugin.yaml`, the sidecar in `repo-server-patch.yaml`, the egress policy `repo-server-egress.yaml`, `application.yaml`, `git-server.yaml`; `check` (EX-24) |
+| `policy-checks/` | One Kapitan project (targets `compliant`, `noncompliant`) with the kubernetes generator pinned in `inventory/classes/web.yml`, the conftest rules in `policy/compiled.rego`, the pull request workflow template `.github/workflows/policy.yml`; `check` (EX-27, EX-27a) |
+| `secrets-end-to-end/` | One Kapitan project (target `vaultwarden`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the gpg recipient, the Secret with the ref, the SecretStore and the ExternalSecret in the target, the Vault dev server `vault-server.yaml`; `check` (EX-26) |
+| `multi-env/` | One Kapitan project on the omegaconf backend (targets `dev`, `stage`, `prod`; classes `common`, `env/*`, `cluster/*`), the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, `guard` with `guard-allowed.txt`, `storage-class.yaml`; `check` (EX-28 to EX-28b) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
