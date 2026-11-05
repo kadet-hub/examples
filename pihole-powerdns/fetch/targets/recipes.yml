@@ -1,0 +1,14 @@
+# The recipes and the recipe they include, at the digests the index lists.
+# external-dns-powerdns 1.0.0 includes powerdns 1.0.0 at this digest.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/pihole:1.0.0@sha256:09ded1b7816cc669ecc45b539fc349c9cace2a53b1c23962561c7b3c3589746c
+        output_path: inventory/classes/recipes/pihole
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/external-dns-powerdns:1.0.0@sha256:5e497b87ee50d7027666310355f5e12bb850c0d67f7e6a1d5ec2249843219fb3
+        output_path: inventory/classes/recipes/external-dns-powerdns
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/powerdns:1.0.0@sha256:5330189e01e87845dd0dbaae1270929b566f1e62f0591502b07d69ed68e92fda
+        output_path: inventory/classes/recipes/powerdns

@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+# Home DNS from the published recipes pihole, external-dns-powerdns and
+# powerdns (EX-20). Verifies the latest signed index, the recipes pinned in
+# fetch/targets/recipes.yml and the generators they pin, pulls all of them by
+# digest, compiles the targets dns and pihole and deploys them in that order
+# to a new kind cluster (EX-12). Exits 0 only if, from a client pod that asks
+# Pi-hole, the name external-dns wrote into the home zone on PowerDNS
+# resolves to its Service, a missing name in the zone gets NXDOMAIN with the
+# zone's SOA, and a domain denied through Pi-hole's API resolves to 0.0.0.0.
+# Set KEEP=1 to keep the cluster.
+# Needs gh (authenticated), jq, oras, uv, kind, kubectl, docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+min_serial=109
+tmp=$(mktemp -d)
+cluster=dnsstack-pihole-powerdns
+export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
+cleanup() {
+  kill "${watcher:-}" 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf lib compiled inventory/classes/recipes
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+
+# EX-4: index signature, digests and attestations, then pull by digest, as
+# "Verifying a recipe by hand" in the registry's docs/consumers.md does it.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+if ((serial < min_serial)); then
+  echo "index serial $serial is lower than $min_serial" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+
+pins=$(sed -nE 's|^ *source: ghcr\.io/kadet-hub/recipes/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  fetch/targets/recipes.yml)
+while read -r name version digest; do
+  record=$(jq -ec --arg n "$name" --arg v "$version" \
+    '.recipes[$n][$v] | select(.yanked == null)' "$tmp/index.json") || {
+    echo "recipe $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  want=$(jq -r .digest <<<"$record")
+  if [[ $want != "$digest" ]]; then
+    echo "recipe $name $version: index has $want, fetch/targets/recipes.yml pins $digest" >&2
+    exit 1
+  fi
+  # An included recipe shares inventory/classes/recipes/ and must be pinned at
+  # the digest the record lists.
+  while read -r iname idigest; do
+    grep -qE "^$iname [^ ]+ $idigest$" <<<"$pins" || {
+      echo "recipe $name $version includes $iname at $idigest, which fetch/targets/recipes.yml does not pin" >&2
+      exit 1
+    }
+  done < <(jq -r '.includes[] | "\(.name) \(.digest)"' <<<"$record")
+  gh attestation verify "oci://ghcr.io/kadet-hub/recipes/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/recipes/$name" "ghcr.io/kadet-hub/recipes/$name@$digest" >/dev/null
+  mkdir -p "inventory/classes/recipes/$name"
+  tar -xf "$tmp/recipes/$name/$name.tar" -C "inventory/classes/recipes/$name" --no-same-owner
+  echo "recipe $name $version verified and unpacked"
+done <<<"$pins"
+if (($(wc -l <<<"$pins") != 3)); then
+  echo "expected 3 recipes in fetch/targets/recipes.yml, found $(wc -l <<<"$pins")" >&2
+  exit 1
+fi
+# The generators the recipes pin, which Kapitan would otherwise fetch unverified.
+generators=$(cat inventory/classes/recipes/*/*.yml |
+  sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' | sort -u)
+[[ -n $generators ]] || { echo "the recipes pin no generator" >&2; exit 1; }
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "generator $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "generator $name $version: index has $want, a recipe pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/generators/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/generators/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "generator $name $version verified and unpacked"
+done <<<"$generators"
+
+# The first compile creates the refs with random values in the temporary
+# directory, the second writes them into the Secrets.
+compile() {
+  "${py[@]}" kapitan compile --refs-path "$tmp/refs" "$@" >"$tmp/compile.log" 2>&1 ||
+    { cat "$tmp/compile.log"; exit 1; }
+}
+compile
+compile --reveal
+echo "compiled $(find compiled/dns -type f | wc -l) files for dns, $(find compiled/pihole -type f | wc -l) for pihole"
+
+# EX-6: what a broken or not ready pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop the rollout status as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$ # check's children: the command it waits for and this watch
+    return
+  done
+}
+# EX-6: a kubectl rollout status or wait that prints the namespace on a timeout.
+install_wait() { # namespace kubectl-arguments
+  local ns=$1 s
+  shift
+  kubectl -n "$ns" "$@" && return
+  s=$?
+  kubectl -n "$ns" get events --sort-by=.lastTimestamp >&2 || true
+  kubectl -n "$ns" get pods -o wide >&2 || true
+  # shellcheck disable=SC2046 # one pod name per word
+  describe_pods "$ns" $(kubectl -n "$ns" get pods -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded" and (any(.status.conditions[]?;
+        .type == "Ready" and .status == "True") | not)) | .metadata.name')
+  return "$s"
+}
+
+# EX-12: dns first, so that the Service powerdns exists when FTL resolves its
+# name at start. PowerDNS and external-dns run under the Pod Security level
+# restricted, Pi-hole under baseline, because its image starts as root.
+# The node image of the workflow's kind release; Renovate updates both together.
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
+watch_pods &
+watcher=$!
+start=$(date +%s)
+kubectl create namespace dns >/dev/null
+kubectl label namespace dns pod-security.kubernetes.io/enforce=restricted >/dev/null
+kubectl apply -R -f compiled/dns >/dev/null
+install_wait dns rollout status statefulset/powerdns --timeout=300s
+install_wait dns rollout status deploy/external-dns-powerdns --timeout=300s
+kubectl create namespace pihole >/dev/null
+kubectl label namespace pihole pod-security.kubernetes.io/enforce=baseline >/dev/null
+kubectl apply -R -f compiled/pihole >/dev/null
+install_wait pihole rollout status statefulset/pihole --timeout=300s
+echo "deployed in $(($(date +%s) - start))s"
+
+# The client is a pod of Pi-hole's image, which brings dig and curl.
+image=$(kubectl -n pihole get statefulset pihole -o jsonpath='{.spec.template.spec.containers[0].image}')
+kubectl run client --image="$image" --restart=Never --command -- sleep 3600 >/dev/null
+install_wait default wait pod/client --for=condition=Ready --timeout=120s >/dev/null
+run() { kubectl exec -i client -- "$@"; }
+pihole=pihole.pihole.svc.cluster.local
+ask() { run dig "@$pihole" +tries=1 +time=5 "$@"; }
+
+zone=$(sed -nE 's/^ *zone: (.+)$/\1/p' inventory/classes/home.yml)
+name=pihole.$zone
+ip=$(kubectl -n pihole get service pihole -o jsonpath='{.spec.clusterIP}')
+
+# external-dns syncs every 10 seconds (--interval=10s).
+for _ in $(seq 30); do
+  out=$(run dig @powerdns.dns.svc.cluster.local +short +tries=1 +time=5 "$name" A)
+  [[ $out == "$ip" ]] && break
+  sleep 2
+done
+[[ $out == "$ip" ]] || { echo "PowerDNS answers $name with '$out', not $ip" >&2; exit 1; }
+echo "external-dns wrote $name A $ip into $zone on PowerDNS"
+
+# Pi-hole forwards the zone to PowerDNS (misc.dnsmasq_lines in the target).
+for proto in +notcp +tcp; do
+  out=$(ask "$proto" +short "$name" A)
+  [[ $out == "$ip" ]] || { echo "Pi-hole answers $name over $proto with '$out', not $ip" >&2; exit 1; }
+done
+echo "Pi-hole answers $name with $ip over UDP and TCP"
+
+# A missing name gets NXDOMAIN with the zone's SOA from PowerDNS, whose
+# contact hostmaster.<zone> no other resolver on the way has.
+out=$(ask +noall +comments +authority "missing.$zone" A)
+soa=$(awk -v z="$zone." '$1 == z && $4 == "SOA" && $6 == "hostmaster." z' <<<"$out")
+if ! grep -q 'status: NXDOMAIN' <<<"$out" || [[ -z $soa ]]; then
+  echo "Pi-hole answers missing.$zone with: $out" >&2
+  exit 1
+fi
+echo "Pi-hole answers missing.$zone with NXDOMAIN and $(tr -s '[:space:]' ' ' <<<"$soa")"
+
+# A name under the reserved TLD .example, NXDOMAIN until it is denied, and
+# independent of the blocklist that gravity downloads at start.
+domain=ads.example
+out=$(ask +noall +comments "$domain" A)
+grep -q 'status: NXDOMAIN' <<<"$out" || { echo "$domain before the deny entry: $out" >&2; exit 1; }
+password=$(kubectl -n pihole get secret pihole -o jsonpath='{.data.FTLCONF_webserver_api_password}' | base64 -d)
+sid=$(jq -nc --arg p "$password" '{password: $p}' | run curl -fsS --data @- "http://$pihole/api/auth" |
+  jq -er '.session | select(.valid) | .sid')
+run curl -fsS -o /dev/null -H "X-FTL-SID: $sid" --data "{\"domain\": \"$domain\"}" "http://$pihole/api/domains/deny/exact"
+# FTL answers the API before it reloads its lists, so ask again for up to 20
+# seconds, as the pihole recipe's smoke test does.
+for proto in +notcp +tcp; do
+  for _ in $(seq 10); do
+    out=$(ask "$proto" +short "$domain" A)
+    [[ $out == 0.0.0.0 ]] && break
+    sleep 2
+  done
+  [[ $out == 0.0.0.0 ]] || { echo "$domain over $proto after the deny entry: $out" >&2; exit 1; }
+done
+run curl -fsS -o /dev/null -X DELETE -H "X-FTL-SID: $sid" "http://$pihole/api/auth"
+echo "Pi-hole answers $domain with NXDOMAIN, and with 0.0.0.0 over UDP and TCP once it is denied"
+echo "pihole-powerdns: the home zone through Pi-hole and the denied domain passed"

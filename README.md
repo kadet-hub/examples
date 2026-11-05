@@ -22,6 +22,7 @@ longer holds.
 | [open-webui-searxng](open-webui-searxng/) | https://kadet-hub.org/blog/open-webui-searxng-kubernetes/ | `open-webui-searxng/check` |
 | [platform-baseline](platform-baseline/) | https://kadet-hub.org/blog/kubernetes-cluster-add-ons/ | `platform-baseline/check` |
 | [immich-cnpg](immich-cnpg/) | https://kadet-hub.org/blog/immich-kubernetes/ | `immich-cnpg/check` |
+| [pihole-powerdns](pihole-powerdns/) | https://kadet-hub.org/blog/pihole-powerdns-kubernetes/ | `pihole-powerdns/check` |
 
 ## Running
 
