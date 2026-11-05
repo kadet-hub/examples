@@ -12,8 +12,8 @@ Written up at https://kadet-hub.org/blog/timoni-vs-kapitan/.
 
 The bundle names the module as `oci://localhost:5001/modules/app` at
 version 1.0.0. `check` starts a registry there, pushes `timoni/app` with
-`timoni mod push` and adds the digest of that push to the bundle, so the
-bundle only builds while `check` runs.
+`timoni mod push` and adds the digest of that push to the bundle. Without
+a registry that serves the module there, the bundle does not build.
 
 ## Running
 
