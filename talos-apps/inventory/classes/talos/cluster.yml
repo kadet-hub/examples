@@ -1,0 +1,34 @@
+# What every node shares. The pod and Service networks come from the class
+# cluster.
+parameters:
+  generators:
+    talos:
+      base:
+        machine:
+          install:
+            disk: /dev/sda
+          network:
+            interfaces:
+              eth0:
+                dhcp: false
+                routes:
+                  0.0.0.0/0:
+                    gateway: 192.0.2.1
+          # Talos' default, which container mode requires.
+          features:
+            hostDNS:
+              enabled: true
+              forwardKubeDNSToHost: true
+        cluster:
+          clusterName: homelab
+          controlPlane:
+            endpoint: https://192.0.2.11:6443
+          network:
+            podSubnets: ["${cluster.pod_cidr}"]
+            serviceSubnets: ["${cluster.service_cidr}"]
+            cni:
+              name: flannel
+              # kube-network-policies next to flannel, which enforces no
+              # NetworkPolicy on its own.
+              flannel:
+                kubeNetworkPoliciesEnabled: true

@@ -1,0 +1,13 @@
+# Machine configs for cp-1 and worker-1 in compiled/talos/talos/.
+classes:
+  - generators
+  - cluster
+  - talos.secrets
+  - talos.cluster
+  - talos.nodes
+parameters:
+  kapitan:
+    vars:
+      target: talos
+    compile:
+      - {input_type: kadet, input_paths: [lib/talos], output_path: talos/}

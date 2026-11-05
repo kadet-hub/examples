@@ -2181,6 +2181,100 @@ enforce the Pod Security level `baseline`.
     (exit 0 with the first version of `guard` in #150)
   - Since: #150
 
+## Talos and the app on top
+
+`talos-apps/` backs the kadet-hub.org blog post on a Talos cluster whose
+machine configs and workloads come from one Kapitan inventory. The target
+`talos` renders the configs of the control plane node `cp-1` and the
+worker `worker-1` with the talos generator, pinned in
+`inventory/classes/generators.yml`. The target `blackbox-exporter` renders
+the recipe `blackbox-exporter`, pinned in the fetch inventory
+`fetch/targets/recipes.yml`. With the kubernetes generator that the recipe
+pins, it adds the exporter's Namespace and an egress NetworkPolicy. The
+recipe is written for the omegaconf backend, which `.kapitan` selects.
+
+The class `cluster` holds the values both targets read: the node network,
+the pod CIDR and the Service CIDR. The target `talos` gives the nodes
+addresses in the first and passes the other two to Talos as `podSubnets`
+and `serviceSubnets`. The NetworkPolicy lets the exporter reach DNS and
+every address outside the three networks. The exporter connects to
+whatever target a request names, so without the policy anyone who can
+reach it can make it probe the Kubernetes API, the nodes and every pod.
+
+Talos runs flannel as its CNI, and flannel enforces no NetworkPolicy. The
+class `talos.cluster` sets `kubeNetworkPoliciesEnabled`, with which Talos
+1.14 deploys kube-network-policies next to flannel. The secrets are refs as
+in `talos-machine-config` (EX-1): `check` creates a bundle with `talosctl
+gen secrets` on every run, writes it to refs with the base64 backend and
+compiles with `--reveal`. Neither the refs nor the compiled configs are
+committed.
+
+`check` boots both configs as Talos containers in Docker and deploys the
+exporter to that cluster, not to kind as EX-12 says, because the policy
+has to fit the networks of the cluster the configs describe. `talosctl
+cluster create docker` 1.14.5 generates its own configs and accepts only
+patches to them. `check` therefore starts one container per node with the
+options of talosctl's docker provisioner (`pkg/provision/providers/docker/node.go`
+at v1.14.5): privileged, a read-only root filesystem, tmpfs on `/run`,
+`/system` and `/tmp`, volumes on `/var`, `/system/state` and `/opt`,
+`PLATFORM=container` and the config base64-encoded in `USERDATA`. The
+Docker network gets the node network and gateway of the inventory, and
+each container the address of its node. `check` bootstraps etcd on cp-1
+with a talosconfig from the same secrets bundle.
+
+Talos in a container needs `hostDNS` with `forwardKubeDNSToHost`, which
+`talosctl validate --mode container` requires and `talos.cluster` sets as
+`talosctl gen config` does. The configs set no nameserver. In Docker, Talos
+takes the one from the container's `resolv.conf`, and a nameserver of the
+inventory would replace it. Flannel's bridge needs the kernel module
+`br_netfilter` on the host, which the runner image does not load
+(Talos' GitHub Actions guide loads it the same way). Without it, a pod
+gets no answer from a Service whose pod runs on the same node. In a
+local run without the module, both CoreDNS pods ran on the exporter's
+node, and its lookups through the Service `kube-dns` timed out while a
+lookup sent to a CoreDNS pod's address was answered. `check` stops at
+once when the module is missing, and the job loads it.
+
+- EX-29: `talos-apps/check` MUST fail unless the recipe and the
+  generators pass the checks of EX-17 and EX-4, both machine configs pass
+  `talosctl validate --mode metal` and `--mode container`, another pod CIDR
+  in the class `cluster` changes exactly `cp-1.yaml`, `worker-1.yaml` and
+  the exporter's NetworkPolicy, and, with the configs booted as Talos
+  containers in Docker:
+
+  - both nodes become Ready, and their addresses, their pod CIDRs and the
+    Service `kubernetes` lie in the networks of `cluster`;
+  - the exporter reaches the control plane endpoint, the Service
+    `kubernetes` and a CoreDNS pod without its NetworkPolicy and none of
+    them with it, and reaches `https://github.com/` with and without it;
+  - with the NetworkPolicy of the compile with another pod CIDR, the
+    exporter reaches the CoreDNS pod again and still not the endpoint.
+
+  The exporter probes through the API server's service proxy, with the
+  module `tcp_connect` inside the cluster and `http_2xx` outside it. A
+  probe result counts once two probes in a row return it, within a minute.
+  kube-network-policies applies a new policy after a short delay, and a
+  single lost probe must not count as blocked. The diff is compiled without
+  `--reveal`, so it holds ref tokens and no secret.
+
+  In container mode Talos runs an install sequence without phases, so
+  neither the install disk nor the installer image is used. It takes the
+  address and default route of `eth0` from the config's LinkConfig
+  (`talosctl get addressspecs` reports the layer `configuration`), but
+  Docker assigns the same address, so the boot does not show that the link
+  config alone would bring the node up on hardware.
+
+  Not tested: the install to a disk, a physical link, a second control
+  plane node, an egress policy on a CNI other than flannel with
+  kube-network-policies, and traffic from the exporter to the address of
+  its own node. cp-1 keeps its control plane taint, so the exporter runs
+  on worker-1 and the probe of the endpoint leaves the node.
+
+  Related: EX-1, EX-4, EX-6, EX-12
+
+  - Test: `examples` workflow, job `talos-apps`
+  - Since: #149
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -2227,3 +2321,4 @@ enforce the Pod Security level `baseline`.
 | `secrets-end-to-end/` | One Kapitan project (target `vaultwarden`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the gpg recipient, the Secret with the ref, the SecretStore and the ExternalSecret in the target, the Vault dev server `vault-server.yaml`; `check` (EX-26) |
 | `multi-env/` | One Kapitan project on the omegaconf backend (targets `dev`, `stage`, `prod`; classes `common`, `env/*`, `cluster/*`), the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, `guard` with `guard-allowed.txt`, `storage-class.yaml`; `check` (EX-28 to EX-28b) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
+| `talos-apps/` | One Kapitan project (targets `talos`, `blackbox-exporter`) on the omegaconf backend, the networks both read in `inventory/classes/cluster.yml`, the talos generator pinned in `inventory/classes/generators.yml`, the recipe pinned in `fetch/targets/recipes.yml`; `check` (EX-29) |

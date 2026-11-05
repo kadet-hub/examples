@@ -981,6 +981,43 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: multi-env/check
 
+  # EX-29: Talos machine configs booted as Talos containers in Docker, with
+  # the app on top.
+  talos-apps:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install talosctl, oras, uv and kubectl
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo talosctl "https://github.com/siderolabs/talos/releases/download/$TALOSCTL_VERSION/talosctl-linux-amd64"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          sha256sum -c <<EOF
+          $TALOSCTL_SHA256  talosctl
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          EOF
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
+          chmod +x talosctl
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # The runner image does not load it, and flannel's bridge needs it.
+      - name: Load br_netfilter
+        run: sudo modprobe br_netfilter
+      - name: talos-apps/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: talos-apps/check
+
   # EX-3f: published advisories for the packages in the lock files.
   advisories:
     runs-on: ubuntu-24.04
@@ -1070,6 +1107,7 @@ jobs:
       - policy-checks
       - secrets-end-to-end
       - multi-env
+      - talos-apps
       - advisories
       - pins
     if: always()

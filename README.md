@@ -30,6 +30,7 @@ longer holds.
 | [policy-checks](policy-checks/) | https://kadet-hub.org/blog/kyverno-cli-conftest-ci/ | `policy-checks/check` |
 | [secrets-end-to-end](secrets-end-to-end/) | https://kadet-hub.org/blog/external-secrets-operator-vault-kapitan/ | `secrets-end-to-end/check` |
 | [multi-env](multi-env/) | https://kadet-hub.org/blog/kapitan-multiple-environments/ | `multi-env/check` |
+| [talos-apps](talos-apps/) | https://kadet-hub.org/blog/talos-homelab-kapitan/ | `talos-apps/check` |
 
 ## Running
 

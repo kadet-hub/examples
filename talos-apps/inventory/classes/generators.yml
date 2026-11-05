@@ -1,0 +1,8 @@
+# The talos generator, pinned by version and digest (index serial 113). The
+# kubernetes generator comes with the recipe, at the version it pins.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/talos:1.3.1@sha256:519afc8b5914e00f3986bf896ad8ddfd62516ce9a688c320bcaf6026cce782b6
+        output_path: lib/talos
