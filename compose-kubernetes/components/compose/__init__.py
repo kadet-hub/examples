@@ -31,9 +31,10 @@ def service(name, c):
         if isinstance(v, dict):
             # Compose has no reference from a variable to a secret, so the
             # value goes into the environment.
-            if list(v) != ["secretKeyRef"] or list(v["secretKeyRef"]) != ["key"]:
+            ref = v.get("secretKeyRef", {})
+            if list(v) != ["secretKeyRef"] or list(ref) != ["key"] or ref["key"] not in secret:
                 fail(name, f"env.{k}")
-            v = secret[v["secretKeyRef"]["key"]]
+            v = secret[ref["key"]]
         env[k] = str(v)
     out = {"image": c["image"], "environment": env}
     probes = c.get("healthcheck", {})
