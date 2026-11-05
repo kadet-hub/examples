@@ -1,0 +1,4 @@
+parameters:
+  cluster:
+    name: multienv-b
+    storage_class: local-retain

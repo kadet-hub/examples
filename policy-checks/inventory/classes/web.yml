@@ -1,0 +1,21 @@
+# podinfo as one Deployment with a Service. The targets add the namespace
+# and what the policies look at.
+parameters:
+  kapitan:
+    vars:
+      target: ${_reclass_:name:short}
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/kubernetes:1.14.0@sha256:787129e1eaed6b9bc868fe4c4aec58d40de6a89fc3cc08424a4cb5822b855080
+        output_path: lib/kubernetes
+    compile:
+      - {input_type: kadet, output_type: yml, input_paths: [lib/kubernetes], output_path: .}
+  components:
+    web:
+      command: [./podinfo, --port=8080]
+      replicas: 2
+      ports:
+        http: {container_port: 8080, service_port: 80}
+      healthcheck:
+        readiness: {type: http, port: http, path: /readyz}
+      service: {type: ClusterIP}

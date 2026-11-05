@@ -33,7 +33,7 @@
         "# renovate: datasource=(?<datasource>github-releases|node-version|docker) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?(?<currentValue>[^\"\\s:@]+)\"?\\n",
         "# renovate: datasource=(?<datasource>github-release-attachments) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?(?<currentValue>[^\"\\s]+)\"?\\n\\s*[A-Z_]+_SHA(?:256|512)[=:] ?\"?(?<currentDigest>[0-9a-f]{64,128})\"?",
         "# renovate: datasource=(?<datasource>docker) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+[=:] ?\"?\\S+?:(?<currentValue>[^@\"\\s:]+)@(?<currentDigest>sha256:[0-9a-f]{64})\"?",
-        "# renovate: datasource=(?<datasource>github-tags) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+_COMMIT[=:] ?(?<currentDigest>[0-9a-f]{40}) # (?<currentValue>\\S+)"
+        "# renovate: datasource=(?<datasource>github-tags|github-digest) depName=(?<depName>\\S+)\\n\\s*[A-Z_]+_COMMIT[=:] ?(?<currentDigest>[0-9a-f]{40}) # (?<currentValue>\\S+)"
       ]
     },
     {
@@ -47,7 +47,8 @@
         "platform-baseline/s3-server.yaml",
         "helmfile-vs-kapitan/helmfile/helmfile.yaml",
         "argocd-cmp/git-server.yaml",
-        "argocd-cmp/repo-server-patch.yaml"
+        "argocd-cmp/repo-server-patch.yaml",
+        "secrets-end-to-end/vault-server.yaml"
       ],
       "matchStrings": [
         "source: oci://(?<depName>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})\\n\\s*chart_name: \\S+\\n\\s*version: (?<currentValue>\\S+)",
@@ -57,23 +58,6 @@
         "\\n\\s+(?<depName>[a-z0-9.-]+\\.[a-z]+/[^:@\\s]+):\\n\\s+tag: (?<currentValue>\\S+)\\n\\s+digest: (?<currentDigest>sha256:[0-9a-f]{64})"
       ],
       "datasourceTemplate": "docker"
-    },
-    {
-      "description": "EX-3: recipes in the fetch inventories of open-webui-searxng, platform-baseline, immich-cnpg, pihole-powerdns and argocd-cmp; the org preset reads inventory/ only and allows no / in a name",
-      "customType": "regex",
-      "managerFilePatterns": [
-        "open-webui-searxng/fetch/targets/recipes.yml",
-        "platform-baseline/fetch/targets/recipes.yml",
-        "immich-cnpg/fetch/targets/recipes.yml",
-        "pihole-powerdns/fetch/targets/recipes.yml",
-        "argocd-cmp/fetch/targets/recipes.yml",
-        "talos-apps/fetch/targets/recipes.yml"
-      ],
-      "matchStrings": [
-        "source: (?<depName>ghcr\\.io/kadet-hub/recipes/[a-z0-9-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})"
-      ],
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "semver"
     },
     {
       "description": "EX-3: Python packages pinned with == in the scripts' uv run --with and uvx",
@@ -185,7 +169,7 @@
       "groupName": "helmfile-vs-kapitan charts"
     },
     {
-      "description": "EX-17: the recipes of open-webui-searxng in one pull request, because a recipe's includes must be pinned at the digests its index record lists",
+      "description": "EX-17: open-webui and searxng in one pull request, because both include valkey and one project takes it at one digest only",
       "matchFileNames": [
         "open-webui-searxng/fetch/targets/recipes.yml"
       ],

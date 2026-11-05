@@ -1,0 +1,10 @@
+classes:
+  - common
+  - env.dev
+  - cluster.a
+parameters:
+  # dev shares cluster a with stage.
+  namespace: miniflux-dev
+  kapitan:
+    vars:
+      target: dev

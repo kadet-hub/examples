@@ -1,0 +1,5 @@
+parameters:
+  hostname: news.stage.example.com
+  components:
+    miniflux:
+      replicas: 2
