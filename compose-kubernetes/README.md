@@ -12,7 +12,7 @@ https://kadet-hub.org/blog/docker-compose-kubernetes/.
 |---|---|
 | `fetch/targets/recipes.yml` | The recipe by version and digest, in the fetch inventory format of the registry's [consumer docs](https://github.com/kadet-hub/registry/blob/main/docs/consumers.md#recipes) |
 | `inventory/classes/miniflux.yml` | What both targets share: the recipe's two components and the credentials as refs |
-| `inventory/targets/cluster.yml` | The recipe's kubernetes compile and the Namespace `miniflux` with the Pod Security level `baseline` |
+| `inventory/targets/cluster.yml` | The recipe's kubernetes compile, the Namespace `miniflux` with the Pod Security level `baseline`, and a readiness probe for Miniflux, which the recipe lacks |
 | `inventory/targets/compose.yml` | The compile entry of `components/compose` and what only a Docker host needs: published port, start order, restart policy |
 | `components/compose/__init__.py` | Maps the component keys the recipe uses to Compose services and fails on any other key |
 | `.kapitan` | The omegaconf inventory backend, which the recipe is written for |
