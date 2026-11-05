@@ -1,0 +1,8 @@
+podinfo:
+  replicas: 1
+  logLevel: debug
+  pdb: {}
+valkey:
+  dataStorage:
+    enabled: false
+  resources: {}

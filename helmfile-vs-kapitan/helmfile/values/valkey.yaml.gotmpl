@@ -1,0 +1,10 @@
+auth:
+  enabled: true
+  aclUsers:
+    default:
+      permissions: "~* &* +@all"
+      password: ref+envsubst://$VALKEY_PASSWORD
+valkeyConfig: |
+  appendonly yes
+dataStorage: {{ toYaml .Values.valkey.dataStorage | nindent 2 }}
+resources: {{ toYaml .Values.valkey.resources | nindent 2 }}

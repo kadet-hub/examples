@@ -1,0 +1,17 @@
+classes: [common, valkey, podinfo]
+parameters:
+  podinfo:
+    replicas: 2
+    logLevel: info
+    pdb:
+      minAvailable: 1
+  valkey:
+    dataStorage:
+      enabled: true
+      requestedSize: 8Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
