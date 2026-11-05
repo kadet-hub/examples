@@ -14,6 +14,8 @@ longer holds.
 | [verify-oci](verify-oci/) | https://kadet-hub.org/blog/verify-oci/ | `verify-oci/verify kubernetes 1.2.0 47` |
 | [gvisor-ci](gvisor-ci/) | https://kadet-hub.org/blog/gvisor-ci/ | `gvisor-ci/check` |
 | [config-tools](config-tools/) | https://kadet-hub.org/blog/config-tools/ | `config-tools/check` |
+| [timoni-vs-kapitan](timoni-vs-kapitan/) | https://kadet-hub.org/blog/timoni-vs-kapitan/ | `timoni-vs-kapitan/check` |
+| [kcl-vs-kapitan](kcl-vs-kapitan/) | https://kadet-hub.org/blog/kcl-vs-kapitan/ | `kcl-vs-kapitan/check` |
 | [talos-machine-config](talos-machine-config/) | https://kadet-hub.org/guides/talos-machine-config/ | `talos-machine-config/check` |
 | [helm-vs-terraform](helm-vs-terraform/) | https://kadet-hub.org/guides/helm-vs-terraform/ | `helm-vs-terraform/check` |
 | [argocd-vs-flux](argocd-vs-flux/) | https://kadet-hub.org/guides/argocd-vs-flux/ | `argocd-vs-flux/check argocd`, `argocd-vs-flux/check flux` |
