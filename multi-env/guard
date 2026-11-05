@@ -52,6 +52,8 @@ def fields(node, path=""):
 
 
 def main():
+    if len(sys.argv) != 4:
+        sys.exit(__doc__)
     a_dir, b_dir, allowed_file = sys.argv[1:]
     a_name, b_name = pathlib.Path(a_dir).name, pathlib.Path(b_dir).name
     allowed = {
