@@ -2065,6 +2065,122 @@ the ref goes to a temporary refs path. A repository commits `refs/`.
     out waiting for the new token in the Secret `vaultwarden`
   - Since: #146
 
+## One inventory, three environments, two clusters
+
+`multi-env/` backs the kadet-hub.org blog post on one app in dev, stage
+and prod from one Kapitan inventory, with dev and stage on one cluster and
+prod on another. The app is the recipe `miniflux`, a feed reader with a
+PostgreSQL of its own, pinned in the fetch inventory
+`fetch/targets/recipes.yml`. `check` verifies and pulls the recipe and the
+generator it pins as `argocd-cmp/check` does.
+
+Each target includes three classes in this order: `common`, one of
+`env/dev`, `env/stage` and `env/prod`, and one of `cluster/a` and
+`cluster/b`. A later class overrides an earlier one. `common` includes the
+recipe and sets what every environment runs, with prod's resources: the
+refs, one set per target, `BASE_URL` from the env class's `hostname`, the
+storage class of the database's claim from the cluster class's
+`cluster.storage_class`, and a readiness probe that the recipe lacks. The
+env classes set `hostname` and the replicas,
+and `env/dev` sets smaller resources. The cluster classes set the cluster's
+name and storage class. dev and stage share the cluster `multienv-a`, so the
+target `dev` sets the namespace `miniflux-dev`. Apart from that, a target
+names its classes and itself.
+
+kind's StorageClass `standard` deletes a volume with its claim.
+`storage-class.yaml` stands in for the prod cluster's class `local-retain`,
+which keeps it, and `check` applies it to `multienv-b`. The recipe sets no
+security context, and PostgreSQL's image starts as root, so the namespaces
+enforce the Pod Security level `baseline`.
+
+- EX-28: `multi-env/check` MUST fail unless the recipe and the generator
+  pass the checks of EX-17 and EX-4, and, deployed to the kind clusters the
+  inventory names, each target runs with these values:
+
+  | Target | Cluster | Namespace | Replicas | Memory limit | Hostname | Storage class |
+  |---|---|---|---|---|---|---|
+  | dev | `multienv-a` | `miniflux-dev` | 1 | 128Mi | `news.dev.example.com` | `standard` |
+  | stage | `multienv-a` | `miniflux` | 2 | 256Mi | `news.stage.example.com` | `standard` |
+  | prod | `multienv-b` | `miniflux` | 3 | 256Mi | `news.example.com` | `local-retain` |
+
+  `check` takes each target's cluster and namespace from `kapitan inventory
+  --flat`. It reads the memory limit from `memory.max` in the cgroup of
+  every miniflux container and the storage class from the database's
+  claim. For the hostname it logs in as the admin and reads the Google
+  Reader API endpoint from miniflux's page `/integrations`, which miniflux
+  builds from `BASE_URL`. The hostnames are under `example.com`, which RFC
+  2606 reserves.
+
+  `check` applies PostgreSQL first and waits for it, because miniflux exits
+  while it cannot connect. miniflux 2.3.4 runs its migrations without a
+  lock (`Migrate` in `internal/database/database.go`). When several
+  replicas start on an empty database, one can fail with an error such as
+  `pq: column "karakeep_tags" of relation "integrations" already exists`,
+  exit and start again on the migrated schema. In three local runs one
+  pod of stage and one of prod restarted once. In the first CI run of
+  #150 one pod of stage restarted twice and no pod of prod. EX-6 counts
+  restarts as broken from the fourth.
+
+  The recipe 1.0.0 gives miniflux no readiness probe, so a pod counted as
+  ready once its container ran. `rollout status` then returned while a pod
+  that would lose the race was still migrating, and a CI run of #150 found
+  2 of prod's 3 replicas ready. `common` adds a readiness probe on
+  miniflux's `/healthcheck`, which answers once the HTTP server runs, after
+  the migrations. `rollout status` then waits through the restarts.
+
+  Not tested: an Ingress or Gateway for the hostnames, because kind runs
+  no controller that would serve them, and the reclaim of a volume after
+  its claim is deleted.
+
+  Related: EX-6, EX-12
+
+  - Test: `examples` workflow, job `multi-env`; `manual:` with
+    `hostname: news.prod.example.com` in `env/prod.yml`, the guard
+    passed and `check` failed on the API endpoint of prod's miniflux
+  - Since: #150
+
+- EX-28a: `multi-env/check` MUST fail unless, in a copy of the project,
+  `METRICS_COLLECTOR: 1` under `components.miniflux.env` changes the
+  compiled output of dev alone when added to `env/dev.yml`, then of stage
+  alone when added to `env/stage.yml`, then of prod alone when added to
+  `env/prod.yml`, and moving it from the three env classes into
+  `common.yml` changes no compiled file.
+
+  Each step compiles without `--reveal` and compares `compiled/` with the
+  step before through `diff -r`, which `check` prints. The registry's
+  compile-diff actions show the same difference per target on a pull
+  request (EX-25) and are not run on `multi-env`. The value is not
+  deployed.
+
+  - Test: `examples` workflow, job `multi-env`
+  - Since: #150
+
+- EX-28b: `multi-env/check` MUST fail unless `guard` accepts prod's
+  compiled output against stage's, refuses it after the step of EX-28a
+  that adds the value to `env/stage.yml` and names the field, and accepts it
+  again after the step for `env/prod.yml`.
+
+  `guard` reads the objects of both directories by kind and name and
+  compares them field by field. A list item is addressed by its `name` or
+  `metadata.name` when every item of its list has one and no two share it.
+  Otherwise it is addressed by its index, because two volume mounts of one
+  volume would hide each other by name. Two objects of the same kind and name in one directory fail for
+  the same reason. Every differing field must be listed in
+  `guard-allowed.txt`, otherwise `guard` exits 1. That file allows prod's
+  replicas, its `BASE_URL` and the storage class of its database's claim.
+  Ref tokens count as equal, because each target has refs of its own and
+  the token names the ref's path and hash. An empty directory fails.
+
+  With the guard, stage cannot run ahead of prod in Git: a change to stage
+  outside the allowed fields reaches prod in the same commit, and the order
+  of the deploys decides which runs first.
+
+  - Test: `examples` workflow, job `multi-env`; `manual:` a Deployment
+    with two volume mounts of one volume whose first mount path differs
+    between the directories: exit 1 naming `volumeMounts[0].mountPath`
+    (exit 0 with the first version of `guard` in #150)
+  - Since: #150
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -2109,4 +2225,5 @@ the ref goes to a temporary refs path. A repository commits `refs/`.
 | `argocd-cmp/` | One Kapitan project (target `blackbox-exporter`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the plugin's ConfigMap `kapitan-plugin.yaml`, the sidecar in `repo-server-patch.yaml`, the egress policy `repo-server-egress.yaml`, `application.yaml`, `git-server.yaml`; `check` (EX-24) |
 | `policy-checks/` | One Kapitan project (targets `compliant`, `noncompliant`) with the kubernetes generator pinned in `inventory/classes/web.yml`, the conftest rules in `policy/compiled.rego`, the pull request workflow template `.github/workflows/policy.yml`; `check` (EX-27, EX-27a) |
 | `secrets-end-to-end/` | One Kapitan project (target `vaultwarden`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the gpg recipient, the Secret with the ref, the SecretStore and the ExternalSecret in the target, the Vault dev server `vault-server.yaml`; `check` (EX-26) |
+| `multi-env/` | One Kapitan project on the omegaconf backend (targets `dev`, `stage`, `prod`; classes `common`, `env/*`, `cluster/*`), the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, `guard` with `guard-allowed.txt`, `storage-class.yaml`; `check` (EX-28 to EX-28b) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |

@@ -1,0 +1,4 @@
+parameters:
+  cluster:
+    name: multienv-a
+    storage_class: standard

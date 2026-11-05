@@ -1,0 +1,8 @@
+classes:
+  - common
+  - env.stage
+  - cluster.a
+parameters:
+  kapitan:
+    vars:
+      target: stage

@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Fail when prod differs from stage outside the allowed fields (EX-28b).
+
+Usage: guard <stage dir> <prod dir> <allowed file>
+
+Compares the compiled objects of two targets by kind and name, field by
+field, and lists every field that differs. A field is written as
+`<kind>/<name> <path>`, with list items by their name where the names in
+the list are unique, else by their index. The allowed file
+holds one such field per line. Ref tokens count as equal, because each
+target has refs of its own. Needs PyYAML, which Kapitan brings.
+"""
+import pathlib
+import re
+import sys
+
+import yaml
+
+REF = re.compile(r"\?\{[^}]+\}")
+
+
+def objects(root):
+    found = {}
+    for path in sorted(pathlib.Path(root).rglob("*.yml")):
+        for doc in yaml.safe_load_all(path.read_text()):
+            if doc:
+                key = f"{doc['kind']}/{doc['metadata']['name']}"
+                if key in found:  # one would hide the other
+                    sys.exit(f"guard: {key} twice in {root}")
+                found[key] = doc
+    if not found:
+        sys.exit(f"guard: no objects in {root}")
+    return found
+
+
+def fields(node, path=""):
+    if isinstance(node, dict) and node:
+        for key, value in node.items():
+            yield from fields(value, f"{path}.{key}" if path else key)
+    elif isinstance(node, list) and node:
+        names = [
+            item.get("name", (item.get("metadata") or {}).get("name")) if isinstance(item, dict) else None
+            for item in node
+        ]
+        # By name only when every item has one and no two share it, such as
+        # two volumeMounts of one volume, which would hide each other.
+        unique = None not in names and len(set(names)) == len(names)
+        for i, item in enumerate(node):
+            yield from fields(item, f"{path}[{names[i] if unique else i}]")
+    else:
+        yield path, REF.sub("?{ref}", node) if isinstance(node, str) else node
+
+
+def main():
+    if len(sys.argv) != 4:
+        sys.exit(__doc__)
+    a_dir, b_dir, allowed_file = sys.argv[1:]
+    a_name, b_name = pathlib.Path(a_dir).name, pathlib.Path(b_dir).name
+    allowed = {
+        line.strip()
+        for line in pathlib.Path(allowed_file).read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+    a, b = objects(a_dir), objects(b_dir)
+    differences = []
+    for key in sorted(a.keys() | b.keys()):
+        if key not in a or key not in b:
+            differences.append((key, f"only in {b_name if key in b else a_name}"))
+            continue
+        fa, fb = dict(fields(a[key])), dict(fields(b[key]))
+        for path in sorted(fa.keys() | fb.keys()):
+            va, vb = fa.get(path, "(absent)"), fb.get(path, "(absent)")
+            if va != vb:
+                differences.append((f"{key} {path}", f"{va} in {a_name}, {vb} in {b_name}"))
+    refused = 0
+    for field, values in differences:
+        ok = field in allowed
+        refused += not ok
+        print(f"{'allowed' if ok else 'NOT ALLOWED'}: {field}: {values}")
+    if refused:
+        sys.exit(f"guard: {b_name} differs from {a_name} in {refused} field(s) outside {allowed_file}")
+    print(f"guard: {b_name} differs from {a_name} in {len(differences)} allowed field(s) only")
+
+
+main()

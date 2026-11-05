@@ -1,0 +1,9 @@
+# The StorageClass of the prod cluster: kind's local-path provisioner, but
+# the volume stays when its claim is deleted.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-retain
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
