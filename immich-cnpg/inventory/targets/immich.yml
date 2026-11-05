@@ -1,0 +1,13 @@
+classes:
+  - recipes.immich
+parameters:
+  namespace: immich
+  kapitan:
+    vars:
+      target: immich
+  applications:
+    valkey:
+      password: ?{base64:immich/valkey-password||random:str:40}
+    postgresql:
+      # One node: further instances on it would share its disk.
+      instances: 1
