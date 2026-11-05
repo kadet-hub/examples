@@ -1931,7 +1931,7 @@ once when the module is missing, and the job loads it.
   Related: EX-1, EX-4, EX-6, EX-12
 
   - Test: `examples` workflow, job `talos-apps`
-  - Since: tbd
+  - Since: #149
 
 ## Open questions
 
