@@ -22,7 +22,8 @@ Service networks are Talos' defaults.
 ## Running
 
 ```sh
-# gh (logged in), jq, oras, uv, talosctl, kubectl and docker on PATH
+# on a Linux Docker host, with gh (logged in), jq, oras, uv, talosctl,
+# kubectl and docker on PATH
 sudo modprobe br_netfilter
 ./check
 ```

@@ -19,8 +19,9 @@
 #     again and still blocks the endpoint.
 # Set KEEP=1 to keep the cluster and the temporary directory with its
 # kubeconfig and talosconfig.
-# Needs gh (authenticated), jq, oras, uv, talosctl, kubectl, docker and the
-# kernel module br_netfilter.
+# Runs on a Linux Docker host only: the Talos containers use the host kernel,
+# which needs the module br_netfilter, and the script uses GNU base64 and sed.
+# Needs gh (authenticated), jq, oras, uv, talosctl, kubectl and docker.
 set -euo pipefail
 cd "$(dirname "$0")"
 # Flannel's bridge needs br_netfilter in the host kernel, or a pod gets no
