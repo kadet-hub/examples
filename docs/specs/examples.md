@@ -1941,7 +1941,7 @@ the ref goes to a temporary refs path. A repository commits `refs/`.
   Related: EX-4, EX-6, EX-12, EX-17
 
   - Test: `examples` workflow, job `secrets-end-to-end`
-  - Since: this change
+  - Since: #146
 
 ## Open questions
 
