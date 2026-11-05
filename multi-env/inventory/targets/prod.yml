@@ -1,0 +1,8 @@
+classes:
+  - common
+  - env.prod
+  - cluster.b
+parameters:
+  kapitan:
+    vars:
+      target: prod

@@ -1,0 +1,7 @@
+# The recipe, at the digest the index lists. It includes no other recipe.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/miniflux:1.0.0@sha256:e6686151fc46edd6f889d076efde59901670507f536ad27eaad7e4e44d5a56d4
+        output_path: inventory/classes/recipes/miniflux

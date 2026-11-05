@@ -1,0 +1,364 @@
+#!/usr/bin/env bash
+# Talos node configs and the app on top from one inventory (EX-29). Verifies
+# the latest signed index, the recipe pinned in fetch/targets/recipes.yml, the
+# generator it pins and the talos generator, and pulls them by digest. Fills
+# the Talos secret refs from a fresh `talosctl gen secrets` bundle, compiles
+# the targets talos and blackbox-exporter, and boots the two machine configs
+# as Talos containers in Docker. Exits 0 only if
+#   - every machine config passes `talosctl validate --mode metal` and
+#     `--mode container`,
+#   - another pod CIDR in the class cluster changes the control plane's
+#     config, the worker's config and the exporter's NetworkPolicy, and no
+#     other file,
+#   - both nodes become Ready, with addresses, pod CIDRs and the kubernetes
+#     Service inside the networks of the class cluster,
+#   - the exporter reaches the API endpoint, the kubernetes Service and a
+#     CoreDNS pod before its NetworkPolicy applies, none of them after it,
+#     and an HTTPS site on the internet before and after,
+#   - the policy compiled with another pod CIDR lets the CoreDNS pod answer
+#     again and still blocks the endpoint.
+# Set KEEP=1 to keep the cluster and the temporary directory with its
+# kubeconfig and talosconfig.
+# Runs on a Linux Docker host only: the Talos containers use the host kernel,
+# which needs the module br_netfilter, and the script uses GNU base64 and sed.
+# Needs gh (authenticated), jq, oras, uv, talosctl, kubectl and docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+# Flannel's bridge needs br_netfilter in the host kernel, or a pod gets no
+# answer from a Service whose pod runs on the same node.
+if [[ ! -e /proc/sys/net/bridge/bridge-nf-call-iptables ]]; then
+  echo "br_netfilter is not loaded; run sudo modprobe br_netfilter" >&2
+  exit 1
+fi
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+min_serial=113
+tmp=$(mktemp -d)
+cluster=talosapps-talos-apps
+# renovate: datasource=docker depName=ghcr.io/siderolabs/talos
+TALOS_IMAGE=ghcr.io/siderolabs/talos:v1.14.5@sha256:2bd72b810f540a75d5b1c8c3739ada000fff9beec18c941790c34b9592f1a8ff
+export KUBECONFIG=$tmp/kubeconfig TALOSCONFIG=$tmp/talosconfig
+cleanup() {
+  kill "${watcher:-}" 2>/dev/null || true
+  if [[ ${KEEP:-} == 1 ]]; then
+    echo "kept the cluster; KUBECONFIG=$KUBECONFIG TALOSCONFIG=$TALOSCONFIG" >&2
+    return
+  fi
+  rm -rf -- "$tmp"
+  docker rm -f -v "$cluster-cp-1" "$cluster-worker-1" >/dev/null 2>&1 || true
+  docker network rm "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf lib compiled refs inventory/classes/recipes
+started=$SECONDS
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+
+# EX-4: index signature, digests and attestations, then pull by digest, as
+# "Verifying a recipe by hand" in the registry's docs/consumers.md does it.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+if ((serial < min_serial)); then
+  echo "index serial $serial is lower than $min_serial" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+
+pins=$(sed -nE 's|^ *source: ghcr\.io/kadet-hub/recipes/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  fetch/targets/recipes.yml)
+if (($(wc -l <<<"$pins") != 1)); then
+  echo "expected 1 recipe in fetch/targets/recipes.yml, found $(wc -l <<<"$pins")" >&2
+  exit 1
+fi
+read -r name version digest <<<"$pins"
+record=$(jq -ec --arg n "$name" --arg v "$version" \
+  '.recipes[$n][$v] | select(.yanked == null)' "$tmp/index.json") || {
+  echo "recipe $name $version is missing or yanked in index serial $serial" >&2
+  exit 1
+}
+want=$(jq -r .digest <<<"$record")
+if [[ $want != "$digest" ]]; then
+  echo "recipe $name $version: index has $want, fetch/targets/recipes.yml pins $digest" >&2
+  exit 1
+fi
+# The fetch inventory pins only what a target includes (registry CON-4). This
+# recipe includes none, and check does not fetch includes from the index.
+if jq -e '.includes | length > 0' <<<"$record" >/dev/null; then
+  echo "recipe $name $version includes other recipes, which check does not fetch" >&2
+  exit 1
+fi
+gh attestation verify "oci://ghcr.io/kadet-hub/recipes/$name@$digest" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+oras pull -o "$tmp/recipes/$name" "ghcr.io/kadet-hub/recipes/$name@$digest" >/dev/null
+mkdir -p "inventory/classes/recipes/$name"
+tar -xf "$tmp/recipes/$name/$name.tar" -C "inventory/classes/recipes/$name" --no-same-owner
+echo "recipe $name $version verified and unpacked"
+
+# The generator the recipe pins and the talos generator, which Kapitan would
+# otherwise fetch unverified. Both unpack into lib/<name>, so a generator
+# pinned at two digests fails.
+generators=$(cat inventory/classes/recipes/*/*.yml inventory/classes/generators.yml |
+  sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' | sort -u)
+twice=$(cut -d' ' -f1 <<<"$generators" | uniq -d)
+if [[ -n $twice ]]; then
+  echo "pinned at more than one digest: $twice" >&2
+  exit 1
+fi
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "generator $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "generator $name $version: index has $want, the inventory pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/generators/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/generators/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "generator $name $version verified and unpacked"
+done <<<"$generators"
+echo "verified and pulled in $((SECONDS - started))s"
+
+# One ref per secret, from a bundle that exists only in $tmp. The generator
+# writes cluster.ca, aggregatorCA and serviceAccount as PEM documents and
+# cannot decode a ref, so those refs hold PEM; the bundle stores every
+# certificate and key base64-encoded.
+talosctl gen secrets -o "$tmp/secrets.yaml" >/dev/null
+mkdir "$tmp/s"
+"${py[@]}" python -I -c '
+import base64, sys, yaml
+s = yaml.safe_load(open(sys.argv[1]))
+c = s["certs"]
+pem = lambda v: base64.b64decode(v).decode()
+refs = {
+    "machine-token": s["trustdinfo"]["token"],
+    "machine-ca-crt": c["os"]["crt"],
+    "machine-ca-key": c["os"]["key"],
+    "cluster-id": s["cluster"]["id"],
+    "cluster-secret": s["cluster"]["secret"],
+    "cluster-token": s["secrets"]["bootstraptoken"],
+    "secretbox": s["secrets"]["secretboxencryptionsecret"],
+    "cluster-ca-crt": pem(c["k8s"]["crt"]),
+    "cluster-ca-key": pem(c["k8s"]["key"]),
+    "aggregator-ca-crt": pem(c["k8saggregator"]["crt"]),
+    "aggregator-ca-key": pem(c["k8saggregator"]["key"]),
+    "service-account-key": pem(c["k8sserviceaccount"]["key"]),
+    "etcd-ca-crt": c["etcd"]["crt"],
+    "etcd-ca-key": c["etcd"]["key"],
+}
+for k, v in refs.items():
+    open(f"{sys.argv[2]}/{k}", "w").write(v)
+' "$tmp/secrets.yaml" "$tmp/s"
+for f in "$tmp"/s/*; do
+  "${py[@]}" kapitan refs --write "base64:talos/${f##*/}" -f "$f" >/dev/null
+done
+
+compile() { # inventory path, output path, kapitan compile flags
+  "${py[@]}" kapitan compile --inventory-path "$1" --output-path "$2" "${@:3}" >"$tmp/compile.log" 2>&1 ||
+    { cat "$tmp/compile.log"; exit 1; }
+}
+compile inventory . --reveal
+talos=compiled/talos/talos
+configs=("$talos/cp-1.yaml" "$talos/worker-1.yaml")
+for f in "${configs[@]}"; do
+  talosctl validate --mode metal --config "$f"
+  talosctl validate --mode container --config "$f"
+done
+
+# The class cluster read by both targets: another pod CIDR changes both, and
+# nothing else. Compiled without --reveal, so the diff holds no secret.
+cp -r inventory "$tmp/inv"
+compile "$tmp/inv" "$tmp/before"
+sed -i 's|pod_cidr: 10.244.0.0/16|pod_cidr: 10.42.0.0/16|' "$tmp/inv/classes/cluster.yml"
+compile "$tmp/inv" "$tmp/after"
+changed=$(diff -rq "$tmp/before/compiled" "$tmp/after/compiled" |
+  sed -E 's|^Files [^ ]+/before/compiled/([^ ]+) and .*|\1|' || true)
+expected=$(printf '%s\n' blackbox-exporter/manifests/blackbox-exporter/blackbox-exporter-prometheus-blackbox-exporter-security.yml \
+  talos/talos/cp-1.yaml talos/talos/worker-1.yaml)
+if [[ $changed != "$expected" ]]; then
+  echo "another pod CIDR changed:" >&2
+  echo "${changed:-nothing}" >&2
+  exit 1
+fi
+echo "another pod CIDR in the class cluster changes exactly these files:"
+for f in $changed; do
+  diff -u --label "a/compiled/$f" --label "b/compiled/$f" "$tmp/before/compiled/$f" "$tmp/after/compiled/$f" || true
+done
+
+# Talos in Docker, as `talosctl cluster create docker` runs it, but with the
+# compiled configs: talosctl 1.14 generates its own configs for that command.
+read -r subnet gateway endpoint < <("${py[@]}" python -I -c '
+import sys, yaml
+c = yaml.safe_load(open("inventory/classes/cluster.yml"))["parameters"]["cluster"]
+docs = {d.get("kind", "v1alpha1"): d for d in yaml.safe_load_all(open(sys.argv[1])) if d}
+print(c["nodes_cidr"], docs["LinkConfig"]["routes"][0]["gateway"], docs["KubeClusterConfig"]["endpoint"])
+' "$talos/cp-1.yaml")
+host_port=${endpoint#https://}
+cp_ip=${host_port%:*}
+boot=$SECONDS
+docker network create --subnet "$subnet" --gateway "$gateway" "$cluster" >/dev/null
+node() { # name config
+  local ip
+  ip=$(sed -nE 's|^ *- address: ([0-9.]+)/[0-9]+$|\1|p' "$2")
+  docker run -d --name "$cluster-$1" --hostname "$1" --network "$cluster" --ip "$ip" \
+    --privileged --security-opt seccomp=unconfined --read-only --cpus 2 --memory 2g \
+    --mount type=tmpfs,destination=/run --mount type=tmpfs,destination=/system \
+    --mount type=tmpfs,destination=/tmp --mount type=volume,destination=/var \
+    --mount type=volume,destination=/system/state --mount type=volume,destination=/opt \
+    -e PLATFORM=container -e USERDATA="$(base64 -w0 "$2")" "$TALOS_IMAGE" >/dev/null
+}
+node cp-1 "$talos/cp-1.yaml"
+node worker-1 "$talos/worker-1.yaml"
+talosctl gen config --with-secrets "$tmp/secrets.yaml" --output-types talosconfig \
+  --output "$TALOSCONFIG" homelab "$endpoint" >/dev/null 2>&1
+talosctl config endpoint "$cp_ip"
+talosctl config node "$cp_ip"
+until talosctl bootstrap 2>/dev/null; do
+  ((SECONDS - boot < 180)) || { docker logs "$cluster-cp-1" | tail -50 >&2; exit 1; }
+  sleep 2
+done
+talosctl kubeconfig "$KUBECONFIG" >/dev/null
+until [[ $(kubectl get nodes --no-headers 2>/dev/null | grep -cw Ready) == 2 ]]; do
+  if ((SECONDS - boot > 600)); then
+    kubectl get nodes -o wide >&2 || true
+    docker logs "$cluster-cp-1" | tail -50 >&2
+    exit 1
+  fi
+  sleep 5
+done
+echo "both nodes Ready $((SECONDS - boot))s after the containers started"
+
+# EX-6: what a broken or not ready pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop the rollout status as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$ # check's children: the command it waits for and this watch
+    return
+  done
+}
+# EX-6: a kubectl rollout status or wait that prints the namespace on a timeout.
+install_wait() { # namespace kubectl-arguments
+  local ns=$1 s
+  shift
+  kubectl -n "$ns" "$@" && return
+  s=$?
+  kubectl -n "$ns" get events --sort-by=.lastTimestamp >&2 || true
+  kubectl -n "$ns" get pods -o wide >&2 || true
+  # shellcheck disable=SC2046 # one pod name per word
+  describe_pods "$ns" $(kubectl -n "$ns" get pods -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded" and (any(.status.conditions[]?;
+        .type == "Ready" and .status == "True") | not)) | .metadata.name')
+  return "$s"
+}
+watch_pods &
+watcher=$!
+install_wait kube-system rollout status deploy/coredns --timeout=300s
+
+# The Talos layer on the running cluster: node addresses, pod CIDRs and the
+# kubernetes Service lie in the networks of the class cluster.
+kubectl get nodes -o json >"$tmp/nodes.json"
+api_ip=$(kubectl get service kubernetes -o jsonpath='{.spec.clusterIP}')
+"${py[@]}" python -I -c '
+import ipaddress as ia, json, sys, yaml
+c = yaml.safe_load(open("inventory/classes/cluster.yml"))["parameters"]["cluster"]
+net = {k: ia.ip_network(c[k]) for k in ("nodes_cidr", "pod_cidr", "service_cidr")}
+ok = True
+def inside(what, value, key):
+    global ok
+    hit = ia.ip_network(value, strict=False).subnet_of(net[key])
+    print(f"{what} {value} {"in" if hit else "NOT in"} {key} {net[key]}")
+    ok = ok and hit
+for n in json.load(open(sys.argv[1]))["items"]:
+    name = n["metadata"]["name"]
+    ip = next(a["address"] for a in n["status"]["addresses"] if a["type"] == "InternalIP")
+    inside(f"node {name} address", ip, "nodes_cidr")
+    inside(f"node {name} pod CIDR", n["spec"]["podCIDR"], "pod_cidr")
+inside("Service kubernetes", sys.argv[2], "service_cidr")
+sys.exit(0 if ok else 1)
+' "$tmp/nodes.json" "$api_ip"
+
+# The app: the namespace and the exporter, without the NetworkPolicy first.
+app=compiled/blackbox-exporter/manifests
+policy=$app/blackbox-exporter/blackbox-exporter-prometheus-blackbox-exporter-security.yml
+deploy=$SECONDS
+kubectl apply -f "$app/blackbox-exporter-namespace.yml" >/dev/null
+for f in "$app"/blackbox-exporter/*.yml; do
+  [[ $f == "$policy" ]] || kubectl apply -f "$f" >/dev/null
+done
+install_wait blackbox-exporter rollout status deploy/blackbox-exporter-prometheus-blackbox-exporter --timeout=300s
+echo "exporter available $((SECONDS - deploy))s after the apply"
+
+dns_pod=$(kubectl -n kube-system get pods -l k8s-app=kube-dns -o jsonpath='{.items[0].status.podIP}')
+targets=("tcp_connect $host_port" "tcp_connect $api_ip:443" "tcp_connect $dns_pod:9153")
+outside="http_2xx https://github.com/"
+probe() { # module target; prints probe_success, 1 or 0
+  kubectl get --raw "/api/v1/namespaces/blackbox-exporter/services/blackbox-exporter-prometheus-blackbox-exporter:9115/proxy/probe?module=$1&target=$2" |
+    sed -nE 's/^probe_success ([01])$/\1/p'
+}
+# kube-network-policies applies a new policy after a short delay, and one
+# lost probe must not count as blocked: a result counts once two probes in a
+# row return it, within a minute.
+expect() { # want module target
+  local got last='' t0=$SECONDS
+  while :; do
+    got=$(probe "$2" "$3")
+    [[ $got == "$1" && $last == "$1" ]] && break
+    ((SECONDS - t0 < 60)) || break
+    last=$got
+    sleep 2
+  done
+  echo "probe $2 $3: probe_success $got, $((SECONDS - t0))s"
+  [[ $got == "$1" && $last == "$1" ]]
+}
+status=0
+for t in "${targets[@]}" "$outside"; do
+  # shellcheck disable=SC2086 # module and target
+  expect 1 $t || status=1
+done
+((status == 0)) || { echo "the exporter cannot reach every target before the policy" >&2; exit 1; }
+
+kubectl apply -f "$policy" >/dev/null
+for t in "${targets[@]}"; do
+  # shellcheck disable=SC2086 # module and target
+  expect 0 $t || status=1
+done
+# shellcheck disable=SC2086 # module and target
+expect 1 $outside || status=1
+((status == 0)) || { echo "the egress policy does not hold" >&2; exit 1; }
+
+# The policy of the second compile above, with another pod CIDR, no longer
+# covers the cluster's pods: the CoreDNS pod answers again, the endpoint not.
+kubectl apply -f "$tmp/after/$policy" >/dev/null
+# shellcheck disable=SC2086 # module and target
+expect 1 ${targets[2]} || status=1
+# shellcheck disable=SC2086 # module and target
+expect 0 ${targets[0]} || status=1
+((status == 0)) || { echo "the policy with another pod CIDR does not open the pod network" >&2; exit 1; }
+echo "talos-apps: both layers from one inventory passed in $((SECONDS - started))s"

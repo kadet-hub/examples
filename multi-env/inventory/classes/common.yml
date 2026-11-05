@@ -1,0 +1,32 @@
+# What every target runs. Defaults are prod's, env classes override them.
+classes:
+  - recipes.miniflux
+parameters:
+  namespace: miniflux
+  applications:
+    miniflux:
+      database:
+        password: ?{base64:${kapitan.vars.target}/database-password||random:str:32}
+      admin:
+        password: ?{base64:${kapitan.vars.target}/admin-password||random:str:32}
+  components:
+    miniflux:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
+      env:
+        BASE_URL: https://${hostname}/
+      # Not in the recipe. Ready once the HTTP server runs, after the migrations.
+      healthcheck:
+        readiness:
+          type: http
+          port: http
+          path: /healthcheck
+    miniflux-db:
+      volume_claims:
+        miniflux-db:
+          spec:
+            storageClassName: ${cluster.storage_class}

@@ -1,0 +1,5 @@
+parameters:
+  hostname: news.example.com
+  components:
+    miniflux:
+      replicas: 3

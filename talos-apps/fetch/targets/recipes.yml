@@ -1,0 +1,7 @@
+# The recipe, at the digest the index lists. It includes no other recipe.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/blackbox-exporter:1.0.0@sha256:6d189ab3ab3910de812460fe8a0e7026eb2e8d33c2310fb1149f6ebdadfbd8d3
+        output_path: inventory/classes/recipes/blackbox-exporter

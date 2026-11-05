@@ -1,0 +1,297 @@
+#!/usr/bin/env bash
+# Policy checks on Kapitan's compiled output (EX-27, EX-27a). Verifies the
+# latest signed index and the kubernetes generator pinned in
+# inventory/classes/web.yml, pulls it by digest and compiles the targets
+# compliant and noncompliant. Runs the Kyverno CLI with policies from
+# kyverno/policies at KYVERNO_POLICIES_COMMIT, and conftest with policy/,
+# on each target. Then installs Kyverno into a new kind cluster with the
+# same policies. Exits 0 only if both tools pass compliant and fail
+# noncompliant with the expected findings, and the cluster rejects
+# noncompliant once the policies deny, admits it while they audit as
+# shipped, runs compliant and rejects a privileged kubectl run.
+# Set KEEP=1 to keep the cluster.
+# Needs gh (authenticated), jq, oras, uv, kyverno, conftest, kind, kubectl,
+# curl, docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+min_serial=113
+tmp=$(mktemp -d)
+cluster='policy-checks'
+export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
+cleanup() {
+  kill "${watcher:-}" 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf lib compiled
+started=$SECONDS
+indent() { sed 's/^/  /'; }
+
+# Kyverno in the cluster runs the CLI's version, and the policies come from
+# the release branch of that minor version. The branch is the comment of
+# the commit pin, which Renovate moves along the branch only (EX-27).
+# renovate: datasource=github-release-attachments depName=kyverno/kyverno
+KYVERNO_VERSION=v1.19.2
+KYVERNO_SHA256=4f785937dc7fe49a0731108b15def1538923c73d9236255bc69d94d498037969
+# renovate: datasource=github-digest depName=kyverno/policies
+KYVERNO_POLICIES_COMMIT=282e77f6d54e1e1a636190ff2dacc3d02c2d689c # release-1.19
+cli=v$(kyverno version | sed -n 's/^Version: //p')
+if [[ $cli != "$KYVERNO_VERSION" ]]; then
+  echo "EX-27: the Kyverno CLI is $cli, the cluster would run $KYVERNO_VERSION" >&2
+  exit 1
+fi
+minor=${KYVERNO_VERSION#v}
+branch=$(sed -nE 's/^KYVERNO_POLICIES_COMMIT=[0-9a-f]{40} # //p' "${0##*/}")
+if [[ $branch != "release-${minor%.*}" ]]; then
+  echo "EX-27: Kyverno $KYVERNO_VERSION needs the policies of release-${minor%.*}, the pin follows $branch" >&2
+  exit 1
+fi
+
+# EX-4: index signature, digest and attestation, then pull by digest.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+if ((serial < min_serial)); then
+  echo "index serial $serial is lower than $min_serial" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+read -r name version digest < <(sed -nE \
+  's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' inventory/classes/web.yml) || {
+  echo "inventory/classes/web.yml pins no generator" >&2
+  exit 1
+}
+want=$(jq -er --arg n "$name" --arg v "$version" \
+  '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+  echo "generator $name $version is missing or yanked in index serial $serial" >&2
+  exit 1
+}
+if [[ $want != "$digest" ]]; then
+  echo "generator $name $version: index has $want, inventory/classes/web.yml pins $digest" >&2
+  exit 1
+fi
+gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+oras pull -o "$tmp/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+mkdir -p "lib/$name"
+tar -xf "$tmp/$name/$name.tar" -C "lib/$name" --no-same-owner
+echo "generator $name $version verified and unpacked"
+
+# EX-27: the noncompliant target compiles, with the generator's warnings
+# for the tag and the resources in the log.
+log=$(uv run --quiet --python 3.13 --with 'kapitan[reclass-rs]==0.36.3' kapitan compile 2>&1) || {
+  echo "$log" >&2
+  exit 1
+}
+for warning in "image 'ghcr.io/stefanprodan/podinfo:latest' has no pinned tag or digest" \
+  'container web has no resources requests.cpu, requests.memory, limits.memory'; do
+  grep -qF "$warning" <<<"$log" || { echo "$log" >&2; echo "EX-27: no warning '$warning'" >&2; exit 1; }
+done
+echo "EX-27: kapitan compile exited 0 for both targets, with these warnings:"
+grep -E '^web: ' <<<"$log" | indent
+
+# The policies as kyverno/policies ships them: best practices and the
+# Pod Security Standards restricted profile, which includes baseline.
+mkdir "$tmp/policies"
+curl -fsSL "https://github.com/kyverno/policies/archive/$KYVERNO_POLICIES_COMMIT.tar.gz" |
+  tar -xzf - -C "$tmp/policies" --strip-components=1 --wildcards '*/best-practices-vpol/*' '*/pod-security-vpol/*'
+p=$tmp/policies
+policies=("$p"/best-practices-vpol/{disallow-latest-tag,require-pod-requests-limits}/*.yaml
+  "$p"/pod-security-vpol/{baseline,restricted}/*/*.yaml)
+echo "${#policies[@]} policies from kyverno/policies at $KYVERNO_POLICIES_COMMIT ($branch)"
+
+# EX-27: the Kyverno CLI on every file of a target. --resource reads the
+# files of a directory, not of its subdirectories.
+kyverno_apply() { # target
+  local files
+  mapfile -t files < <(find "compiled/$1" -name '*.yml' | sort)
+  kyverno apply "${policies[@]}" "${files[@]/#/--resource=}" --remove-color 2>&1
+}
+out=$(kyverno apply "${policies[@]}" --resource=compiled --remove-color 2>&1) || {
+  echo "$out" >&2
+  echo "EX-27: kyverno apply --resource=compiled failed; the post says it checks nothing and passes" >&2
+  exit 1
+}
+grep -q 'to 0 resource(s)' <<<"$out" || { echo "$out" >&2; echo "EX-27: kyverno apply --resource=compiled read resources" >&2; exit 1; }
+echo "EX-27: kyverno apply --resource=compiled applied to 0 resources and exited 0"
+out=$(kyverno_apply compliant) || { echo "$out" >&2; echo "EX-27: Kyverno failed compliant" >&2; exit 1; }
+echo "EX-27: kyverno apply on compliant exited 0:"
+indent <<<"$out"
+if out=$(kyverno_apply noncompliant); then
+  echo "$out" >&2
+  echo "EX-27: Kyverno passed noncompliant" >&2
+  exit 1
+fi
+for policy in disallow-latest-tag require-requests-limits disallow-privileged-containers; do
+  grep -q "^policy $policy -> resource noncompliant/Deployment/web failed:" <<<"$out" || {
+    echo "$out" >&2
+    echo "EX-27: Kyverno did not report $policy for noncompliant" >&2
+    exit 1
+  }
+done
+# The vpol restrict-seccomp-strict reads a missing seccompProfile as
+# RuntimeDefault; the restricted profile forbids the absence of a profile.
+if grep -q '^policy restrict-seccomp-strict -> ' <<<"$out"; then
+  echo "$out" >&2
+  echo "EX-27: restrict-seccomp-strict now fails noncompliant, which sets no seccomp profile; the post says it passes" >&2
+  exit 1
+fi
+echo "EX-27: kyverno apply on noncompliant exited non-zero:"
+indent <<<"$out"
+
+# EX-27: conftest with the Rego rules of policy/ over each target.
+out=$(conftest test --combine --no-color compiled/compliant 2>&1) || {
+  echo "$out" >&2
+  echo "EX-27: conftest failed compliant" >&2
+  exit 1
+}
+echo "EX-27: conftest on compiled/compliant exited 0:"
+indent <<<"$out"
+if out=$(conftest test --combine --no-color compiled/noncompliant 2>&1); then
+  echo "$out" >&2
+  echo "EX-27: conftest passed noncompliant" >&2
+  exit 1
+fi
+for finding in 'image ghcr.io/stefanprodan/podinfo:latest is not pinned by digest' \
+  'Deployment noncompliant/web runs 2 replicas and no PodDisruptionBudget selects its pods'; do
+  grep -qF "$finding" <<<"$out" || { echo "$out" >&2; echo "EX-27: conftest did not report '$finding'" >&2; exit 1; }
+done
+echo "EX-27: conftest on compiled/noncompliant exited non-zero:"
+indent <<<"$out"
+echo "policy checks took $((SECONDS - started))s"
+
+# EX-6: what a broken or not ready pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop the wait as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    # EX-6: broken on two polls in a row.
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$ # check's children: the command it waits for and this watch
+    return
+  done
+}
+# EX-6: a kubectl rollout status or wait that prints the namespace on a timeout.
+install_wait() { # namespace kubectl-arguments
+  local ns=$1 s
+  shift
+  kubectl -n "$ns" "$@" && return
+  s=$?
+  kubectl -n "$ns" get events --sort-by=.lastTimestamp >&2 || true
+  kubectl -n "$ns" get pods -o wide >&2 || true
+  # shellcheck disable=SC2046 # one pod name per word
+  describe_pods "$ns" $(kubectl -n "$ns" get pods -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded" and (any(.status.conditions[]?;
+        .type == "Ready" and .status == "True") | not)) | .metadata.name')
+  return "$s"
+}
+# EX-6: Kyverno's webhooks refuse connections for a few seconds after its
+# Deployments report available, so every apply is repeated for a minute.
+apply() { # kubectl apply arguments
+  local i
+  for i in $(seq 30); do
+    kubectl apply "$@" >/dev/null && return
+    ((i < 30)) && sleep 2
+  done
+  return 1
+}
+
+curl -fsSL -o "$tmp/kyverno.yaml" "https://github.com/kyverno/kyverno/releases/download/$KYVERNO_VERSION/install.yaml"
+echo "$KYVERNO_SHA256  $tmp/kyverno.yaml" | sha256sum -c --quiet
+# The node image of the workflow's kind release; Renovate updates both together.
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
+watch_pods &
+watcher=$!
+installing=$SECONDS
+kubectl apply --server-side -f "$tmp/kyverno.yaml" >/dev/null
+install_wait kyverno wait --for=condition=Available deploy --all --timeout=300s >/dev/null
+echo "Kyverno $KYVERNO_VERSION available after $((SECONDS - installing))s"
+args=()
+for f in "${policies[@]}"; do
+  args+=(-f "$f")
+done
+apply "${args[@]}"
+kubectl wait --for=jsonpath='{.status.conditionStatus.ready}'=true validatingpolicies.policies.kyverno.io \
+  --all --timeout=60s >/dev/null
+apply -f compiled/noncompliant/noncompliant-namespace.yml
+
+# EX-27a: the noncompliant Deployment through admission, without creating
+# it. Kyverno takes a changed validationActions within seconds.
+dry_run() { # admitted|denied
+  local deadline=$((SECONDS + 60)) out result
+  while :; do
+    if out=$(kubectl apply --dry-run=server -f compiled/noncompliant/noncompliant/web-deploy.yml 2>&1); then
+      result=admitted
+    else
+      result=denied
+    fi
+    [[ $result != "$1" ]] || break
+    if ((SECONDS > deadline)); then
+      echo "$out" >&2
+      echo "EX-27a: the noncompliant Deployment was not $1 within a minute" >&2
+      return 1
+    fi
+    sleep 2
+  done
+  echo "$out"
+}
+set_actions() { # validation action
+  local policy
+  for policy in $(kubectl get validatingpolicies.policies.kyverno.io -o name); do
+    kubectl patch "$policy" --type=merge -p "{\"spec\":{\"validationActions\":[\"$1\"]}}" >/dev/null
+  done
+}
+set_actions Deny
+out=$(dry_run denied)
+for policy in disallow-latest-tag require-requests-limits disallow-privileged-containers; do
+  grep -q "Policy $policy failed" <<<"$out" || { echo "$out" >&2; echo "EX-27a: Kyverno denied without $policy" >&2; exit 1; }
+done
+echo "EX-27a: with validationActions Deny, the API server rejected noncompliant's Deployment:"
+sed 's/^/  /; s/; Policy /;\n  Policy /g' <<<"$out"
+apply "${args[@]}"
+out=$(dry_run admitted)
+echo "EX-27a: with the policies as shipped, validationActions Audit, it admitted it: $out"
+
+set_actions Deny
+apply -f compiled/compliant/compliant-namespace.yml
+apply -R -f compiled/compliant/compliant
+install_wait compliant rollout status deploy/web --timeout=120s >/dev/null
+echo "EX-27a: with validationActions Deny, compliant's Deployment rolled out, 2 replicas available"
+if out=$(kubectl -n noncompliant run debug --image=ghcr.io/stefanprodan/podinfo:latest --privileged 2>&1); then
+  echo "$out" >&2
+  echo "EX-27a: Kyverno admitted a privileged kubectl run" >&2
+  exit 1
+fi
+grep -q 'Policy disallow-privileged-containers failed' <<<"$out" || {
+  echo "$out" >&2
+  echo "EX-27a: kubectl run failed without disallow-privileged-containers" >&2
+  exit 1
+}
+echo "EX-27a: the API server rejected kubectl run --privileged with podinfo:latest"
+echo "policy-checks: passed in $((SECONDS - started))s"
