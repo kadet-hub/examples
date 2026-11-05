@@ -1,0 +1,277 @@
+#!/usr/bin/env bash
+# Argo CD compiles a Kapitan project through a config management plugin
+# (EX-24). Verifies the latest signed index, the recipe pinned in
+# fetch/targets/recipes.yml and the generator it pins, and pulls them by
+# digest into the project. Installs Argo CD into a new kind cluster with the
+# Kapitan sidecar of repo-server-patch.yaml, limits the repo server's egress
+# with repo-server-egress.yaml, pushes the project to an in-cluster Git
+# server and creates application.yaml. Exits 0 only if the sidecar has no
+# service account token, reaches ghcr.io before the egress policy and not
+# after it, Argo CD reports the Application Synced and Healthy at the pushed
+# commit, rendered by the plugin, with one replica of the exporter, and the
+# same at the next commit, which sets replicas to 2, with two.
+# Set KEEP=1 to keep the cluster.
+# Needs gh (authenticated), jq, oras, kind, kubectl, curl, openssl, docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+min_serial=113
+tmp=$(mktemp -d)
+cluster=argocmp-argocd-cmp
+export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
+cleanup() {
+  kill "${watcher:-}" 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf lib compiled inventory/classes/recipes
+started=$SECONDS
+
+# EX-4: index signature, digests and attestations, then pull by digest, as
+# "Verifying a recipe by hand" in the registry's docs/consumers.md does it.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+if ((serial < min_serial)); then
+  echo "index serial $serial is lower than $min_serial" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+
+pins=$(sed -nE 's|^ *source: ghcr\.io/kadet-hub/recipes/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  fetch/targets/recipes.yml)
+while read -r name version digest; do
+  record=$(jq -ec --arg n "$name" --arg v "$version" \
+    '.recipes[$n][$v] | select(.yanked == null)' "$tmp/index.json") || {
+    echo "recipe $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  want=$(jq -r .digest <<<"$record")
+  if [[ $want != "$digest" ]]; then
+    echo "recipe $name $version: index has $want, fetch/targets/recipes.yml pins $digest" >&2
+    exit 1
+  fi
+  if jq -e '.includes | length > 0' <<<"$record" >/dev/null; then
+    echo "recipe $name $version includes other recipes, which fetch/targets/recipes.yml does not pin" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/recipes/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/recipes/$name" "ghcr.io/kadet-hub/recipes/$name@$digest" >/dev/null
+  mkdir -p "inventory/classes/recipes/$name"
+  tar -xf "$tmp/recipes/$name/$name.tar" -C "inventory/classes/recipes/$name" --no-same-owner
+  echo "recipe $name $version verified and unpacked"
+done <<<"$pins"
+if (($(wc -l <<<"$pins") != 1)); then
+  echo "expected 1 recipe in fetch/targets/recipes.yml, found $(wc -l <<<"$pins")" >&2
+  exit 1
+fi
+# The generators the recipe pins, which the sidecar would otherwise have to
+# fetch unverified.
+generators=$(cat inventory/classes/recipes/*/*.yml |
+  sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' | sort -u)
+[[ -n $generators ]] || { echo "the recipe pins no generator" >&2; exit 1; }
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "generator $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "generator $name $version: index has $want, the recipe pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/generators/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/generators/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "generator $name $version verified and unpacked"
+done <<<"$generators"
+echo "verified and pulled in $((SECONDS - started))s"
+
+# EX-6: what a broken or not ready pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop the wait as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    # EX-6: broken on two polls in a row.
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$ # check's children: the command it waits for and this watch
+    return
+  done
+}
+# EX-6: a kubectl rollout status or wait that prints the namespace on a timeout.
+install_wait() { # namespace kubectl-arguments
+  local ns=$1 s
+  shift
+  kubectl -n "$ns" "$@" && return
+  s=$?
+  kubectl -n "$ns" get events --sort-by=.lastTimestamp >&2 || true
+  kubectl -n "$ns" get pods -o wide >&2 || true
+  # shellcheck disable=SC2046 # one pod name per word
+  describe_pods "$ns" $(kubectl -n "$ns" get pods -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded" and (any(.status.conditions[]?;
+        .type == "Ready" and .status == "True") | not)) | .metadata.name')
+  return "$s"
+}
+# Waits until a jq filter, which may read $ENV, is true on a resource.
+until_true() { # seconds jq-filter kubectl-get-arguments
+  local deadline=$((SECONDS + $1)) filter=$2
+  shift 2
+  until kubectl get "$@" -o json 2>/dev/null | jq -e "$filter" >/dev/null; do
+    if ((SECONDS > deadline)); then
+      echo "timed out waiting for $filter on $*" >&2
+      kubectl get "$@" -o yaml >&2 || true
+      kubectl -n blackbox-exporter get events --sort-by=.lastTimestamp >&2 || true
+      kubectl -n argocd logs deploy/argocd-repo-server -c kapitan --tail=10 >&2 || true
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+# Argo CD publishes its manifest in the repository only, so it is pinned by
+# the commit of its tag (EX-3).
+# renovate: datasource=github-tags depName=argoproj/argo-cd
+ARGOCD_COMMIT=94037c4d4e1af4bd0651d37a179fbd9e347e668c # v3.6.1
+# EX-7: ECR Public throttles anonymous pulls from runners (429); the same tag
+# from the mirror, pinned by digest. The tag is the one Argo CD's manifest names.
+# renovate: datasource=docker depName=mirror.gcr.io/library/redis
+REDIS_IMAGE=mirror.gcr.io/library/redis:8.10.1-alpine@sha256:ef216d85ec44f4fdf7c0e6df2d1757a4734ed32fbb278cabd3181b5a27353b79
+curl -fsSL -o "$tmp/argocd.yaml" "https://raw.githubusercontent.com/argoproj/argo-cd/$ARGOCD_COMMIT/manifests/install.yaml"
+redis=${REDIS_IMAGE%@*}
+sed -i "s|image: public.ecr.aws/docker/library/redis:${redis##*:}$|image: $REDIS_IMAGE|" "$tmp/argocd.yaml"
+if grep -q 'image: public.ecr.aws/docker/library/redis:' "$tmp/argocd.yaml"; then
+  echo "EX-7: Argo CD's manifest names another redis tag than REDIS_IMAGE" >&2
+  exit 1
+fi
+
+# The node image of the workflow's kind release; Renovate updates both together.
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
+watch_pods &
+watcher=$!
+
+# EX-24: Argo CD from its release manifest, redis first (EX-7), then the
+# plugin's ConfigMap and the sidecar. The Git server starts meanwhile.
+installing=$SECONDS
+kubectl apply -f git-server.yaml >/dev/null
+kubectl create namespace argocd >/dev/null
+kubectl apply -n argocd --server-side -f "$tmp/argocd.yaml" -l app.kubernetes.io/name=argocd-redis >/dev/null
+install_wait argocd wait --for=create secret/argocd-redis --timeout=300s >/dev/null
+kubectl apply -n argocd --server-side --force-conflicts -f "$tmp/argocd.yaml" >/dev/null
+kubectl apply -f kapitan-plugin.yaml >/dev/null
+kubectl -n argocd patch deployment argocd-repo-server --patch-file repo-server-patch.yaml >/dev/null
+install_wait argocd rollout status deployment/argocd-repo-server --timeout=300s >/dev/null
+install_wait argocd wait --for=condition=Available deploy --all --timeout=300s >/dev/null
+install_wait argocd rollout status statefulset/argocd-application-controller --timeout=300s >/dev/null
+install_wait git wait --for=condition=Available deploy/gitea --timeout=300s >/dev/null
+echo "Argo CD $(kubectl -n argocd get deploy argocd-repo-server -o json |
+  jq -r '.spec.template.spec.containers[] | select(.name == "argocd-repo-server") | .image | sub(".*:"; "")')" \
+  "with the Kapitan sidecar available after $((SECONDS - installing))s"
+
+# EX-24: what the sidecar can reach. The repo server's pod mounts no
+# service account token, and the sidecar shares the pod's network.
+sidecar=(kubectl -n argocd exec deploy/argocd-repo-server -c kapitan --)
+token=$("${sidecar[@]}" ls -A /var/run/secrets/kubernetes.io 2>&1 || true)
+if [[ $token != *"No such file or directory"* ]]; then
+  echo "EX-24: the sidecar has a service account token, or the check failed: $token" >&2
+  exit 1
+fi
+connect=(python3 -c 'import socket; socket.create_connection(("ghcr.io", 443), timeout=5)')
+"${sidecar[@]}" "${connect[@]}" || {
+  echo "EX-24: the sidecar cannot connect to ghcr.io before the egress policy" >&2
+  exit 1
+}
+kubectl apply -f repo-server-egress.yaml >/dev/null
+for _ in $(seq 30); do
+  "${sidecar[@]}" "${connect[@]}" 2>/dev/null || break
+  sleep 2
+done
+if "${sidecar[@]}" "${connect[@]}" 2>/dev/null; then
+  echo "EX-24: the sidecar still connects to ghcr.io under repo-server-egress.yaml" >&2
+  exit 1
+fi
+echo "EX-24: the sidecar has no service account token, and reaches ghcr.io until repo-server-egress.yaml applies"
+
+# EX-24: the project with the verified recipe and generator as one commit
+# on main of the in-cluster Git server, at the URL application.yaml names.
+repo=$(sed -nE 's|^ +repoURL: http://[^/]+/(.+)$|\1|p' application.yaml)
+pass=$(openssl rand -hex 16)
+kubectl -n git exec deploy/gitea -- gitea admin user create --admin --username "${repo%%/*}" \
+  --password "$pass" --email kadet@example.com --must-change-password=false >/dev/null
+# shellcheck disable=SC2016 # $1 and $2 expand in the pod's shell
+revision=$(tar -cf - .kapitan fetch inventory lib | kubectl -n git exec -i deploy/gitea -- sh -euc '
+  mkdir /tmp/apps && cd /tmp/apps && tar -xf -
+  git init -q -b main && git add .
+  git -c user.name=check -c user.email=check@example.com commit -qm "blackbox-exporter, one replica"
+  git push -q "http://${2%%/*}:$1@localhost:3000/$2" main
+  git rev-parse HEAD' sh "$pass" "$repo")
+echo "pushed $revision"
+
+app=(-n argocd application blackbox-exporter)
+deploy=(-n blackbox-exporter deployment blackbox-exporter-prometheus-blackbox-exporter)
+synced() { # seconds revision replicas
+  # shellcheck disable=SC2016 # $ENV is jq's
+  revision=$2 until_true "$1" '.status.sourceType == "Plugin" and .status.sync.status == "Synced"
+    and .status.sync.revision == $ENV.revision and .status.health.status == "Healthy"' "${app[@]}"
+  # shellcheck disable=SC2016 # $ENV is jq's
+  replicas=$3 until_true 60 '.spec.replicas == ($ENV.replicas | tonumber)
+    and .status.availableReplicas == ($ENV.replicas | tonumber)' "${deploy[@]}"
+}
+t=$SECONDS
+kubectl apply -f application.yaml >/dev/null
+synced 300 "$revision" 1
+echo "EX-24: Argo CD reports blackbox-exporter Synced at $revision and Healthy, rendered by the plugin," \
+  "1 replica available, $((SECONDS - t))s after the Application was created"
+kubectl get "${app[@]}" -o json | jq -r '.status.resources[] | "  \(.kind) \(.namespace)/\(.name): \(.status)"'
+
+# EX-24: one parameter changed in the target and pushed. The refresh
+# annotation is what a Git webhook triggers; without either, Argo CD polls.
+# shellcheck disable=SC2016 # $1 and $2 expand in the pod's shell
+revision=$(kubectl -n git exec deploy/gitea -- sh -euc '
+  cd /tmp/apps
+  sed -i "s/^      replicas: 1$/      replicas: 2/" inventory/targets/blackbox-exporter.yml
+  git -c user.name=check -c user.email=check@example.com commit -qam "blackbox-exporter, two replicas"
+  git push -q "http://${2%%/*}:$1@localhost:3000/$2" main
+  git show --format= HEAD >&2
+  git rev-parse HEAD' sh "$pass" "$repo")
+echo "pushed $revision"
+t=$SECONDS
+kubectl annotate "${app[@]}" argocd.argoproj.io/refresh=normal --overwrite >/dev/null
+synced 180 "$revision" 2
+echo "EX-24: Argo CD reports blackbox-exporter Synced at $revision and Healthy, 2 replicas available," \
+  "$((SECONDS - t))s after the refresh"
+
+echo "the plugin's GenerateManifest calls took $(kubectl -n argocd logs deploy/argocd-repo-server -c kapitan |
+  jq -Rr 'fromjson? | select(.msg == "finished call" and ."grpc.method" == "GenerateManifest") | ."grpc.time_ms"' |
+  paste -sd ' ') ms"
+kubectl get --raw "/api/v1/nodes/$cluster-control-plane/proxy/stats/summary" | jq -r '
+  .pods[] | select(.podRef.namespace == "argocd" and (.podRef.name | startswith("argocd-repo-server-")))
+  | .containers[] | "  \(.name) memory working set: \(.memory.workingSetBytes / 1048576 | floor) MiB"'
+echo "argocd-cmp: passed in $((SECONDS - started))s"

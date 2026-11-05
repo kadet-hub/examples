@@ -1,0 +1,36 @@
+# The plugin configuration that the Kapitan sidecar of
+# repo-server-patch.yaml reads from /home/argocd/cmp-server/config. It has
+# no discover section, so it renders only Applications that name it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kapitan-plugin
+  namespace: argocd
+data:
+  plugin.yaml: |
+    apiVersion: argoproj.io/v1alpha1
+    kind: ConfigManagementPlugin
+    metadata:
+      name: kapitan
+    spec:
+      # Runs in the Application's path. Compiles the target that the
+      # Application sets in its plugin env as TARGET, without --fetch: the
+      # repository holds the verified generators and recipes. Prints every
+      # YAML file of compiled/<target>, and fails rather than print nothing,
+      # which would make an Application with prune delete everything.
+      generate:
+        command: [bash, -c]
+        args:
+          - |
+            set -euo pipefail
+            shopt -s globstar nullglob
+            kapitan compile -t "$ARGOCD_ENV_TARGET" >&2
+            files=(compiled/"$ARGOCD_ENV_TARGET"/**/*.yml compiled/"$ARGOCD_ENV_TARGET"/**/*.yaml)
+            if ((${#files[@]} == 0)); then
+              echo "no YAML files in compiled/$ARGOCD_ENV_TARGET" >&2
+              exit 1
+            fi
+            for f in "${files[@]}"; do
+              echo ---
+              cat "$f"
+            done

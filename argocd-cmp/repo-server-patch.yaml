@@ -1,0 +1,43 @@
+# A strategic merge patch that adds the Kapitan sidecar to Argo CD's
+# Deployment argocd-repo-server, as Argo CD's docs on config management
+# plugins describe. The same container goes into a kustomize patch or the
+# Helm chart's repoServer.extraContainers. argocd-cmp-server comes from the
+# volume var-files, which the repo server's init container fills.
+spec:
+  template:
+    spec:
+      containers:
+        - name: kapitan
+          image: docker.io/kapicorp/kapitan:0.36.3@sha256:04b9ca04f5041851631fb1041fbafe37b1ca6c3ad99a81d6ccd40f5ebd20f857
+          command: [/var/run/argocd/argocd-cmp-server]
+          env:
+            # Kapitan's dependencies print deprecation warnings on every
+            # compile, which bury a compile error in Argo CD's UI.
+            - name: PYTHONWARNINGS
+              value: ignore
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: var-files
+              mountPath: /var/run/argocd
+            - name: plugins
+              mountPath: /home/argocd/cmp-server/plugins
+            - name: kapitan-plugin
+              mountPath: /home/argocd/cmp-server/config/plugin.yaml
+              subPath: plugin.yaml
+            # Not the repo server's /tmp, as the docs ask.
+            - name: kapitan-tmp
+              mountPath: /tmp
+      volumes:
+        - name: kapitan-plugin
+          configMap:
+            name: kapitan-plugin
+        - name: kapitan-tmp
+          emptyDir: {}

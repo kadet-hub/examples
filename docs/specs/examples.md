@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `argocd-cmp/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -61,8 +61,9 @@ schedule instead of trusting the state on the publishing day.
   `kubevirt-csi` unless EX-14 and EX-14a hold, `open-webui-searxng`
   unless EX-17 holds, `platform-baseline` unless EX-18 and EX-18a hold,
   `immich-cnpg` unless EX-19 holds, `pihole-powerdns` unless EX-20 holds,
-  `timoni-vs-kapitan` unless EX-22 to EX-22b hold, `kcl-vs-kapitan` unless
-  EX-23 to EX-23b hold.
+  `helmfile-vs-kapitan` unless EX-21 holds, `timoni-vs-kapitan` unless
+  EX-22 to EX-22b hold, `kcl-vs-kapitan` unless EX-23 to EX-23b hold,
+  `argocd-cmp` unless EX-24 holds.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -134,8 +135,9 @@ schedule instead of trusting the state on the publishing day.
   run, such as a readiness probe on a port the app does not listen on.
   `argocd-vs-flux`, `helm-mutate`, `cert-manager-mutate`,
   `kubevirt-csi`, `open-webui-searxng`, `platform-baseline`,
-  `immich-cnpg` and `pihole-powerdns` deploy their workloads under EX-7,
-  EX-10, EX-11, EX-14, EX-17, EX-18, EX-19 and EX-20.
+  `immich-cnpg`, `pihole-powerdns`, `helmfile-vs-kapitan` and `argocd-cmp`
+  deploy their workloads under EX-7, EX-10, EX-11, EX-14, EX-17, EX-18,
+  EX-19, EX-20, EX-21 and EX-24.
   `first-platform/check` deploys `compiled/prod/apps` (Namespace,
   Deployment, Service, PodDisruptionBudget), `helm-vs-terraform/check`
   the Deployment, Service and ConfigMap of its first compile. Both create
@@ -239,10 +241,13 @@ schedule instead of trusting the state on the publishing day.
   Pins in Kapitan inventories and Kubernetes manifests are updated with
   `datasource=docker` by regex managers: generators through the org preset;
   recipes in a fetch inventory (`open-webui-searxng`, `platform-baseline`,
-  `immich-cnpg`, `pihole-powerdns`) by a manager of their own, because the preset reads `**/inventory/**` only and allows no
+  `immich-cnpg`, `pihole-powerdns`, `argocd-cmp`) by a manager of their own, because the preset reads `**/inventory/**` only and allows no
   `/` in a name;
   charts by version and the digest of their OCI artifact (podinfo in
-  `helm-mutate`, cert-manager and trust-manager in `cert-manager-mutate`); images wherever an `image:` or
+  `helm-mutate`, cert-manager and trust-manager in `cert-manager-mutate`,
+  podinfo and Valkey in the classes and in `helmfile/helmfile.yaml` of
+  `helmfile-vs-kapitan`, whose digest pins Renovate's own helmfile manager
+  skips as `unsupported-chart-type`); images wherever an `image:` or
   `image_name:` key or an `-image=` argument names one, by tag or by
   `tag@sha256:digest`, as
   `repository`, `tag` and `digest` values, or as a mutate `images` entry
@@ -258,7 +263,9 @@ schedule instead of trusting the state on the publishing day.
   plugin; the four recipes of `open-webui-searxng` and those of
   `immich-cnpg` and `pihole-powerdns`, whose includes must be pinned at
   the digests the index lists (EX-17, EX-19, EX-20); the velero CLI and the
-  server image `platform-baseline/check` installs with it (EX-18).
+  server image `platform-baseline/check` installs with it (EX-18); the
+  charts of both sides of `helmfile-vs-kapitan`, outside the podinfo group
+  (EX-21).
 
   Two values follow another pin, and the pull request that changes that
   pin has to change them: the redis tag follows Argo CD's manifest (EX-7),
@@ -363,7 +370,7 @@ schedule instead of trusting the state on the publishing day.
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
     cryptography override: #86; recipes in a fetch inventory: #132;
-    `platform-baseline`: #135
+    `platform-baseline`: #135; `helmfile-vs-kapitan`: #140
 
 - EX-3h: Renovate MUST merge its own pull request once every check on it
   passed, unless it is a major update or a digest update of a GitHub Action.
@@ -1526,6 +1533,91 @@ writes the Service's cluster IP into the zone.
   - Test: `examples` workflow, job `pihole-powerdns`
   - Since: #138
 
+## Helmfile and Kapitan
+
+`helmfile-vs-kapitan/` backs the kadet-hub.org blog post that compares
+Helmfile with Kapitan on a setup Helmfile is usually chosen for: two
+upstream charts, podinfo and Valkey as its cache, in the environments `dev`
+and `prod`. Both sides pin the charts at the same version and OCI digest
+and render them with the same helm binary. `helmfile/helmfile.yaml` lists
+the two releases, `helmfile/environments/` holds what differs per
+environment, and `helmfile/values/` holds the chart values as Go
+templates that read it. The targets in `kapitan/inventory/targets/` hold
+the same values as parameters, and the classes `podinfo` and `valkey`
+render the charts with Kapitan's `helm` input. The release `podinfo`
+`needs` `valkey`.
+
+podinfo logs in to Valkey as the user `default`. Its chart value
+`extraEnvs` reads the password from the Secret `valkey-auth` and builds
+`PODINFO_CACHE_SERVER` from it with the kubelet's `$(VAR)` expansion.
+`check` creates the password per run. Helmfile reads it through vals from
+the environment, `ref+envsubst://$VALKEY_PASSWORD`, and passes it to the
+chart, which writes it base64-encoded into `valkey-auth`. Kapitan reads it
+from the ref `?{base64:valkey/password}`, which `check` writes to a
+temporary refs path. Kapitan hands `helm_values` to Helm as written and
+reveals refs only in its own output. Given to the chart, the ref tag ends up
+base64-encoded in the chart's Secret, where `--reveal` does not find it.
+The class `valkey` therefore drops the chart's `secret.yaml` with the
+`remove` input, and the kubernetes generator writes `valkey-auth` with the
+ref in `stringData`. Helmfile with vals turned off,
+`HELMFILE_DISABLE_VALS=true`, hands the chart the `ref+` string, which
+ends up base64-encoded in the same way.
+
+`check` normalizes both sides as `same-app` does (EX-1), with two rules
+of its own. An object without a namespace gets `podinfo`, the namespace
+both sides give Helm. A Secret is compared by name, namespace, type and
+decoded data, because on the Kapitan side the generator writes it, with its
+own labels. An empty object list fails the check.
+
+- EX-21: `helmfile-vs-kapitan/check` MUST fail unless, for `dev` and
+  `prod`, the normalized output of `helmfile template` equals that of
+  `kapitan compile --reveal`, Helmfile's output holds the password
+  base64-encoded, Kapitan's output without `--reveal` holds neither the
+  password nor its base64 encoding but the ref token in `valkey-auth`, a
+  compile without the `remove` entry leaves the ref tag in the chart's
+  Secret after `--reveal`, `helmfile template` with
+  `HELMFILE_DISABLE_VALS=true` leaves the `ref+` string in it, and `prod`,
+  deployed to a new kind cluster with `helmfile sync` and then with
+  `kubectl apply` of Kapitan's output, lets podinfo store and read a key in
+  Valkey, which refuses `valkey-cli` without the password. `helmfile sync`
+  MUST process `valkey` in an earlier group than `podinfo`.
+
+  Helmfile 1.8.2 logs its groups at the log level `debug` only, which
+  `check` sets for `sync`. `check` prints that log when `sync` fails. It
+  holds the password neither plain nor base64-encoded, as `grep` showed
+  for a local `sync` of `prod` on kind on 2026-11-05.
+
+  `check` writes and reads the key through the API server's service proxy.
+  `kubectl create --raw` exits 0 when podinfo answers the write with an
+  error, and prints the answer, while the 202 of a write has no body. In
+  the second CI run of #140 the read right after the Helmfile rollout found
+  no key. Locally, with Valkey scaled to zero and back to one, podinfo
+  answered five writes with 500 `cache set failed` and stored the sixth,
+  11 seconds later. `check` therefore repeats write and read for up to a
+  minute until the read returns the value. A wrong password keeps the write
+  failing and fails the check.
+  Between the two deploys it runs `helmfile destroy` and deletes the
+  namespace. After the Kapitan deploy `helm list` must be empty. The
+  Kapitan side has no order. podinfo starts while Valkey is down and
+  connects later (`startCachePool` in podinfo 6.17.0), so it needs none.
+
+  Not tested: `helmfile diff` and `helmfile apply`, which need the
+  helm-diff plugin; helm-secrets with sops; vals backends other than
+  `envsubst`; `dev` on a cluster.
+
+  Related: EX-1, EX-4, EX-6, EX-12
+
+  - Test: `examples` workflow, job `helmfile-vs-kapitan`; `manual:` with
+    prod's podinfo replicas changed in `kapitan/inventory/targets/prod.yml`
+    alone, `check` fails on the Deployment's `replicas`; `manual:` with
+    `valkey-auth` changed after the deploy and podinfo restarted, all 30
+    writes got 500 and podinfo logged `WRONGPASS`; `manual:` with
+    podinfo set back to 6.16.0 and Valkey to 0.12.0 on both sides, Renovate
+    44.194.0 (`--platform=local --dry-run=lookup`, 2026-11-05) proposed
+    6.17.0 and 0.12.1 at their digests for all four pins on the branch
+    `renovate/helmfile-vs-kapitan-charts`
+  - Since: #140
+
 ## Timoni modules and bundles
 
 `timoni-vs-kapitan/` backs the kadet-hub.org blog post that compares
@@ -1639,6 +1731,90 @@ directory, so every run downloads the module.
 Not tested: publishing the app as a KCL module with `kcl mod push`, and
 KCL's other outputs than YAML.
 
+## Argo CD config management plugin
+
+`argocd-cmp/` backs the kadet-hub.org blog post for teams that will not add
+a compile step to CI and want Argo CD to compile the Kapitan project. A
+config management plugin runs `kapitan compile` in a sidecar of Argo CD's
+repo server, and the Application names the plugin and the target. The
+project uses the recipe `blackbox-exporter`, which includes no other
+recipe, pinned in the fetch inventory `fetch/targets/recipes.yml`.
+
+The Application creates the namespace with the Pod Security level
+`restricted`. The recipe 1.0.0 sets no seccomp profile, which that level
+requires, so the target adds `RuntimeDefault` to the container's
+`security_context`.
+
+`check` installs Argo CD from its release manifest at the commit of its
+tag, in the two steps of EX-7 and with the redis image of EX-7. It then
+applies the ConfigMap of `kapitan-plugin.yaml` and patches the Deployment
+`argocd-repo-server` with `repo-server-patch.yaml`. The argocd generator
+renders Applications, ApplicationSets and AppProjects, and its README
+leaves the installation to the `helm` input, so it cannot add the sidecar.
+The sidecar runs Kapitan's image, pinned as `tag@sha256:digest`, as user
+999 with Argo CD's `argocd-cmp-server` as its command, as Argo CD's
+documentation requires. The plugin has no `discover` section, so it
+renders only Applications that name it. The Application passes the target
+in its plugin env `TARGET`, which the plugin reads as `ARGOCD_ENV_TARGET`.
+
+The plugin compiles without `--fetch` (EX-4). `check` verifies and pulls
+the recipe and the kubernetes generator it pins as `pihole-powerdns/check`
+does and pushes them with `.kapitan`, `fetch/` and `inventory/` to the
+Gitea of EX-7. A sidecar could not fetch the recipe with `kapitan compile
+--fetch` alone in any case, because Kapitan 0.36.3 reads the inventory,
+which includes the recipe, before it fetches (kapicorp/kapitan#1638).
+`generate` prints every `.yml` and `.yaml` file under `compiled/<target>`
+and fails when there is none. Argo CD's documentation warns that a plugin
+that prints nothing makes an Application with `prune` delete its
+resources.
+
+- EX-24: `argocd-cmp/check` MUST fail unless the recipe and the generator
+  pass the checks of EX-17 and EX-4, and, in a new kind cluster with Argo
+  CD and the sidecar:
+
+  - the sidecar has no service account token, opens a TCP connection to
+    ghcr.io on port 443, and cannot open it once `repo-server-egress.yaml`
+    applies;
+  - Argo CD reports the Application `blackbox-exporter` with source type
+    `Plugin`, `Synced` at the pushed commit and `Healthy`, and the
+    exporter's Deployment has one replica, available;
+  - after a commit that sets `replicas` to 2 in the target, and a refresh,
+    the same holds at the new commit with two replicas.
+
+  The post says what the sidecar can reach, and these steps check it.
+  Argo CD's manifest sets `automountServiceAccountToken: false` on the
+  repo server's pod, so no container in it can call the API server with
+  the pod's identity. Its NetworkPolicies restrict ingress only, so the
+  sidecar reaches the internet until a policy restricts egress.
+  `repo-server-egress.yaml` allows DNS, Argo CD's Redis and the Git server,
+  and both commits render under it, which shows that the plugin needs no
+  other network. The connection test runs the sidecar's Python. `check`
+  waits up to a minute for the policy to take effect and fails when it
+  does not, so a CNI that ignores NetworkPolicy fails the check. kindnet,
+  the CNI that kind v0.33.0 installs, enforces it.
+
+  After the second push `check` sets the annotation
+  `argocd.argoproj.io/refresh: normal`, which is what Argo CD's webhook
+  handler sets on a push event (`RefreshApp` in `util/argo/argo.go`).
+  Without a webhook Argo CD polls the repository every
+  `timeout.reconciliation`, 120 seconds by default, plus up to 60 seconds
+  of jitter.
+
+  Refs are not tested. The recipe renders no Secret, and the plugin passes
+  no `--reveal`. The repository's `.kapitan` can still set `reveal` and
+  `fetch` for every compile (`from_dot_kapitan` in Kapitan 0.36.3's
+  `cli.py`), so the plugin's command line does not keep a compile from
+  revealing refs or fetching. What keeps refs closed is that the sidecar
+  holds no key for them.
+
+  Related: EX-6, EX-7, EX-12
+
+  - Test: `examples` workflow, job `argocd-cmp`; `manual:` without the
+    seccomp profile in the target, the first local run timed out waiting
+    for the Application to become `Healthy`, while PodSecurity rejected
+    every pod of the exporter's ReplicaSet
+  - Since: #144
+
 ## Compile diff
 
 The registry's compile-diff actions compile the base and the merge commit
@@ -1703,6 +1879,8 @@ runs from the default branch only.
 | `platform-baseline/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `kyverno`, `monitoring`, `external-secrets`, `velero`, `argocd`, `podinfo`), the shared class `inventory/classes/platform.yml`, the cert-manager recipe pinned in `fetch/targets/recipes.yml`, the stand-ins `git-server.yaml` and `s3-server.yaml`; `check` (EX-18, EX-18a) |
 | `immich-cnpg/` | One Kapitan project (targets `cnpg`, `immich`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-19) |
 | `pihole-powerdns/` | One Kapitan project (targets `dns`, `pihole`) on the omegaconf backend, the zone in `inventory/classes/home.yml`, the three recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-20) |
+| `helmfile-vs-kapitan/` | `helmfile/` (releases, environments, values templates) and `kapitan/` (targets `dev`, `prod`, classes `common`, `podinfo`, `valkey`), both pinning podinfo and Valkey; `check` (EX-21) |
 | `timoni-vs-kapitan/` | The Timoni module `timoni/app` with its vendored Kubernetes schemas, the bundle `timoni/shop.cue` with `dev.cue` and `prod.cue`, the Kapitan project of `config-tools`; `check` (EX-22 to EX-22b) |
 | `kcl-vs-kapitan/` | The KCL module `kcl/` (`app/app.k`, `shop.k`, `dev.k`, `prod.k`, `kcl.mod`, `kcl.mod.lock`), the Kapitan project of `config-tools`; `check` (EX-23 to EX-23b) |
+| `argocd-cmp/` | One Kapitan project (target `blackbox-exporter`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the plugin's ConfigMap `kapitan-plugin.yaml`, the sidecar in `repo-server-patch.yaml`, the egress policy `repo-server-egress.yaml`, `application.yaml`, `git-server.yaml`; `check` (EX-24) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |

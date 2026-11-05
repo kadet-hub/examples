@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+# Renders podinfo and Valkey for dev and prod with Helmfile and with Kapitan
+# and exits 0 only if both produce the same manifests for each environment
+# and handle the Valkey password as EX-21 states. Then deploys prod to a new
+# kind cluster, first with helmfile sync, then with kubectl apply of Kapitan's
+# output, and requires podinfo to store a key in Valkey both times (EX-12).
+# Set KEEP=1 to keep the cluster, CLUSTER to name it.
+# Needs gh (authenticated), jq, oras, uv, helm, helmfile, kind, kubectl,
+# openssl, docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+min_serial=112
+tmp=$(mktemp -d)
+cluster=${CLUSTER:-helmfile-vs-kapitan}
+export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
+cleanup() {
+  kill "${watcher:-}" 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf kapitan/lib kapitan/charts
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+
+# EX-4: the kubernetes generator against the signed index and its
+# attestation, pulled by digest. No kapitan compile --fetch.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+if ((serial < min_serial)); then
+  echo "index serial $serial is lower than $min_serial" >&2
+  exit 1
+fi
+read -r name version digest < <(sed -nE \
+  's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  kapitan/inventory/classes/common.yml)
+want=$(jq -er --arg n "$name" --arg v "$version" \
+  '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+  echo "generator $name $version is missing or yanked in index serial $serial" >&2
+  exit 1
+}
+if [[ $want != "$digest" ]]; then
+  echo "generator $name $version: index has $want, common.yml pins $digest" >&2
+  exit 1
+fi
+gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+oras pull -o "$tmp/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+mkdir -p "kapitan/lib/$name"
+tar -xf "$tmp/$name/$name.tar" -C "kapitan/lib/$name" --no-same-owner
+echo "index serial $serial, generator $name $version verified and unpacked"
+
+# The charts at the digests the Kapitan classes pin, where Kapitan's helm
+# dependency would put them. Helmfile pulls its own pins.
+for chart in podinfo valkey; do
+  f=kapitan/inventory/classes/$chart.yml
+  src=$(sed -nE 's|^ *source: (oci://[^@]+@sha256:[0-9a-f]{64})$|\1|p' "$f")
+  ver=$(sed -nE 's|^ *version: (.+)$|\1|p' "$f")
+  helm pull "$src" --version "$ver" --untar -d "$tmp/charts" >/dev/null
+  mkdir -p kapitan/charts
+  mv "$tmp/charts/$chart" "kapitan/charts/$chart"
+done
+
+# One password for both sides, created per run: Helmfile reads it through
+# vals from VALKEY_PASSWORD, Kapitan from a ref in a temporary refs path.
+VALKEY_PASSWORD=$(openssl rand -hex 16)
+export VALKEY_PASSWORD
+b64=$(printf %s "$VALKEY_PASSWORD" | base64)
+compile() { # output-path kapitan-compile-arguments
+  local out=$1
+  shift
+  (cd kapitan && "${py[@]}" kapitan compile --refs-path "$tmp/refs" --output-path "$out" "$@") \
+    >"$tmp/compile.log" 2>&1 || { cat "$tmp/compile.log"; exit 1; }
+}
+printf %s "$VALKEY_PASSWORD" |
+  (cd kapitan && "${py[@]}" kapitan refs --write base64:valkey/password -f - --refs-path "$tmp/refs")
+compile "$tmp/sealed"
+compile "$tmp/kapitan" --reveal
+
+# One document per object, sorted by kind, namespace and name, keys sorted.
+# An object without a namespace gets podinfo, the one both sides give Helm.
+# A Secret is compared by name, namespace, type and decoded data: on the
+# Kapitan side the kubernetes generator writes it, not the chart.
+normalize() {
+  "${py[@]}" python -I -c '
+import base64, sys, yaml
+def norm(d):
+    d["metadata"].setdefault("namespace", "podinfo")
+    if d["kind"] != "Secret":
+        return d
+    data = {k: base64.b64decode(v).decode() for k, v in (d.get("data") or {}).items()}
+    data.update(d.get("stringData") or {})
+    return {"apiVersion": d["apiVersion"], "kind": "Secret", "type": d.get("type"), "data": data,
+            "metadata": {k: d["metadata"][k] for k in ("name", "namespace")}}
+docs = [norm(d) for d in yaml.safe_load_all(sys.stdin) if d]
+docs.sort(key=lambda d: (d["kind"], d["metadata"]["namespace"], d["metadata"]["name"]))
+sys.stdout.write(yaml.safe_dump_all(docs, sort_keys=True))
+'
+}
+concat() { find "$1" -name '*.yaml' -exec sh -c 'cat "$1"; echo ---' _ {} \; ; }
+
+status=0
+for env in dev prod; do
+  helmfile -f helmfile/helmfile.yaml -e "$env" template --skip-tests >"$tmp/$env.raw" 2>"$tmp/helmfile.log" ||
+    { cat "$tmp/helmfile.log"; exit 1; }
+  normalize <"$tmp/$env.raw" >"$tmp/$env.helmfile"
+  concat "$tmp/kapitan/compiled/$env" | normalize >"$tmp/$env.kapitan"
+  n=$(grep -c '^kind:' "$tmp/$env.helmfile" || true)
+  if ((n == 0)); then
+    echo "$env: no objects rendered" >&2
+    status=1
+  elif diff -u "$tmp/$env.kapitan" "$tmp/$env.helmfile"; then
+    echo "$env: helmfile = kapitan ($n objects)"
+  else
+    status=1
+  fi
+
+  # The password: in Helmfile's output as the chart writes it, base64; not in
+  # Kapitan's output without --reveal, which holds the ref token instead.
+  grep -qF "$b64" "$tmp/$env.raw" || { echo "$env: helmfile output lacks the password" >&2; status=1; }
+  if grep -rqF -e "$VALKEY_PASSWORD" -e "$b64" "$tmp/sealed/compiled/$env"; then
+    echo "$env: kapitan output without --reveal holds the password" >&2
+    status=1
+  fi
+  token=$(sed -nE 's/^  default-password: (\?\{base64:valkey\/password:[0-9a-f]{8}\})$/\1/p' \
+    "$tmp/sealed/compiled/$env/manifests/podinfo/valkey-auth-secret.yaml")
+  [[ -n $token ]] || { echo "$env: no ref token in the Kapitan Secret" >&2; status=1; }
+done
+((status == 0)) || exit 1
+echo "password: base64 in helmfile's output, ref token $token in kapitan's without --reveal"
+
+# Without the remove entry the chart's own Secret stays. Helm got the ref tag
+# as a plain string and base64-encoded it, so --reveal leaves it there.
+cp -r kapitan/inventory "$tmp/inventory"
+"${py[@]}" python -I -c '
+import sys, yaml
+f = sys.argv[1]
+d = yaml.safe_load(open(f))
+c = d["parameters"]["kapitan"]["compile"]
+d["parameters"]["kapitan"]["compile"] = [e for e in c if e["input_type"] != "remove"]
+yaml.safe_dump(d, open(f, "w"))
+' "$tmp/inventory/classes/valkey.yml"
+compile "$tmp/kept" --inventory-path "$tmp/inventory" -t prod --reveal
+password_in() { # file: the decoded default-password of the Secret valkey-auth in it
+  "${py[@]}" python -I -c '
+import base64, sys, yaml
+for d in yaml.safe_load_all(open(sys.argv[1])):
+    if d and d["kind"] == "Secret" and d["metadata"]["name"] == "valkey-auth":
+        print(base64.b64decode(d["data"]["default-password"]).decode())
+' "$1"
+}
+kept=$(password_in "$tmp/kept/compiled/prod/valkey/valkey/templates/secret.yaml")
+[[ $kept == "?{base64:valkey/password}" ]] || {
+  echo "the chart's Secret holds '$kept' after --reveal, not the ref tag" >&2
+  exit 1
+}
+echo "chart's Secret after --reveal, without the remove entry: $kept"
+
+# With vals off, Helmfile hands the chart the ref+ string, which the chart
+# base64-encodes the same way.
+HELMFILE_DISABLE_VALS=true helmfile -f helmfile/helmfile.yaml -e prod template --skip-tests \
+  >"$tmp/passthrough.raw" 2>"$tmp/helmfile.log" || { cat "$tmp/helmfile.log"; exit 1; }
+passed=$(password_in "$tmp/passthrough.raw")
+# shellcheck disable=SC2016 # the ref+ string as written, not expanded
+[[ $passed == 'ref+envsubst://$VALKEY_PASSWORD' ]] || {
+  echo "with HELMFILE_DISABLE_VALS=true the chart's Secret holds '$passed', not the ref+ string" >&2
+  exit 1
+}
+echo "chart's Secret from helmfile with HELMFILE_DISABLE_VALS=true: $passed"
+
+# EX-6: what a broken or not ready pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop the rollout status as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$ # check's children: the command it waits for and this watch
+    return
+  done
+}
+# EX-6: a kubectl rollout status that prints the namespace on a timeout.
+install_wait() { # namespace kubectl-arguments
+  local ns=$1 s
+  shift
+  kubectl -n "$ns" "$@" && return
+  s=$?
+  kubectl -n "$ns" get events --sort-by=.lastTimestamp >&2 || true
+  kubectl -n "$ns" get pods -o wide >&2 || true
+  # shellcheck disable=SC2046 # one pod name per word
+  describe_pods "$ns" $(kubectl -n "$ns" get pods -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded" and (any(.status.conditions[]?;
+        .type == "Ready" and .status == "True") | not)) | .metadata.name')
+  return "$s"
+}
+# podinfo writes a key to Valkey and reads it back, through the API server's
+# service proxy. Valkey refuses a client without the password.
+smoke() { # side
+  local svc=/api/v1/namespaces/podinfo/services/podinfo:http/proxy/cache/check out='' i
+  install_wait podinfo rollout status deploy/valkey --timeout=300s
+  install_wait podinfo rollout status deploy/podinfo --timeout=300s
+  printf %s "$1" >"$tmp/value"
+  # kubectl create --raw exits 0 on podinfo's error answer and prints it; the
+  # 202 of a write has no body. Right after the rollout Valkey can still
+  # refuse podinfo, so the write is repeated for up to a minute.
+  for i in $(seq 30); do
+    out=$(kubectl create --raw "$svc" -f "$tmp/value" 2>&1) && [[ -z $out ]] &&
+      out=$(kubectl get --raw "$svc" 2>&1) && [[ $out == "$1" ]] && break
+    sleep 2
+  done
+  [[ $out == "$1" ]] || {
+    echo "$1: podinfo's cache still answers '$out'" >&2
+    kubectl -n podinfo logs deploy/podinfo --tail=20 >&2 || true
+    exit 1
+  }
+  out=$(kubectl -n podinfo exec deploy/valkey -c valkey -- valkey-cli ping 2>&1 || true)
+  [[ $out == NOAUTH* ]] || { echo "$1: valkey-cli without the password got '$out'" >&2; exit 1; }
+  echo "$1: podinfo stored a key in Valkey (write $i), which refuses a client without the password"
+}
+
+# EX-12: prod twice on one cluster, once per side.
+# The node image of the workflow's kind release; Renovate updates both together.
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
+watch_pods &
+watcher=$!
+
+# Helmfile installs valkey before podinfo, which needs it, as two Helm
+# releases. It logs the order at debug level.
+helmfile -f helmfile/helmfile.yaml -e prod --log-level debug sync >"$tmp/sync.log" 2>&1 ||
+  { cat "$tmp/sync.log"; exit 1; }
+order=$(sed -n '/^processing 2 groups of releases in this order:$/,/^$/p' "$tmp/sync.log")
+echo "$order"
+if ! grep -qE '^1 +[^ ]+/valkey$' <<<"$order" || ! grep -qE '^2 +[^ ]+/podinfo$' <<<"$order"; then
+  echo "helmfile did not install valkey before podinfo" >&2
+  exit 1
+fi
+smoke helmfile
+helm list -n podinfo
+helmfile -f helmfile/helmfile.yaml -e prod destroy >"$tmp/destroy.log" 2>&1 ||
+  { cat "$tmp/destroy.log"; exit 1; }
+kubectl delete namespace podinfo --wait --timeout=120s >/dev/null
+
+# Kapitan's revealed output, all files in one apply. No Helm release exists.
+kubectl create namespace podinfo >/dev/null
+kubectl apply -n podinfo -R -f "$tmp/kapitan/compiled/prod" >/dev/null
+smoke kapitan
+[[ -z $(helm list -n podinfo -q) ]] || { echo "kapitan: a Helm release exists" >&2; exit 1; }
+echo "helmfile-vs-kapitan: same manifests for dev and prod, prod deployed by both"

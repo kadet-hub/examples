@@ -1,0 +1,30 @@
+parameters:
+  kapitan:
+    dependencies:
+      - type: helm
+        source: oci://ghcr.io/stefanprodan/charts/podinfo@sha256:258d0da545724b4eea8de5d5e724cd9a75aab3de79a87ba8d82ec402745cea58
+        chart_name: podinfo
+        version: 6.17.0
+        output_path: charts/podinfo
+    compile:
+      - input_type: helm
+        input_paths: [charts/podinfo]
+        output_path: podinfo
+        helm_params:
+          name: podinfo
+          namespace: ${namespace}
+        helm_values:
+          replicaCount: ${podinfo:replicas}
+          logLevel: ${podinfo:logLevel}
+          ui:
+            message: ${kapitan:vars:target}
+          podDisruptionBudget: ${podinfo:pdb}
+          # podinfo reads PODINFO_CACHE_SERVER; Kubernetes expands $(VALKEY_PASSWORD).
+          extraEnvs:
+            - name: VALKEY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: valkey-auth
+                  key: default-password
+            - name: PODINFO_CACHE_SERVER
+              value: tcp://default:$(VALKEY_PASSWORD)@valkey:6379
