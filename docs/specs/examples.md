@@ -1913,8 +1913,9 @@ enforce the Pod Security level `baseline`.
 
   Each step compiles without `--reveal` and compares `compiled/` with the
   step before through `diff -r`, which `check` prints. The registry's
-  `compile-diff` action shows the same difference per target on a pull
-  request and is not used here. The value is not deployed.
+  compile-diff actions show the same difference per target on a pull
+  request (EX-25) and are not run on `multi-env`. The value is not
+  deployed.
 
   - Test: `examples` workflow, job `multi-env`
   - Since: tbd
