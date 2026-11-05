@@ -18,6 +18,6 @@ jobs:
       packages: read # the sandbox image and the generators
       attestations: read # gh attestation verify
     steps:
-      - uses: kadet-hub/registry/.github/actions/compile-diff@9e5252064526da3fdd273077f7173f8dbc0977ce # kadet-hub/registry#537
+      - uses: kadet-hub/registry/.github/actions/compile-diff@bfb96792f7afd43ee513b1e0339faeff069550f8 # main, kadet-hub/registry#537; no index tag at this commit
         with:
           working-directory: first-platform
