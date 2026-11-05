@@ -1858,7 +1858,11 @@ check and volume. It sets `applications.miniflux`, with both passwords as
 refs with the base64 backend and a `random` function. The target
 `cluster` adds the recipe's `init.yml`, which compiles with the kubernetes
 generator, and the Namespace `miniflux` at the Pod Security level
-`baseline`, because postgres starts as root. The target `compose` adds the
+`baseline`, because postgres starts as root. It also adds a readiness
+probe on Miniflux's `/healthcheck`, which the recipe 1.0.0 lacks. Without
+it the rollout ended before Miniflux listened, and the port-forward of the
+first CI run of #147 ended at the refused connection, as in EX-17. The
+target `compose` adds the
 compile entry of `components/compose` and, under `compose.services`, what
 only a Docker host needs: the published port, the start order and the
 restart policy. It leaves out `init.yml`, whose compile entry would run the
@@ -1886,6 +1890,11 @@ container port, so the Service port 80 of `miniflux` has no counterpart.
   creates, both after `kubectl apply` of the target `cluster` to a new
   kind cluster and after `docker compose up` of the target `compose` on
   the runner.
+
+  `check` applies the database of `cluster` first and waits for its
+  rollout, in place of Compose's `depends_on`. Miniflux exits while
+  PostgreSQL refuses connections. With all objects applied at once, a local
+  run stopped on EX-6 while Miniflux waited in `CrashLoopBackOff`.
 
   The admin's password comes from the ref, so the login shows that both
   runtimes got the revealed value. A category is a row in PostgreSQL, so
