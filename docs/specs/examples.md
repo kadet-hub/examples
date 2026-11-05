@@ -1815,6 +1815,108 @@ resources.
     every pod of the exporter's ReplicaSet
   - Since: #144
 
+## Kapitan refs and External Secrets
+
+`secrets-end-to-end/` backs the kadet-hub.org blog post on which secrets of
+an app belong in Kapitan refs and which in External Secrets. Vaultwarden,
+from the recipe `vaultwarden`, takes its admin token from Vault through an
+ExternalSecret. External Secrets logs in to Vault with an AppRole, and the
+AppRole's secret ID is the one secret the inventory carries, as a gpg ref.
+
+The secret ID is a bootstrap secret. External Secrets needs it before it
+can read anything from Vault, so it cannot come from Vault through
+External Secrets. The admin token is a runtime secret. Whoever runs Vault
+changes it, and the change reaches the cluster without a commit or a
+compile.
+
+The target `vaultwarden` renders the Secret `vault-approle` with the ref
+`?{gpg:vaultwarden/vault-secret-id}` through the kubernetes generator, and
+the SecretStore `vault` and the ExternalSecret `vaultwarden` through the
+external-secrets generator. The recipe renders a Secret `vaultwarden` with
+`ADMIN_TOKEN` from the parameter `applications.vaultwarden.admin_token`.
+The target drops that file with the `remove` input, and the ExternalSecret
+writes a Secret of the same name with the same key, which the StatefulSet
+reads unchanged. The recipe still requires the parameter, so the target
+sets a placeholder.
+
+The generators render custom resources only. `check` installs External
+Secrets from its release manifest `external-secrets.yaml`, pinned by
+version and sha256, as `platform-baseline/check` does. `vault-server.yaml`
+stands in for a Vault outside the cluster. It runs Vault's dev server,
+which keeps everything in memory, with the root token from a Secret that
+`check` creates with a random value, and `-dev-no-store-token`, so the
+server writes no token file. Its Service is a ClusterIP Service, and
+`check` runs the vault CLI in the server's container with `kubectl exec`.
+No Vault address leaves the cluster, and the Vault environment of the
+machine that runs `check` plays no part. Vault is licensed BUSL-1.1.
+
+`check` sets up Vault as its admin would. The dev server mounts KV version
+2 at `secret/`. The admin token goes to `secret/vaultwarden`, a policy
+reads only that path, and the AppRole `vaultwarden` gets the policy and the
+role ID `vaultwarden`, which the SecretStore names. Vault issues the secret
+ID. `check` writes it with `kapitan refs --write
+gpg:vaultwarden/vault-secret-id -t vaultwarden`, which encrypts it for the
+recipient the target lists under `kapitan.secrets.gpg.recipients`. The key
+is created by `check` in a keyring of its own and exists for one run, so
+the ref goes to a temporary refs path. A repository commits `refs/`.
+
+- EX-26: `secrets-end-to-end/check` MUST fail unless the recipe and the
+  generators pass the checks of EX-17 and EX-4, and:
+
+  - `kapitan compile` without `--reveal` and with an empty gpg keyring
+    succeeds, and its output holds the ref's tag in the Secret
+    `vault-approle`, neither the secret ID nor its base64 encoding, and no
+    Secret `vaultwarden`;
+  - `kapitan refs --reveal` of the Secret `vault-approle` fails with the
+    empty keyring;
+  - deployed to a new kind cluster with that Secret revealed by the run's
+    key, External Secrets reports the SecretStore and the ExternalSecret
+    ready and writes the admin token from Vault into the Secret
+    `vaultwarden`, and Vaultwarden's admin page accepts that token;
+  - after a new token is written to Vault, the Secret holds it within 60
+    seconds, the running Vaultwarden still accepts the old token and
+    refuses the new one, and after `kubectl rollout restart` it accepts
+    the new token and refuses the old one.
+
+  The compile shows for the gpg backend what kapicorp/kapitan#1646 adds
+  to Kapitan's documentation. Without `--reveal`, Kapitan reads existing
+  ref files and writes their tags, so the compile needs no key. Writing
+  the ref needed the recipient's public key, and the reveal needs the
+  private key. The other backends are not tested here. #1646 names what
+  creating a ref needs for them: a Vault token, or cloud KMS credentials.
+
+  Vaultwarden reads `ADMIN_TOKEN` from its environment, which the kubelet
+  sets from the Secret when it starts the container. A changed Secret
+  reaches Vaultwarden with the next start only. `check` asserts that the
+  old token works until the restart, because the post shows it. Settings
+  saved on the admin page go to `config.json` and take precedence over the
+  environment, as the recipe's README says. `check` saves none.
+
+  `check` applies the revealed Secret `vault-approle`, the SecretStore and
+  the ExternalSecret first and the whole target once the Secret
+  `vaultwarden` exists, so that Vaultwarden's pod does not wait for it
+  with `CreateContainerConfigError` (EX-6).
+
+  Vaultwarden answers the fourth admin login from one address within 300
+  seconds with 429, its defaults `ADMIN_RATELIMIT_MAX_BURST` 3 and
+  `ADMIN_RATELIMIT_SECONDS` 300. The counter is kept in memory and starts
+  over with the pod. `check` therefore logs in three times before the
+  restart and twice after it, and a wrong token is tested as the new token
+  before the restart and the old one after it. The first local run logged
+  in a fourth time and got 429. `kapitan refs --reveal` writes
+  the revealed manifests to a pipe into `kubectl apply`, not to a file.
+
+  The token is stored as plain text. Vaultwarden also accepts an Argon2id
+  PHC string, which the recipe's README recommends. Not tested: the PHC
+  string, Vault's Kubernetes auth method, which needs no secret in the
+  inventory, rotating the secret ID, a reveal in Argo CD, ref backends
+  other than gpg, and a Vault outside the cluster behind TLS.
+
+  Related: EX-4, EX-6, EX-12, EX-17
+
+  - Test: `examples` workflow, job `secrets-end-to-end`
+  - Since: this change
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -1856,4 +1958,5 @@ resources.
 | `timoni-vs-kapitan/` | The Timoni module `timoni/app` with its vendored Kubernetes schemas, the bundle `timoni/shop.cue` with `dev.cue` and `prod.cue`, the Kapitan project of `config-tools`; `check` (EX-22 to EX-22b) |
 | `kcl-vs-kapitan/` | The KCL module `kcl/` (`app/app.k`, `shop.k`, `dev.k`, `prod.k`, `kcl.mod`, `kcl.mod.lock`), the Kapitan project of `config-tools`; `check` (EX-23 to EX-23b) |
 | `argocd-cmp/` | One Kapitan project (target `blackbox-exporter`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the plugin's ConfigMap `kapitan-plugin.yaml`, the sidecar in `repo-server-patch.yaml`, the egress policy `repo-server-egress.yaml`, `application.yaml`, `git-server.yaml`; `check` (EX-24) |
+| `secrets-end-to-end/` | One Kapitan project (target `vaultwarden`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the gpg recipient, the Secret with the ref, the SecretStore and the ExternalSecret in the target, the Vault dev server `vault-server.yaml`; `check` (EX-26) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
