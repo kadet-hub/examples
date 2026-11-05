@@ -47,7 +47,8 @@
         "platform-baseline/s3-server.yaml",
         "helmfile-vs-kapitan/helmfile/helmfile.yaml",
         "argocd-cmp/git-server.yaml",
-        "argocd-cmp/repo-server-patch.yaml"
+        "argocd-cmp/repo-server-patch.yaml",
+        "secrets-end-to-end/vault-server.yaml"
       ],
       "matchStrings": [
         "source: oci://(?<depName>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})\\n\\s*chart_name: \\S+\\n\\s*version: (?<currentValue>\\S+)",

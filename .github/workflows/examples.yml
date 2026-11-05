@@ -913,6 +913,40 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: policy-checks/check
 
+  # EX-26: a Kapitan gpg ref for the bootstrap secret, External Secrets and
+  # a Vault dev server for the runtime secret, on kind.
+  secrets-end-to-end:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install oras, uv, kubectl and kind
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          sha256sum -c <<EOF
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          $KIND_SHA256  kind
+          EOF
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
+          chmod +x kind
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: secrets-end-to-end/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: secrets-end-to-end/check
+
   # EX-3f: published advisories for the packages in the lock files.
   advisories:
     runs-on: ubuntu-24.04
@@ -1000,6 +1034,7 @@ jobs:
       - helmfile-vs-kapitan
       - argocd-cmp
       - policy-checks
+      - secrets-end-to-end
       - advisories
       - pins
     if: always()
