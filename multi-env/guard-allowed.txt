@@ -1,0 +1,6 @@
+# Fields in which prod may differ from stage (guard, EX-28b).
+# Replicas follow the load, the hostname the environment, the storage class
+# the cluster.
+Deployment/miniflux spec.replicas
+Deployment/miniflux spec.template.spec.containers[miniflux].env[BASE_URL].value
+StatefulSet/miniflux-db spec.volumeClaimTemplates[miniflux-db].spec.storageClassName

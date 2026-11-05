@@ -66,7 +66,8 @@
         "platform-baseline/fetch/targets/recipes.yml",
         "immich-cnpg/fetch/targets/recipes.yml",
         "pihole-powerdns/fetch/targets/recipes.yml",
-        "argocd-cmp/fetch/targets/recipes.yml"
+        "argocd-cmp/fetch/targets/recipes.yml",
+        "multi-env/fetch/targets/recipes.yml"
       ],
       "matchStrings": [
         "source: (?<depName>ghcr\\.io/kadet-hub/recipes/[a-z0-9-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})"
