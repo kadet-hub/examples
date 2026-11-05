@@ -1815,6 +1815,104 @@ resources.
     every pod of the exporter's ReplicaSet
   - Since: #144
 
+## One inventory, three environments, two clusters
+
+`multi-env/` backs the kadet-hub.org blog post on one app in dev, stage
+and prod from one Kapitan inventory, with dev and stage on one cluster and
+prod on another. The app is the recipe `miniflux`, a feed reader with a
+PostgreSQL of its own, pinned in the fetch inventory
+`fetch/targets/recipes.yml`. `check` verifies and pulls the recipe and the
+generator it pins as `argocd-cmp/check` does.
+
+Each target includes three classes in this order: `common`, one of
+`env/dev`, `env/stage` and `env/prod`, and one of `cluster/a` and
+`cluster/b`. A later class overrides an earlier one. `common` includes the
+recipe and sets what every environment runs, with prod's resources: the
+refs, one set per target, `BASE_URL` from the env class's `hostname`, and
+the storage class of the database's claim from the cluster class's
+`cluster.storage_class`. The env classes set `hostname` and the replicas,
+and `env/dev` sets smaller resources. The cluster classes set the cluster's
+name and storage class. dev and stage share the cluster `multienv-a`, so the
+target `dev` sets the namespace `miniflux-dev`. Apart from that, a target
+names its classes and itself.
+
+kind's StorageClass `standard` deletes a volume with its claim.
+`storage-class.yaml` stands in for the prod cluster's class `local-retain`,
+which keeps it, and `check` applies it to `multienv-b`. The recipe sets no
+security context, and PostgreSQL's image starts as root, so the namespaces
+enforce the Pod Security level `baseline`.
+
+- EX-28: `multi-env/check` MUST fail unless the recipe and the generator
+  pass the checks of EX-17 and EX-4, and, deployed to the kind clusters the
+  inventory names, each target runs with these values:
+
+  | Target | Cluster | Namespace | Replicas | Memory limit | Hostname | Storage class |
+  |---|---|---|---|---|---|---|
+  | dev | `multienv-a` | `miniflux-dev` | 1 | 128Mi | `news.dev.example.com` | `standard` |
+  | stage | `multienv-a` | `miniflux` | 2 | 256Mi | `news.stage.example.com` | `standard` |
+  | prod | `multienv-b` | `miniflux` | 3 | 256Mi | `news.example.com` | `local-retain` |
+
+  `check` takes each target's cluster and namespace from `kapitan inventory
+  --flat`. It reads the memory limit from `memory.max` in the cgroup of
+  every miniflux container and the storage class from the database's
+  claim. For the hostname it logs in as the admin and reads the Google
+  Reader API endpoint from miniflux's page `/integrations`, which miniflux
+  builds from `BASE_URL`. The hostnames are under `example.com`, which RFC
+  2606 reserves.
+
+  `check` applies PostgreSQL first and waits for it, because miniflux exits
+  while it cannot connect. miniflux 2.3.4 runs its migrations without a
+  lock (`Migrate` in `internal/database/database.go`). When several
+  replicas start on an empty database, one can fail with an error such as
+  `pq: column "karakeep_tags" of relation "integrations" already exists`,
+  exit and start again on the migrated schema. In the first local run one
+  pod of stage and one of prod restarted once. EX-6 counts restarts as
+  broken from the fourth.
+
+  Not tested: an Ingress or Gateway for the hostnames, because kind runs
+  no controller that would serve them, and the reclaim of a volume after
+  its claim is deleted.
+
+  Related: EX-6, EX-12
+
+  - Test: `examples` workflow, job `multi-env`
+  - Since: tbd
+
+- EX-28a: `multi-env/check` MUST fail unless, in a copy of the project,
+  `METRICS_COLLECTOR: 1` under `components.miniflux.env` changes the
+  compiled output of dev alone when added to `env/dev.yml`, then of stage
+  alone when added to `env/stage.yml`, then of prod alone when added to
+  `env/prod.yml`, and moving it from the three env classes into
+  `common.yml` changes no compiled file.
+
+  Each step compiles without `--reveal` and compares `compiled/` with the
+  step before through `diff -r`, which `check` prints. The registry's
+  `compile-diff` action shows the same difference per target on a pull
+  request and is not used here. The value is not deployed.
+
+  - Test: `examples` workflow, job `multi-env`
+  - Since: tbd
+
+- EX-28b: `multi-env/check` MUST fail unless `guard` accepts prod's
+  compiled output against stage's, refuses it after the step of EX-28a
+  that adds the value to `env/stage.yml` and names the field, and accepts it
+  again after the step for `env/prod.yml`.
+
+  `guard` reads the objects of both directories by kind and name and
+  compares them field by field. A list item is addressed by its `name` or
+  `metadata.name`. Every differing field must be listed in
+  `guard-allowed.txt`, otherwise `guard` exits 1. That file allows prod's
+  replicas, its `BASE_URL` and the storage class of its database's claim.
+  Ref tokens count as equal, because each target has refs of its own and
+  the token names the ref's path and hash. An empty directory fails.
+
+  With the guard, stage cannot run ahead of prod in Git: a change to stage
+  outside the allowed fields reaches prod in the same commit, and the order
+  of the deploys decides which runs first.
+
+  - Test: `examples` workflow, job `multi-env`
+  - Since: tbd
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -1855,5 +1953,6 @@ resources.
 | `helmfile-vs-kapitan/` | `helmfile/` (releases, environments, values templates) and `kapitan/` (targets `dev`, `prod`, classes `common`, `podinfo`, `valkey`), both pinning podinfo and Valkey; `check` (EX-21) |
 | `timoni-vs-kapitan/` | The Timoni module `timoni/app` with its vendored Kubernetes schemas, the bundle `timoni/shop.cue` with `dev.cue` and `prod.cue`, the Kapitan project of `config-tools`; `check` (EX-22 to EX-22b) |
 | `kcl-vs-kapitan/` | The KCL module `kcl/` (`app/app.k`, `shop.k`, `dev.k`, `prod.k`, `kcl.mod`, `kcl.mod.lock`), the Kapitan project of `config-tools`; `check` (EX-23 to EX-23b) |
+| `multi-env/` | One Kapitan project on the omegaconf backend (targets `dev`, `stage`, `prod`; classes `common`, `env/*`, `cluster/*`), the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, `guard` with `guard-allowed.txt`, `storage-class.yaml`; `check` (EX-28 to EX-28b) |
 | `argocd-cmp/` | One Kapitan project (target `blackbox-exporter`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the plugin's ConfigMap `kapitan-plugin.yaml`, the sidecar in `repo-server-patch.yaml`, the egress policy `repo-server-egress.yaml`, `application.yaml`, `git-server.yaml`; `check` (EX-24) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
