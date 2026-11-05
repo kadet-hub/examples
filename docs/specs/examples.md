@@ -1597,7 +1597,7 @@ resources.
     seccomp profile in the target, the first local run timed out waiting
     for the Application to become `Healthy`, while PodSecurity rejected
     every pod of the exporter's ReplicaSet
-  - Since: tbd
+  - Since: #144
 
 ## Open questions
 
