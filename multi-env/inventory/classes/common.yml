@@ -19,6 +19,12 @@ parameters:
           memory: 256Mi
       env:
         BASE_URL: https://${hostname}/
+      # Not in the recipe. Ready once the HTTP server runs, after the migrations.
+      healthcheck:
+        readiness:
+          type: http
+          port: http
+          path: /healthcheck
     miniflux-db:
       volume_claims:
         miniflux-db:
