@@ -1940,7 +1940,9 @@ the ref goes to a temporary refs path. A repository commits `refs/`.
 
   Related: EX-4, EX-6, EX-12, EX-17
 
-  - Test: `examples` workflow, job `secrets-end-to-end`
+  - Test: `examples` workflow, job `secrets-end-to-end`; `manual:` with
+    `refresh_interval: 1h` in the target, a local run on 2026-11-05 timed
+    out waiting for the new token in the Secret `vaultwarden`
   - Since: #146
 
 ## Open questions
