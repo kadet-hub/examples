@@ -1,0 +1,21 @@
+name: compile-diff-comment
+
+# EX-25: post the diff of a compile-diff run on its pull request. Runs from
+# the default branch and checks out nothing, so a fork's pull request
+# reaches it only as the text of the artifact.
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers] runs nothing from the pull request
+    workflows: [compile-diff]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  comment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+      actions: read # the artifact of the compile-diff run
+    steps:
+      - uses: kadet-hub/registry/.github/actions/compile-diff-comment@bfb96792f7afd43ee513b1e0339faeff069550f8 # main, kadet-hub/registry#537; no index tag at this commit
