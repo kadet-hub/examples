@@ -1512,7 +1512,7 @@ writes the Service's cluster IP into the zone.
   downloaded blocklist, and Pi-hole as the DHCP server.
 
   - Test: `examples` workflow, job `pihole-powerdns`
-  - Since: tbd
+  - Since: #138
 
 ## Open questions
 
