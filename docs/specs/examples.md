@@ -1930,7 +1930,10 @@ enforce the Pod Security level `baseline`.
 
   `guard` reads the objects of both directories by kind and name and
   compares them field by field. A list item is addressed by its `name` or
-  `metadata.name`. Every differing field must be listed in
+  `metadata.name` when every item of its list has one and no two share it.
+  Otherwise it is addressed by its index, because two volume mounts of one
+  volume would hide each other by name. Two objects of the same kind and name in one directory fail for
+  the same reason. Every differing field must be listed in
   `guard-allowed.txt`, otherwise `guard` exits 1. That file allows prod's
   replicas, its `BASE_URL` and the storage class of its database's claim.
   Ref tokens count as equal, because each target has refs of its own and
@@ -1940,7 +1943,10 @@ enforce the Pod Security level `baseline`.
   outside the allowed fields reaches prod in the same commit, and the order
   of the deploys decides which runs first.
 
-  - Test: `examples` workflow, job `multi-env`
+  - Test: `examples` workflow, job `multi-env`; `manual:` a Deployment
+    with two volume mounts of one volume whose first mount path differs
+    between the directories: exit 1 naming `volumeMounts[0].mountPath`
+    (exit 0 with the first version of `guard` in #150)
   - Since: #150
 
 ## Open questions
