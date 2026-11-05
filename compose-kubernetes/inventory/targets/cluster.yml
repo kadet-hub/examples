@@ -15,3 +15,12 @@ parameters:
         miniflux:
           labels:
             pod-security.kubernetes.io/enforce: baseline
+  components:
+    miniflux:
+      # The recipe has none, and the rollout ended before Miniflux listened.
+      # /healthcheck answers OK once Miniflux reaches its database.
+      healthcheck:
+        readiness:
+          type: http
+          port: http
+          path: /healthcheck

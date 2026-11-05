@@ -232,7 +232,9 @@ install_wait() { # namespace kubectl-arguments
 }
 
 # EX-30, EX-12: the target cluster on kind. The Namespace first, because
-# kubectl applies the directory miniflux before the file next to it.
+# kubectl applies the directory miniflux before the file next to it. Then
+# the database, in place of Compose's depends_on: Miniflux exits while
+# PostgreSQL refuses connections, and EX-6 stops the check on its restarts.
 # The node image of the workflow's kind release; Renovate updates both together.
 # renovate: datasource=docker depName=kindest/node
 KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
@@ -241,8 +243,9 @@ watch_pods &
 watcher=$!
 t=$SECONDS
 kubectl apply -f compiled/cluster/manifests/miniflux-namespace.yml >/dev/null
-kubectl apply -R -f compiled/cluster/manifests >/dev/null
+kubectl apply -R -f compiled/cluster/manifests -l name=miniflux-db >/dev/null
 install_wait miniflux rollout status statefulset/miniflux-db --timeout=300s
+kubectl apply -R -f compiled/cluster/manifests >/dev/null
 install_wait miniflux rollout status deployment/miniflux --timeout=300s
 echo "deployed to kind in $((SECONDS - t))s"
 kubectl -n miniflux port-forward service/miniflux 18080:80 >/dev/null &
