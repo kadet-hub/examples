@@ -1898,7 +1898,7 @@ container port, so the Service port 80 of `miniflux` has no counterpart.
   Related: EX-1, EX-6, EX-12
 
   - Test: `examples` workflow, job `compose-kubernetes`
-  - Since: tbd
+  - Since: #147
 
 - EX-30a: `compose-kubernetes/check` MUST fail unless setting
   `components.miniflux.image` in a copy of the class `miniflux` changes
@@ -1912,7 +1912,7 @@ container port, so the Service port 80 of `miniflux` has no counterpart.
   - Test: `examples` workflow, job `compose-kubernetes`; `manual:` with
     the image also set under `compose.services.miniflux` of the target
     `compose`, `check` failed because only the Deployment changed
-  - Since: tbd
+  - Since: #147
 
 - EX-30b: `compose-kubernetes/check` MUST fail unless the target `compose`
   fails to compile once the class `miniflux` sets `security_profile` on
@@ -1927,7 +1927,7 @@ container port, so the Service port 80 of `miniflux` has no counterpart.
   - Test: `examples` workflow, job `compose-kubernetes`; `manual:` with
     `security_profile` added to the keys `components/compose` drops,
     `check` failed on EX-30b
-  - Since: tbd
+  - Since: #147
 
 Not tested: a NetworkPolicy, which the recipe does not render, and its
 Compose counterpart, a network on which every service reaches every port
