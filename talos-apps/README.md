@@ -43,7 +43,9 @@ waits for both nodes and checks that their addresses, their pod CIDRs and
 the Service `kubernetes` lie in the networks of `cluster.yml`. It deploys
 the exporter without its NetworkPolicy, probes the control plane endpoint,
 the Service `kubernetes`, a CoreDNS pod and `https://github.com/`, applies
-the policy and probes again. Only the last target may answer then.
+the policy and probes again. Only the last target may answer then. Last,
+it applies the policy from the compile with another pod CIDR, which no
+longer covers the cluster's pods, and the CoreDNS pod has to answer again.
 `KEEP=1 ./check` keeps the containers `talosapps-talos-apps-cp-1` and
 `talosapps-talos-apps-worker-1` and prints the path of the kubeconfig and
 talosconfig.

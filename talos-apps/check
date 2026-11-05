@@ -14,7 +14,9 @@
 #     Service inside the networks of the class cluster,
 #   - the exporter reaches the API endpoint, the kubernetes Service and a
 #     CoreDNS pod before its NetworkPolicy applies, none of them after it,
-#     and an HTTPS site on the internet before and after.
+#     and an HTTPS site on the internet before and after,
+#   - the policy compiled with another pod CIDR lets the CoreDNS pod answer
+#     again and still blocks the endpoint.
 # Set KEEP=1 to keep the cluster and the temporary directory with its
 # kubeconfig and talosconfig.
 # Needs gh (authenticated), jq, oras, uv, talosctl, kubectl, docker and the
@@ -347,4 +349,13 @@ done
 # shellcheck disable=SC2086 # module and target
 expect 1 $outside || status=1
 ((status == 0)) || { echo "the egress policy does not hold" >&2; exit 1; }
+
+# The policy of the second compile above, with another pod CIDR, no longer
+# covers the cluster's pods: the CoreDNS pod answers again, the endpoint not.
+kubectl apply -f "$tmp/after/$policy" >/dev/null
+# shellcheck disable=SC2086 # module and target
+expect 1 ${targets[2]} || status=1
+# shellcheck disable=SC2086 # module and target
+expect 0 ${targets[0]} || status=1
+((status == 0)) || { echo "the policy with another pod CIDR does not open the pod network" >&2; exit 1; }
 echo "talos-apps: both layers from one inventory passed in $((SECONDS - started))s"

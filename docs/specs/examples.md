@@ -1906,7 +1906,9 @@ once when the module is missing, and the job loads it.
     Service `kubernetes` lie in the networks of `cluster`;
   - the exporter reaches the control plane endpoint, the Service
     `kubernetes` and a CoreDNS pod without its NetworkPolicy and none of
-    them with it, and reaches `https://github.com/` with and without it.
+    them with it, and reaches `https://github.com/` with and without it;
+  - with the NetworkPolicy of the compile with another pod CIDR, the
+    exporter reaches the CoreDNS pod again and still not the endpoint.
 
   The exporter probes through the API server's service proxy, with the
   module `tcp_connect` inside the cluster and `http_2xx` outside it. A
