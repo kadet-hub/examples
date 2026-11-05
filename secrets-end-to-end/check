@@ -59,7 +59,7 @@ while read -r name version digest; do
     exit 1
   fi
   if (($(jq '.includes | length' <<<"$record") != 0)); then
-    echo "recipe $name $version includes other recipes, which fetch/targets/recipes.yml does not pin" >&2
+    echo "recipe $name $version includes other recipes, which check does not take from the index" >&2
     exit 1
   fi
   gh attestation verify "oci://ghcr.io/kadet-hub/recipes/$name@$digest" \
