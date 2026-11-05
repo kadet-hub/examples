@@ -1,0 +1,29 @@
+# The Application that Argo CD renders with the plugin: the Kapitan project
+# at the root of the repository, target blackbox-exporter.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: blackbox-exporter
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: http://gitea.git.svc.cluster.local:3000/kadet/apps.git
+    targetRevision: main
+    path: .
+    plugin:
+      name: kapitan
+      env:
+        - name: TARGET
+          value: blackbox-exporter
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: blackbox-exporter
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions: [CreateNamespace=true]
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: restricted

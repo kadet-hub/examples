@@ -26,6 +26,7 @@ longer holds.
 | [immich-cnpg](immich-cnpg/) | https://kadet-hub.org/blog/immich-kubernetes/ | `immich-cnpg/check` |
 | [pihole-powerdns](pihole-powerdns/) | https://kadet-hub.org/blog/pihole-powerdns-kubernetes/ | `pihole-powerdns/check` |
 | [helmfile-vs-kapitan](helmfile-vs-kapitan/) | https://kadet-hub.org/blog/helmfile-vs-kapitan/ | `helmfile-vs-kapitan/check` |
+| [argocd-cmp](argocd-cmp/) | https://kadet-hub.org/blog/argocd-config-management-plugin-kapitan/ | `argocd-cmp/check` |
 
 ## Running
 
