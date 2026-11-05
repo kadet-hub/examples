@@ -2391,7 +2391,11 @@ pins these five and `cert-manager` and `cnpg`, the recipes the targets
 include. `check` adds the recipes their index records list under
 `includes`, `postgresql`, `valkey` and `ollama`, as EX-17 describes. The
 operators `cert-manager`, `cnpg` and `keycloak-operator` get a target and a
-namespace each, and so do Keycloak and the three apps.
+namespace each, and so do Keycloak and the three apps. Renovate moves the
+seven pinned recipes in one pull request, the group `sso-keycloak
+recipes`. `keycloak-operator` runs only the Keycloak version of
+`keycloak`, and `keycloak`, `gitea` and `open-webui` share `postgresql`
+and `valkey`, which one project takes at one digest only.
 
 The class `sso` holds what both ends of a login read. It sets the issuer,
 and per app the client ID, the app's URL, the redirect URI, the client
@@ -2518,7 +2522,7 @@ meet the Pod Security level `restricted`. Their namespaces enforce
   Related: EX-4, EX-6, EX-12, EX-17
 
   - Test: `examples` workflow, job `sso-keycloak`
-  - Since: tbd
+  - Since: #156
 
 - EX-32a: `sso-keycloak/check` MUST fail unless changing Gitea's URL in a
   copy of the class `sso` changes the redirect URI of the client `gitea` in
@@ -2529,7 +2533,7 @@ meet the Pod Security level `restricted`. Their namespaces enforce
   reaches the diff, which the post shows.
 
   - Test: `examples` workflow, job `sso-keycloak`
-  - Since: tbd
+  - Since: #156
 
 ## Open questions
 
