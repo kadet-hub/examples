@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Open WebUI with SearXNG as its web search, from the published recipes
 # open-webui, ollama, searxng and valkey (EX-17). Verifies the latest signed
-# index, the recipes pinned in fetch/targets/recipes.yml and the generators
-# they pin, pulls all of them by digest, compiles both targets and deploys
+# index, the recipes pinned in fetch/targets/recipes.yml, the recipes they
+# include and the generators they pin, pulls all of them by digest, compiles
+# both targets and deploys
 # them to a new kind cluster (EX-12). Exits 0 only if, through Open WebUI's
 # API, a web search returns results from SearXNG and fails once SearXNG is
 # scaled to zero, and smollm:135m, pulled into Ollama through Open WebUI,
@@ -11,7 +12,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
-min_serial=107
+min_serial=115
 tmp=$(mktemp -d)
 cluster=open-webui-searxng
 export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
@@ -36,9 +37,22 @@ if ((serial < min_serial)); then
 fi
 echo "index serial $serial verified"
 
-pins=$(sed -nE 's|^ *source: ghcr\.io/kadet-hub/recipes/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+# The pinned recipes, then the recipes their records list under includes, at
+# the listed version and digest, as the consumer workflow adds them. All of
+# them share inventory/classes/recipes/, so one name at two digests fails.
+mapfile -t queue < <(sed -nE 's|^ *source: ghcr\.io/kadet-hub/recipes/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
   fetch/targets/recipes.yml)
-while read -r name version digest; do
+declare -A wanted
+for ((i = 0; i < ${#queue[@]}; i++)); do
+  read -r name version digest <<<"${queue[i]}"
+  if [[ -n ${wanted[$name]:-} ]]; then
+    [[ ${wanted[$name]} == "$version $digest" ]] || {
+      echo "recipe $name is wanted as ${wanted[$name]} and as $version $digest" >&2
+      exit 1
+    }
+    continue
+  fi
+  wanted[$name]="$version $digest"
   record=$(jq -ec --arg n "$name" --arg v "$version" \
     '.recipes[$n][$v] | select(.yanked == null)' "$tmp/index.json") || {
     echo "recipe $name $version is missing or yanked in index serial $serial" >&2
@@ -46,26 +60,19 @@ while read -r name version digest; do
   }
   want=$(jq -r .digest <<<"$record")
   if [[ $want != "$digest" ]]; then
-    echo "recipe $name $version: index has $want, fetch/targets/recipes.yml pins $digest" >&2
+    echo "recipe $name $version: index has $want, the pin or include names $digest" >&2
     exit 1
   fi
-  # An included recipe shares inventory/classes/recipes/ and must be pinned at
-  # the digest the record lists.
-  while read -r iname idigest; do
-    grep -qE "^$iname [^ ]+ $idigest$" <<<"$pins" || {
-      echo "recipe $name $version includes $iname at $idigest, which fetch/targets/recipes.yml does not pin" >&2
-      exit 1
-    }
-  done < <(jq -r '.includes[] | "\(.name) \(.digest)"' <<<"$record")
+  mapfile -t -O "${#queue[@]}" queue < <(jq -r '.includes[] | "\(.name) \(.version) \(.digest)"' <<<"$record")
   gh attestation verify "oci://ghcr.io/kadet-hub/recipes/$name@$digest" \
     --owner kadet-hub --cert-identity "$id" >/dev/null
   oras pull -o "$tmp/recipes/$name" "ghcr.io/kadet-hub/recipes/$name@$digest" >/dev/null
   mkdir -p "inventory/classes/recipes/$name"
   tar -xf "$tmp/recipes/$name/$name.tar" -C "inventory/classes/recipes/$name" --no-same-owner
   echo "recipe $name $version verified and unpacked"
-done <<<"$pins"
-if (($(wc -l <<<"$pins") != 4)); then
-  echo "expected 4 recipes in fetch/targets/recipes.yml, found $(wc -l <<<"$pins")" >&2
+done
+if ((${#wanted[@]} != 4)); then
+  echo "expected 4 recipes, found ${!wanted[*]}" >&2
   exit 1
 fi
 
@@ -168,19 +175,17 @@ install_wait open-webui rollout status deploy/ollama --timeout=600s
 install_wait open-webui rollout status statefulset/open-webui --timeout=600s
 ready=$(date +%s)
 
-# SearXNG and Open WebUI have no readiness probe, so their rollouts end
-# before they listen.
+# searxng 1.0.1 has a readiness probe on /healthz. open-webui 1.0.0 has
+# none, so its rollout ends before Open WebUI listens.
 searxng=/api/v1/namespaces/searxng/services/searxng:8080/proxy
 openwebui=/api/v1/namespaces/open-webui/services/open-webui:80/proxy
 for _ in $(seq 150); do
-  [[ $(kubectl get --raw "$searxng/healthz" 2>/dev/null) == OK ]] &&
-    kubectl get --raw "$openwebui/health" 2>/dev/null | jq -e '.status == true' >/dev/null && break
+  kubectl get --raw "$openwebui/health" 2>/dev/null | jq -e '.status == true' >/dev/null && break
   sleep 2
 done
-[[ $(kubectl get --raw "$searxng/healthz") == OK ]]
 kubectl get --raw "$openwebui/health" | jq -e '.status == true' >/dev/null
 listening=$(date +%s)
-echo "deployed in $((ready - start))s, SearXNG and Open WebUI answered their health checks $((listening - ready))s later"
+echo "deployed in $((ready - start))s, Open WebUI answered /health $((listening - ready))s later"
 
 # Started only now: a port-forward ends at the first connection the pod refuses.
 kubectl -n open-webui port-forward service/open-webui 18080:80 >/dev/null &

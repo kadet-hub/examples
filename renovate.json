@@ -60,23 +60,6 @@
       "datasourceTemplate": "docker"
     },
     {
-      "description": "EX-3: recipes in the fetch inventories of open-webui-searxng, platform-baseline, immich-cnpg, pihole-powerdns and argocd-cmp; the org preset reads inventory/ only and allows no / in a name",
-      "customType": "regex",
-      "managerFilePatterns": [
-        "open-webui-searxng/fetch/targets/recipes.yml",
-        "platform-baseline/fetch/targets/recipes.yml",
-        "immich-cnpg/fetch/targets/recipes.yml",
-        "pihole-powerdns/fetch/targets/recipes.yml",
-        "argocd-cmp/fetch/targets/recipes.yml",
-        "secrets-end-to-end/fetch/targets/recipes.yml"
-      ],
-      "matchStrings": [
-        "source: (?<depName>ghcr\\.io/kadet-hub/recipes/[a-z0-9-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})"
-      ],
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "semver"
-    },
-    {
       "description": "EX-3: Python packages pinned with == in the scripts' uv run --with and uvx",
       "customType": "regex",
       "managerFilePatterns": [
@@ -186,7 +169,7 @@
       "groupName": "helmfile-vs-kapitan charts"
     },
     {
-      "description": "EX-17: the recipes of open-webui-searxng in one pull request, because a recipe's includes must be pinned at the digests its index record lists",
+      "description": "EX-17: open-webui and searxng in one pull request, because both include valkey and one project takes it at one digest only",
       "matchFileNames": [
         "open-webui-searxng/fetch/targets/recipes.yml"
       ],

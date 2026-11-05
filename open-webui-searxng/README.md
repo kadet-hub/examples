@@ -7,7 +7,7 @@ https://kadet-hub.org/blog/open-webui-searxng-kubernetes/.
 
 | Path | Content |
 |---|---|
-| `fetch/targets/recipes.yml` | The four recipes by version and digest, in the fetch inventory format of the registry's [consumer docs](https://github.com/kadet-hub/registry/blob/main/docs/consumers.md#recipes) |
+| `fetch/targets/recipes.yml` | `open-webui` and `searxng` by version and digest, in the fetch inventory format of the registry's [consumer docs](https://github.com/kadet-hub/registry/blob/main/docs/consumers.md#recipes). The recipes they include, `ollama` and `valkey`, come from the index |
 | `inventory/targets/searxng.yml` | SearXNG in namespace `searxng`, with the JSON format Open WebUI asks for |
 | `inventory/targets/open-webui.yml` | Open WebUI and Ollama in namespace `open-webui`, with SearXNG as the web search |
 | `.kapitan` | The omegaconf inventory backend, which the recipes are written for |

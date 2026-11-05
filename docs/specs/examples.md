@@ -240,9 +240,8 @@ schedule instead of trusting the state on the publishing day.
 
   Pins in Kapitan inventories and Kubernetes manifests are updated with
   `datasource=docker` by regex managers: generators through the org preset;
-  recipes in a fetch inventory (`open-webui-searxng`, `platform-baseline`,
-  `immich-cnpg`, `pihole-powerdns`, `argocd-cmp`) by a manager of their own, because the preset reads `**/inventory/**` only and allows no
-  `/` in a name;
+  recipes in the fetch inventories (`**/fetch/**/*.yml`) through the org
+  preset as well, which reads them since kadet-hub/renovate-config#21;
   charts by version and the digest of their OCI artifact (podinfo in
   `helm-mutate`, cert-manager and trust-manager in `cert-manager-mutate`,
   podinfo and Valkey in the classes and in `helmfile/helmfile.yaml` of
@@ -260,9 +259,10 @@ schedule instead of trusting the state on the publishing day.
   trust-manager classes of `cert-manager-mutate`, so that a chart's CRDs
   never run with another operator version; kind and its
   node image; podinfo's chart and image; `@pulumi/kubernetes` and its
-  plugin; the four recipes of `open-webui-searxng` and those of
-  `immich-cnpg` and `pihole-powerdns`, whose includes must be pinned at
-  the digests the index lists (EX-17, EX-19, EX-20); the velero CLI and the
+  plugin; the recipes of `immich-cnpg` and `pihole-powerdns`, which pin
+  their includes, and those must stay at the digests the index lists
+  (EX-19, EX-20); `open-webui` and `searxng` of `open-webui-searxng`,
+  which both include valkey (EX-17); the velero CLI and the
   server image `platform-baseline/check` installs with it (EX-18); the
   charts of both sides of `helmfile-vs-kapitan`, outside the podinfo group
   (EX-21).
@@ -370,6 +370,7 @@ schedule instead of trusting the state on the publishing day.
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
     cryptography override: #86; recipes in a fetch inventory: #132;
+    recipe pins through the org preset: #154;
     `platform-baseline`: #135; `helmfile-vs-kapitan`: #140
 
 - EX-3h: Renovate MUST merge its own pull request once every check on it
@@ -1182,10 +1183,13 @@ chat assistant with web search, put together from published recipes of
 kadet-hub/recipes. Open WebUI is the chat interface and API, Ollama runs
 the model on the CPU and SearXNG is Open WebUI's web search.
 
-The fetch inventory `fetch/targets/recipes.yml` pins `open-webui`,
-`ollama`, `searxng` and `valkey` by version and digest. `open-webui`
-includes `ollama` and `valkey`, `searxng` includes `valkey`, both at the
-digest of valkey 1.0.2, so the two share one
+The fetch inventory `fetch/targets/recipes.yml` pins `open-webui` and
+`searxng` by version and digest, the recipes the targets include, as the
+registry's `docs/consumers.md` asks since kadet-hub/registry#536. `check`
+adds the recipes their index records list under `includes`, at the
+versions and digests listed there, as the consumer workflow does.
+`open-webui` includes `ollama` and `valkey`, `searxng` includes `valkey`,
+both at the digest of valkey 1.0.2, so the two share one
 `inventory/classes/recipes/valkey`. `check` does not compile the fetch
 inventory. It verifies and pulls each recipe as "Verifying a recipe by
 hand" in the registry's `docs/consumers.md` describes, and each generator
@@ -1205,10 +1209,11 @@ SearXNG, Open WebUI and Ollama run as root, so both namespaces enforce the
 Pod Security level `baseline`.
 
 - EX-17: `open-webui-searxng/check` MUST fail unless every recipe of the
-  fetch inventory is listed in the attested index at its version and
-  digest, is not yanked and has a valid attestation, every recipe it
-  includes is pinned at the digest its record lists, every generator the
-  recipes pin passes EX-4, and, deployed to a new kind cluster, Open WebUI's
+  fetch inventory, and every recipe its record lists under `includes` at
+  the version and digest listed there, is listed in the attested index at
+  that version and digest, is not yanked and has a valid attestation, no
+  recipe is wanted at two digests, the recipes come to four, every
+  generator the recipes pin passes EX-4, and, deployed to a new kind cluster, Open WebUI's
   web search returns at least one result, the same search fails once
   SearXNG is scaled to zero, and `smollm:135m`, pulled into Ollama through
   Open WebUI, answers a chat completion through Open WebUI.
@@ -1222,11 +1227,13 @@ Pod Security level `baseline`.
   `SEARXNG_QUERY_URL`. SearXNG is the only search engine Open WebUI is
   configured with, so the results of the first call come from SearXNG.
 
-  Neither SearXNG nor Open WebUI has a readiness probe, so their rollouts
-  end before they listen. `check` waits for SearXNG's `/healthz` and Open
-  WebUI's `/health` through the API server, and starts the port-forward to
-  Open WebUI only then, because a port-forward ends at the first
-  connection the pod refuses. That ended the first run of #132.
+  searxng 1.0.1 has a readiness probe on `/healthz` (RCP-185 in
+  kadet-hub/recipes), so the rollout of SearXNG ends once it answers.
+  open-webui 1.0.0 has none, so its rollout ends before Open WebUI
+  listens. `check` waits for Open WebUI's `/health` through the API server
+  and starts the port-forward only then, because a port-forward ends at
+  the first connection the pod refuses. That ended the first run of #132.
+  kadet-hub/recipes#109 adds the probe to open-webui.
 
   The results, and the pages Open WebUI loads for them, come from outside
   the cluster, so this step can fail without a change to the repository.
@@ -1240,10 +1247,11 @@ Pod Security level `baseline`.
   so the job logs show how often that happens.
 
   - Test: `examples` workflow, job `open-webui-searxng`; `manual:` with
-    valkey set back to 1.0.1 in the fetch inventory, Renovate 44.194.0
-    (`--platform=local --dry-run=lookup`, 2026-11-04) proposed 1.0.2 at
-    its digest on the branch `renovate/open-webui-searxng-recipes`
-  - Since: #132
+    searxng set back to 1.0.0 in the fetch inventory, Renovate 44.194.0
+    (`--platform=local --dry-run=lookup`, 2026-11-05) with the org preset
+    alone proposed 1.0.1 at its digest on the branch
+    `renovate/open-webui-searxng-recipes`
+  - Since: #132; includes from the index and searxng 1.0.1: #154
 
 ## Platform baseline
 
@@ -2091,7 +2099,7 @@ the ref goes to a temporary refs path. A repository commits `refs/`.
 | `chart-vs-kapitan/` | One Kapitan project on the omegaconf backend, one target per chart, chart values in `values/`, CRDs and jsonnet libraries fetched by `check` into `kapitan/vendor/`; `check <chart>` (EX-13, EX-13a) |
 | `chart-vs-kapitan/kapitan/components/kube-prometheus-stack.jsonnet`, `chart-vs-kapitan/kapitan/jsonnetfile.json`, `chart-vs-kapitan/kapitan/jsonnetfile.lock.json` | Rules and dashboards of kube-prometheus-stack and the pins of their sources (EX-13a) |
 | `kubevirt-csi/` | One Kapitan project (targets `infra`, `tenant`) with the kubevirt generator pinned in `inventory/classes/generators.yml`, `infra.yaml`, the tenant workload in `tests/pvc.yaml`, the negative case's claim in `tests/static-pvc.yaml`; `check` (EX-14, EX-14a) |
-| `open-webui-searxng/` | One Kapitan project (targets `open-webui`, `searxng`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-17) |
+| `open-webui-searxng/` | One Kapitan project (targets `open-webui`, `searxng`) on the omegaconf backend, `open-webui` and `searxng` pinned in the fetch inventory `fetch/targets/recipes.yml`, the recipes they include taken from the index; `check` (EX-17) |
 | `platform-baseline/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `kyverno`, `monitoring`, `external-secrets`, `velero`, `argocd`, `podinfo`), the shared class `inventory/classes/platform.yml`, the cert-manager recipe pinned in `fetch/targets/recipes.yml`, the stand-ins `git-server.yaml` and `s3-server.yaml`; `check` (EX-18, EX-18a) |
 | `immich-cnpg/` | One Kapitan project (targets `cnpg`, `immich`) on the omegaconf backend, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-19) |
 | `pihole-powerdns/` | One Kapitan project (targets `dns`, `pihole`) on the omegaconf backend, the zone in `inventory/classes/home.yml`, the three recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-20) |
