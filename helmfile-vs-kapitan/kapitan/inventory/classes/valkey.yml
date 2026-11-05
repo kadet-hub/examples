@@ -1,0 +1,42 @@
+parameters:
+  kapitan:
+    dependencies:
+      - type: helm
+        source: oci://ghcr.io/valkey-io/valkey-helm/valkey@sha256:b230e4a64fdeb9a3b554052d17026caae9c99427b3f5b50fc88bfd80b235176a
+        chart_name: valkey
+        version: 0.12.1
+        output_path: charts/valkey
+    compile:
+      - input_type: helm
+        input_paths: [charts/valkey]
+        output_path: valkey
+        helm_params:
+          name: valkey
+          namespace: ${namespace}
+        helm_values:
+          auth:
+            enabled: true
+            aclUsers:
+              default:
+                permissions: "~* &* +@all"
+                password: ?{base64:valkey/password}
+          valkeyConfig: |
+            appendonly yes
+          dataStorage: ${valkey:dataStorage}
+          resources: ${valkey:resources}
+      # The chart base64-encodes the ref token, which --reveal then cannot
+      # find. Its Secret is replaced by one the kubernetes generator writes.
+      - input_type: remove
+        input_paths:
+          - compiled/${kapitan:vars:target}/valkey/valkey/templates/secret.yaml
+        output_path: .
+      - input_type: kadet
+        input_paths: [lib/kubernetes]
+        output_path: manifests
+  generators:
+    kubernetes:
+      secrets:
+        valkey-auth:
+          string_data:
+            default-password:
+              value: ?{base64:valkey/password}

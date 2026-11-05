@@ -1,0 +1,14 @@
+replicaCount: {{ .Values.podinfo.replicas }}
+logLevel: {{ .Values.podinfo.logLevel }}
+ui:
+  message: {{ .Environment.Name }}
+podDisruptionBudget: {{ toYaml .Values.podinfo.pdb | nindent 2 }}
+# podinfo reads PODINFO_CACHE_SERVER; Kubernetes expands $(VALKEY_PASSWORD).
+extraEnvs:
+  - name: VALKEY_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: valkey-auth
+        key: default-password
+  - name: PODINFO_CACHE_SERVER
+    value: tcp://default:$(VALKEY_PASSWORD)@valkey:6379

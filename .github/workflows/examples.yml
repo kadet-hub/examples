@@ -729,6 +729,46 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: pihole-powerdns/check
 
+  # EX-21: podinfo and Valkey rendered by Helmfile and by Kapitan, prod
+  # deployed by both to kind.
+  helmfile-vs-kapitan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install helm, Helmfile, oras, uv, kubectl and kind
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
+          curl -fsSLo helmfile.tgz "https://github.com/helmfile/helmfile/releases/download/$HELMFILE_VERSION/helmfile_${HELMFILE_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          sha256sum -c <<EOF
+          $HELM_SHA256  helm.tgz
+          $HELMFILE_SHA256  helmfile.tgz
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          $KIND_SHA256  kind
+          EOF
+          tar -xzf helm.tgz --strip-components=1 linux-amd64/helm
+          tar -xzf helmfile.tgz helmfile
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
+          chmod +x kind
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: helmfile-vs-kapitan/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: helmfile-vs-kapitan/check
+
   # EX-3f: published advisories for the packages in the lock files.
   advisories:
     runs-on: ubuntu-24.04
@@ -811,6 +851,7 @@ jobs:
       - platform-baseline
       - immich-cnpg
       - pihole-powerdns
+      - helmfile-vs-kapitan
       - advisories
       - pins
     if: always()

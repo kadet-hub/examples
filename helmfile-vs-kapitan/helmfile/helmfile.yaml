@@ -1,0 +1,18 @@
+environments:
+  dev:
+    values: [environments/dev.yaml]
+  prod:
+    values: [environments/prod.yaml]
+---
+releases:
+  - name: valkey
+    namespace: podinfo
+    chart: oci://ghcr.io/valkey-io/valkey-helm/valkey@sha256:b230e4a64fdeb9a3b554052d17026caae9c99427b3f5b50fc88bfd80b235176a
+    version: 0.12.1
+    values: [values/valkey.yaml.gotmpl]
+  - name: podinfo
+    namespace: podinfo
+    chart: oci://ghcr.io/stefanprodan/charts/podinfo@sha256:258d0da545724b4eea8de5d5e724cd9a75aab3de79a87ba8d82ec402745cea58
+    version: 6.17.0
+    needs: [valkey]
+    values: [values/podinfo.yaml.gotmpl]

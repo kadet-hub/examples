@@ -1,0 +1,9 @@
+parameters:
+  namespace: podinfo
+  kapitan:
+    vars:
+      target: ${_reclass_:name:short}
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/kubernetes:1.14.0@sha256:787129e1eaed6b9bc868fe4c4aec58d40de6a89fc3cc08424a4cb5822b855080
+        output_path: lib/kubernetes
