@@ -3,5 +3,5 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/mutate:0.1.0@sha256:428e548bb10c6dda0105220c3a9f135d3a964a419303e30849a06f6d9e194a15
+        source: ghcr.io/kadet-hub/mutate:0.2.1@sha256:cd4bc8f049019b3b873c453e8a2e49eb5f6a3c1fcdef7926ec026c98e6f90627
         output_path: lib/mutate
