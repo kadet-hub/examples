@@ -37,7 +37,7 @@
       ]
     },
     {
-      "description": "EX-3: charts by version and the digest of their OCI artifact, images by tag or tag and digest, in inventories and manifests",
+      "description": "EX-3: charts by version and the digest of their OCI artifact, images by tag or tag and digest, in inventories, manifests and the helmfile of helmfile-vs-kapitan",
       "customType": "regex",
       "managerFilePatterns": [
         "**/inventory/**/*.yml",
@@ -45,11 +45,13 @@
         "argocd-vs-flux/git-server.yaml",
         "platform-baseline/git-server.yaml",
         "platform-baseline/s3-server.yaml",
+        "helmfile-vs-kapitan/helmfile/helmfile.yaml",
         "argocd-cmp/git-server.yaml",
         "argocd-cmp/repo-server-patch.yaml"
       ],
       "matchStrings": [
         "source: oci://(?<depName>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})\\n\\s*chart_name: \\S+\\n\\s*version: (?<currentValue>\\S+)",
+        "chart: oci://(?<depName>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})\\n\\s*version: (?<currentValue>\\S+)",
         "image(?:_name)?(?:: |=)(?<depName>[a-z0-9.-]+\\.[a-z]+/[^:@\\s]+):(?<currentValue>[^@\\s]+)(?:@(?<currentDigest>sha256:[0-9a-f]{64}))?",
         "repository: (?<depName>\\S+)\\n\\s*tag: \"?(?<currentValue>[^\"\\s]+)\"?\\n\\s*digest: (?<currentDigest>sha256:[0-9a-f]{64})",
         "\\n\\s+(?<depName>[a-z0-9.-]+\\.[a-z]+/[^:@\\s]+):\\n\\s+tag: (?<currentValue>\\S+)\\n\\s+digest: (?<currentDigest>sha256:[0-9a-f]{64})"
@@ -169,6 +171,17 @@
         "ghcr.io/stefanprodan/podinfo"
       ],
       "groupName": "podinfo"
+    },
+    {
+      "description": "EX-21: both sides of helmfile-vs-kapitan pin the same charts and move in one pull request, apart from the podinfo group",
+      "matchFileNames": [
+        "helmfile-vs-kapitan/**"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/stefanprodan/charts/podinfo",
+        "ghcr.io/valkey-io/valkey-helm/valkey"
+      ],
+      "groupName": "helmfile-vs-kapitan charts"
     },
     {
       "description": "EX-17: the recipes of open-webui-searxng in one pull request, because a recipe's includes must be pinned at the digests its index record lists",
