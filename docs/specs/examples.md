@@ -370,7 +370,7 @@ schedule instead of trusting the state on the publishing day.
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
     cryptography override: #86; recipes in a fetch inventory: #132;
-    recipe pins through the org preset: tbd;
+    recipe pins through the org preset: #154;
     `platform-baseline`: #135; `helmfile-vs-kapitan`: #140
 
 - EX-3h: Renovate MUST merge its own pull request once every check on it
@@ -1251,7 +1251,7 @@ Pod Security level `baseline`.
     (`--platform=local --dry-run=lookup`, 2026-11-05) with the org preset
     alone proposed 1.0.1 at its digest on the branch
     `renovate/open-webui-searxng-recipes`
-  - Since: #132; includes from the index and searxng 1.0.1: tbd
+  - Since: #132; includes from the index and searxng 1.0.1: #154
 
 ## Platform baseline
 
