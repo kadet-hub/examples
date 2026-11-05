@@ -1,0 +1,17 @@
+# Miniflux on Kubernetes: the recipe with its kubernetes generator, in a
+# namespace of its own. postgres starts as root, so the namespace enforces
+# the Pod Security level baseline.
+classes:
+  - recipes.miniflux
+  - miniflux
+parameters:
+  namespace: miniflux
+  kapitan:
+    vars:
+      target: cluster
+  generators:
+    kubernetes:
+      namespaces:
+        miniflux:
+          labels:
+            pod-security.kubernetes.io/enforce: baseline

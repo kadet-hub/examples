@@ -62,6 +62,7 @@
       "description": "EX-3: recipes in the fetch inventories of open-webui-searxng, platform-baseline, immich-cnpg, pihole-powerdns and argocd-cmp; the org preset reads inventory/ only and allows no / in a name",
       "customType": "regex",
       "managerFilePatterns": [
+        "compose-kubernetes/fetch/targets/recipes.yml",
         "open-webui-searxng/fetch/targets/recipes.yml",
         "platform-baseline/fetch/targets/recipes.yml",
         "immich-cnpg/fetch/targets/recipes.yml",
