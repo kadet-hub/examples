@@ -2275,6 +2275,111 @@ once when the module is missing, and the job loads it.
   - Test: `examples` workflow, job `talos-apps`
   - Since: #149
 
+## Docker Compose and Kubernetes
+
+`compose-kubernetes/` backs the kadet-hub.org blog post that runs one app
+on Kubernetes and on a plain Docker host from one Kapitan inventory. The
+app is Miniflux with its PostgreSQL database, from the recipe `miniflux`
+1.0.0, pinned in the fetch inventory `fetch/targets/recipes.yml`. The
+recipe was migrated from Miniflux's Compose file
+`contrib/docker-compose/basic.yml` and defines the components `miniflux`
+and `miniflux-db` for the kubernetes generator. `check` verifies and pulls
+the recipe and the generator it pins as `argocd-cmp/check` does.
+
+The class `miniflux` holds what both targets share. It includes the
+recipe's classes `miniflux` and `db`, with image, environment, health
+check and volume. It sets `applications.miniflux`, with both passwords as
+refs with the base64 backend and a `random` function. The target
+`cluster` adds the recipe's `init.yml`, which compiles with the kubernetes
+generator, and the Namespace `miniflux` at the Pod Security level
+`baseline`, because postgres starts as root. It also adds a readiness
+probe on Miniflux's `/healthcheck`, which the recipe 1.0.0 lacks. Without
+it the rollout ended before Miniflux listened, and the port-forward of the
+first CI run of #147 ended at the refused connection, as in EX-17. The
+target `compose` adds the compile entry of `components/compose` and, under
+`compose.services`, what only a Docker host needs: the published port,
+the start order and the restart policy. It leaves out `init.yml`, whose compile entry would run the
+kubernetes generator as well. The class `miniflux` therefore also sets the
+database user and name and the admin's username, which `init.yml` sets to
+the same values.
+
+kadet-hub's `docker` generator 1.0.2 renders Dockerfiles, not Compose
+files, and ships no inventory schema. `components/compose` is a kadet
+component in the folder. It maps the component keys the recipe uses:
+`image`, `env` with plain values or a `secretKeyRef` to the component's
+own Secret, `secrets` with `string_data`, a readiness probe of type
+`command`, and `volume_mounts` of `volume_claims` as named volumes. It
+drops `application`, `type`, `ports`, `service` and `volume_claims`, and
+fails the compile on any other key. The target's `compose.services` is
+merged over the result. A `secretKeyRef` becomes a plain value in
+`environment`, because Compose has no reference from a variable to a
+secret. Compose services reach each other by service name on the
+container port, so the Service port 80 of `miniflux` has no counterpart.
+
+- EX-30: `compose-kubernetes/check` MUST fail unless the recipe and the
+  generator pass the checks of EX-17 and EX-4, and Miniflux answers
+  `/healthcheck` with `OK`, reports the recipe's image tag as its version,
+  and stores and lists a category through its API as the admin the recipe
+  creates, both after `kubectl apply` of the target `cluster` to a new
+  kind cluster and after `docker compose up` of the target `compose` on
+  the runner.
+
+  `check` applies the database of `cluster` first and waits for its
+  rollout, in place of Compose's `depends_on`. Miniflux exits while
+  PostgreSQL refuses connections. With all objects applied at once, a local
+  run stopped on EX-6 while Miniflux waited in `CrashLoopBackOff`.
+
+  The admin's password comes from the ref, so the login shows that both
+  runtimes got the revealed value. A category is a row in PostgreSQL, so
+  storing and listing one shows that Miniflux reached its database.
+  `docker compose up --wait` returns once postgres reports healthy and
+  Miniflux runs. `check` compiles `compose` without `--reveal` and pipes
+  the output through `kapitan refs --reveal` into `docker compose -f -`,
+  so no file on the host holds the passwords. The job installs docker
+  compose v5.7.0 as a CLI plugin, pinned by version and sha256 as a
+  release asset (EX-3), in place of the runner's own.
+
+  Related: EX-1, EX-6, EX-12
+
+  - Test: `examples` workflow, job `compose-kubernetes`
+  - Since: #147
+
+- EX-30a: `compose-kubernetes/check` MUST fail unless setting
+  `components.miniflux.image` in a copy of the class `miniflux` changes
+  the image line of `compiled/cluster/manifests/miniflux/miniflux-deploy.yml`
+  and of `compiled/compose/compose.yml`, and nothing else.
+
+  The copy sets the recipe's image with the next patch version and no
+  digest. It is compiled, not pulled. Both compiles run without
+  `--reveal`, so the diff, which the post shows, holds ref tags.
+
+  - Test: `examples` workflow, job `compose-kubernetes`; `manual:` with
+    the image also set under `compose.services.miniflux` of the target
+    `compose`, `check` failed because only the Deployment changed
+  - Since: #147
+
+- EX-30b: `compose-kubernetes/check` MUST fail unless the target `compose`
+  fails to compile once the class `miniflux` sets `security_profile` on
+  the component `miniflux`.
+
+  `security_profile` fills a pod's Pod Security fields. Compose has fields
+  for some of them, such as `user`, `cap_drop` and `security_opt`. Nothing
+  on a Docker host refuses a container by level, as the Namespace's label
+  does. A key that only one runtime has a use for belongs in that
+  runtime's target.
+
+  - Test: `examples` workflow, job `compose-kubernetes`; `manual:` with
+    `security_profile` added to the keys `components/compose` drops,
+    `check` failed on EX-30b
+  - Since: #147
+
+Not tested: a NetworkPolicy, which the recipe does not render, and its
+Compose counterpart, a network on which every service reaches every port
+of the others. Liveness, startup and HTTP, TCP or gRPC probes, which
+`components/compose` refuses. The size of the volume claim, which a volume
+of Docker's `local` driver does not have. Data that survives a restart,
+and the restart policies of both runtimes.
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -2322,3 +2427,4 @@ once when the module is missing, and the job loads it.
 | `multi-env/` | One Kapitan project on the omegaconf backend (targets `dev`, `stage`, `prod`; classes `common`, `env/*`, `cluster/*`), the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, `guard` with `guard-allowed.txt`, `storage-class.yaml`; `check` (EX-28 to EX-28b) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
 | `talos-apps/` | One Kapitan project (targets `talos`, `blackbox-exporter`) on the omegaconf backend, the networks both read in `inventory/classes/cluster.yml`, the talos generator pinned in `inventory/classes/generators.yml`, the recipe pinned in `fetch/targets/recipes.yml`; `check` (EX-29) |
+| `compose-kubernetes/` | One Kapitan project on the omegaconf backend (targets `cluster`, `compose`), the shared class `inventory/classes/miniflux.yml`, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the kadet component `components/compose` that writes `compose.yml`; `check` (EX-30 to EX-30b) |

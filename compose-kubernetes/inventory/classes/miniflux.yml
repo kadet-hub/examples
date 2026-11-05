@@ -1,0 +1,17 @@
+# What both targets share: the recipe's two components, with image,
+# environment, health check and volume, and the credentials as refs.
+classes:
+  - recipes.miniflux.miniflux
+  - recipes.miniflux.db
+parameters:
+  applications:
+    miniflux:
+      # The recipe's init.yml sets user, name and username too, but the
+      # target compose leaves init.yml out (see there).
+      database:
+        user: miniflux
+        name: miniflux
+        password: ?{base64:miniflux/database-password||random:str:32}
+      admin:
+        username: admin
+        password: ?{base64:miniflux/admin-password||random:str:24}

@@ -31,6 +31,7 @@ longer holds.
 | [secrets-end-to-end](secrets-end-to-end/) | https://kadet-hub.org/blog/external-secrets-operator-vault-kapitan/ | `secrets-end-to-end/check` |
 | [multi-env](multi-env/) | https://kadet-hub.org/blog/kapitan-multiple-environments/ | `multi-env/check` |
 | [talos-apps](talos-apps/) | https://kadet-hub.org/blog/talos-homelab-kapitan/ | `talos-apps/check` |
+| [compose-kubernetes](compose-kubernetes/) | https://kadet-hub.org/blog/docker-compose-kubernetes/ | `compose-kubernetes/check` |
 
 ## Running
 

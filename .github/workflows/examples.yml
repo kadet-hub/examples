@@ -1018,6 +1018,46 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: talos-apps/check
 
+  compose-kubernetes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    env:
+      # EX-30: replaces the runner's compose plugin.
+      # renovate: datasource=github-release-attachments depName=docker/compose
+      DOCKER_COMPOSE_VERSION: v5.7.0
+      DOCKER_COMPOSE_SHA256: 7758048ad38e580f22559603312874fec8bb638d021a9e64182385fc17cc12a2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install oras, uv, kubectl, kind and docker compose
+        run: |
+          plugins=${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins
+          mkdir -p "$RUNNER_TEMP/bin" "$plugins" && cd "$RUNNER_TEMP/bin"
+          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
+          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          curl -fsSLo "$plugins/docker-compose" "https://github.com/docker/compose/releases/download/$DOCKER_COMPOSE_VERSION/docker-compose-linux-x86_64"
+          sha256sum -c <<EOF
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          $KIND_SHA256  kind
+          $DOCKER_COMPOSE_SHA256  $plugins/docker-compose
+          EOF
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
+          chmod +x kind "$plugins/docker-compose"
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: compose-kubernetes/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: compose-kubernetes/check
+
   # EX-3f: published advisories for the packages in the lock files.
   advisories:
     runs-on: ubuntu-24.04
@@ -1108,6 +1148,7 @@ jobs:
       - secrets-end-to-end
       - multi-env
       - talos-apps
+      - compose-kubernetes
       - advisories
       - pins
     if: always()

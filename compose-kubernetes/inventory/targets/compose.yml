@@ -1,0 +1,27 @@
+# Miniflux on a Docker host. The recipe's init.yml would add the kubernetes
+# generator's compile entry, so this target takes the recipe's components
+# through the class miniflux only and renders them with components/compose.
+classes:
+  - miniflux
+parameters:
+  kapitan:
+    vars:
+      target: compose
+    compile:
+      - input_type: kadet
+        input_paths:
+          - components/compose
+        output_path: .
+        output_type: yml
+  # Merged over what components/compose derives from the components.
+  compose:
+    services:
+      miniflux:
+        ports:
+          - 127.0.0.1:8080:8080
+        depends_on:
+          miniflux-db:
+            condition: service_healthy
+        restart: unless-stopped
+      miniflux-db:
+        restart: unless-stopped
