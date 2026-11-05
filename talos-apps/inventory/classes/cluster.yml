@@ -1,0 +1,7 @@
+# The networks both layers read: Talos puts the nodes, pods and Services in
+# them, and the exporter's egress policy keeps it out of all three.
+parameters:
+  cluster:
+    nodes_cidr: 192.0.2.0/24
+    pod_cidr: 10.244.0.0/16
+    service_cidr: 10.96.0.0/12

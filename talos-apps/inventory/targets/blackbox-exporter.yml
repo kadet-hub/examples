@@ -1,0 +1,63 @@
+# The recipe's exporter in its own namespace, with an egress policy that
+# lets it reach DNS and the internet but none of the networks of the class
+# cluster.
+classes:
+  - cluster
+  - recipes.blackbox-exporter
+parameters:
+  namespace: blackbox-exporter
+  kapitan:
+    vars:
+      target: blackbox-exporter
+  generators:
+    kubernetes:
+      namespaces:
+        blackbox-exporter:
+          labels:
+            pod-security.kubernetes.io/enforce: restricted
+  components:
+    blackbox-exporter-prometheus-blackbox-exporter:
+      # The recipe sets no seccomp profile, which the namespace's Pod
+      # Security level restricted requires.
+      security_context:
+        seccompProfile:
+          type: RuntimeDefault
+      # The recipe's module http_2xx and the upstream example's tcp_connect.
+      config_maps:
+        config:
+          data:
+            blackbox.yaml:
+              value: |
+                modules:
+                  http_2xx:
+                    http:
+                      follow_redirects: true
+                      preferred_ip_protocol: ip4
+                      valid_http_versions:
+                      - HTTP/1.1
+                      - HTTP/2.0
+                    prober: http
+                    timeout: 5s
+                  tcp_connect:
+                    prober: tcp
+                    timeout: 5s
+      network_policies:
+        egress:
+          egress:
+            - to:
+                - namespaceSelector:
+                    matchLabels:
+                      kubernetes.io/metadata.name: kube-system
+                  podSelector:
+                    matchLabels:
+                      k8s-app: kube-dns
+              ports:
+                - {protocol: UDP, port: 53}
+                - {protocol: TCP, port: 53}
+            - to:
+                - ipBlock:
+                    cidr: 0.0.0.0/0
+                    except:
+                      - ${cluster.nodes_cidr}
+                      - ${cluster.pod_cidr}
+                      - ${cluster.service_cidr}
