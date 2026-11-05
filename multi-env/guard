@@ -5,7 +5,8 @@ Usage: guard <stage dir> <prod dir> <allowed file>
 
 Compares the compiled objects of two targets by kind and name, field by
 field, and lists every field that differs. A field is written as
-`<kind>/<name> <path>`, with list items by their name. The allowed file
+`<kind>/<name> <path>`, with list items by their name where the names in
+the list are unique, else by their index. The allowed file
 holds one such field per line. Ref tokens count as equal, because each
 target has refs of its own. Needs PyYAML, which Kapitan brings.
 """
@@ -23,7 +24,10 @@ def objects(root):
     for path in sorted(pathlib.Path(root).rglob("*.yml")):
         for doc in yaml.safe_load_all(path.read_text()):
             if doc:
-                found[f"{doc['kind']}/{doc['metadata']['name']}"] = doc
+                key = f"{doc['kind']}/{doc['metadata']['name']}"
+                if key in found:  # one would hide the other
+                    sys.exit(f"guard: {key} twice in {root}")
+                found[key] = doc
     if not found:
         sys.exit(f"guard: no objects in {root}")
     return found
@@ -34,11 +38,15 @@ def fields(node, path=""):
         for key, value in node.items():
             yield from fields(value, f"{path}.{key}" if path else key)
     elif isinstance(node, list) and node:
+        names = [
+            item.get("name", (item.get("metadata") or {}).get("name")) if isinstance(item, dict) else None
+            for item in node
+        ]
+        # By name only when every item has one and no two share it, such as
+        # two volumeMounts of one volume, which would hide each other.
+        unique = None not in names and len(set(names)) == len(names)
         for i, item in enumerate(node):
-            name = i
-            if isinstance(item, dict):
-                name = item.get("name", (item.get("metadata") or {}).get("name", i))
-            yield from fields(item, f"{path}[{name}]")
+            yield from fields(item, f"{path}[{names[i] if unique else i}]")
     else:
         yield path, REF.sub("?{ref}", node) if isinstance(node, str) else node
 
