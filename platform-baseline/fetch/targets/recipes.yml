@@ -4,5 +4,5 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/cert-manager:1.0.3@sha256:99d27b9b0ed0afa330d48e1b12cc0bee25f37c5a4b5129ba07a68dfe5063bbef
+        source: ghcr.io/kadet-hub/recipes/cert-manager:1.0.4@sha256:187d4dd1ffe07745dcade7e078830e3a79c707712f16bf21e148029ff6c62247
         output_path: inventory/classes/recipes/cert-manager
