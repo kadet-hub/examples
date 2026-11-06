@@ -134,6 +134,23 @@
       "minimumGroupSize": 6
     },
     {
+      "description": "EX-3: the Playwright package of sso-keycloak drives only the Chromium build of its own release, which the image of the same version holds; the branch waits for both, because the image has no release timestamp (EX-3b)",
+      "matchFileNames": [
+        "sso-keycloak/check"
+      ],
+      "matchPackageNames": [
+        "playwright",
+        "mcr.microsoft.com/playwright/python"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "groupName": "sso-keycloak playwright",
+      "minimumGroupSize": 2
+    },
+    {
       "description": "EX-3: kind and the node image of its release",
       "matchDepNames": [
         "kubernetes-sigs/kind",

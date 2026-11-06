@@ -13,11 +13,13 @@ Written up at https://kadet-hub.org/blog/keycloak-sso-self-hosted-apps/.
 | `inventory/targets/gitea.yml`, `open-webui.yml`, `miniflux.yml` | Each app in its namespace, with Keycloak as OIDC provider |
 | `inventory/targets/cert-manager.yml`, `cnpg.yml`, `keycloak-operator.yml` | The operators, each in its namespace |
 | `.kapitan` | The omegaconf inventory backend, which the recipes are written for |
+| `tests/chainsaw-test.yaml`, `tests/namespaces.yaml` | The deploy to kind in the order Keycloak and the apps need, with a wait after each step |
+| `tests/login.py` | The logins in Playwright's headless Chromium |
 
 ## Running
 
 ```sh
-# gh (logged in), jq, oras, uv, kind, kubectl, curl, openssl and docker on PATH
+# gh (logged in), jq, oras, uv, kind, kubectl, chainsaw, certutil, openssl and docker on PATH
 ./check
 ```
 
@@ -28,9 +30,10 @@ writes it to refs with the base64 backend in a temporary refs path, where
 the first compile adds the client secrets and passwords with random
 values. It compiles the targets, and once more with Gitea moved to another
 URL in `inventory/classes/sso.yml` to show that only the realm import and
-Gitea's `ROOT_URL` change. It then deploys everything to a new kind
-cluster, points `sso.example.test` at Keycloak's Service in CoreDNS and
-signs in with curl as a browser: `alice` to all three apps with one
-password, a wrong password to none, `bob` to Miniflux only. Last, it points
-Miniflux at Keycloak's in-cluster name, which fails on the issuer.
+Gitea's `ROOT_URL` change. It then creates a kind cluster, where the
+Chainsaw test points `sso.example.test` at Keycloak's Service in CoreDNS
+and deploys everything. `tests/login.py` signs in with the headless
+Chromium of the pinned Playwright image: `alice` to all three apps with
+one password, a wrong password to none, `bob` to Miniflux only. Last, it
+points Miniflux at Keycloak's in-cluster name, which fails on the issuer.
 `KEEP=1 ./check` keeps the cluster `sso-keycloak`.
