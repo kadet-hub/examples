@@ -1,7 +1,8 @@
 name: examples
 
-# EX-1, EX-2: each example's script on every change and weekly, so a post
-# whose claim no longer holds shows up as a failed run.
+# EX-1, EX-2, EX-2a: every example's script on a push to main, weekly and
+# on a manual run, and on a pull request the scripts of the example folders
+# it changes, so a post whose claim no longer holds shows up as a failed run.
 on:
   pull_request:
   push:
@@ -88,7 +89,44 @@ env:
   OSV_SCANNER_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
 
 jobs:
+  # EX-2a: the example folders whose jobs run, as a JSON list.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      folders: ${{ steps.folders.outputs.folders }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # a pull request's merge commit and its base
+      - id: folders
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -o pipefail
+          # -z: without it git quotes a path with a non-ASCII byte, folder included.
+          if [[ $EVENT == pull_request ]]; then
+            # The checkout is the merge commit; its first parent is the base branch.
+            files=$(git diff -z --no-renames --name-only HEAD^ HEAD | tr '\0' '\n')
+          fi
+          # Everything runs on a push, the schedule, a manual run and a change
+          # to the workflow, which sets the tools of every job.
+          if [[ $EVENT != pull_request ]] || grep -q '^\.github/' <<<"$files"; then
+            files=$(git ls-files -z | tr '\0' '\n')
+          fi
+          # helm-mutate deploys the Git server of argocd-vs-flux.
+          if grep -qx argocd-vs-flux/git-server.yaml <<<"$files"; then
+            files+=$'\nhelm-mutate/'
+          fi
+          folders=$(cut -s -d/ -f1 <<<"$files" | sort -u | jq -Rnc '[inputs]')
+          echo "folders=$folders" | tee -a "$GITHUB_OUTPUT"
+
   same-app:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'same-app')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -132,6 +170,8 @@ jobs:
         run: same-app/check
 
   apiserver-dry-run:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'apiserver-dry-run')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -162,6 +202,8 @@ jobs:
 
   # EX-12: prod's apps deployed to kind.
   first-platform:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'first-platform')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -197,6 +239,8 @@ jobs:
         run: first-platform/check
 
   bitnami:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'bitnami')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -228,6 +272,8 @@ jobs:
         run: bitnami/run.sh
 
   verify-oci:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'verify-oci')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -246,6 +292,8 @@ jobs:
         run: verify-oci/verify kubernetes "$GENERATOR_VERSION" 47
 
   gvisor-ci:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'gvisor-ci')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -283,6 +331,8 @@ jobs:
       - run: gvisor-ci/check
 
   config-tools:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'config-tools')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -321,6 +371,8 @@ jobs:
         run: config-tools/check
 
   timoni-vs-kapitan:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'timoni-vs-kapitan')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -352,6 +404,8 @@ jobs:
         run: timoni-vs-kapitan/check
 
   kcl-vs-kapitan:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'kcl-vs-kapitan')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -383,6 +437,8 @@ jobs:
         run: kcl-vs-kapitan/check
 
   talos-machine-config:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'talos-machine-config')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -416,6 +472,8 @@ jobs:
 
   # EX-12: the app deployed to kind.
   helm-vs-terraform:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'helm-vs-terraform')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -455,6 +513,8 @@ jobs:
 
   # EX-7, EX-8: the same app delivered by Argo CD and by Flux, one kind cluster each.
   argocd-vs-flux:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'argocd-vs-flux')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -500,6 +560,8 @@ jobs:
   # EX-9, EX-10: podinfo's chart patched by mutate, deployed by kubectl, Argo CD
   # and Flux, one kind cluster each.
   helm-mutate:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'helm-mutate')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -547,6 +609,8 @@ jobs:
 
   # EX-13, EX-13a: widely used charts rebuilt as Kapitan inventories, compared on kind.
   chart-vs-kapitan:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'chart-vs-kapitan')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -590,6 +654,8 @@ jobs:
 
   # EX-11: the cert-manager and trust-manager charts patched by mutate, on kind.
   cert-manager-mutate:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'cert-manager-mutate')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -630,6 +696,8 @@ jobs:
   # EX-14, EX-14a: the KubeVirt CSI driver on kind, a tenant PVC through a
   # k3s cluster in a KubeVirt VM.
   kubevirt-csi:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'kubevirt-csi')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -665,6 +733,8 @@ jobs:
 
   # EX-17: Open WebUI with SearXNG as its web search, from four recipes, on kind.
   open-webui-searxng:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'open-webui-searxng')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -699,6 +769,8 @@ jobs:
   # EX-18: a cluster baseline from kadet-hub generators, with podinfo on top
   # delivered by Argo CD, on kind.
   platform-baseline:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'platform-baseline')
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
@@ -734,6 +806,8 @@ jobs:
         run: platform-baseline/check
 
   immich-cnpg:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'immich-cnpg')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -766,6 +840,8 @@ jobs:
         run: immich-cnpg/check
 
   pihole-powerdns:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'pihole-powerdns')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -800,6 +876,8 @@ jobs:
   # EX-21: podinfo and Valkey rendered by Helmfile and by Kapitan, prod
   # deployed by both to kind.
   helmfile-vs-kapitan:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'helmfile-vs-kapitan')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -838,6 +916,8 @@ jobs:
         run: helmfile-vs-kapitan/check
 
   argocd-cmp:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'argocd-cmp')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -869,6 +949,8 @@ jobs:
   # EX-27: the Kyverno CLI and conftest on compiled/, Kyverno at admission
   # on kind. The CLI runs at the version that check installs into kind.
   policy-checks:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'policy-checks')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -916,6 +998,8 @@ jobs:
   # EX-26: a Kapitan gpg ref for the bootstrap secret, External Secrets and
   # a Vault dev server for the runtime secret, on kind.
   secrets-end-to-end:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'secrets-end-to-end')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -950,6 +1034,8 @@ jobs:
   # EX-28 to EX-28b: dev, stage and prod from one inventory, the guard, and
   # the three targets on two kind clusters.
   multi-env:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'multi-env')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -984,6 +1070,8 @@ jobs:
   # EX-29: Talos machine configs booted as Talos containers in Docker, with
   # the app on top.
   talos-apps:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'talos-apps')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -1019,6 +1107,8 @@ jobs:
         run: talos-apps/check
 
   compose-kubernetes:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'compose-kubernetes')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -1122,6 +1212,7 @@ jobs:
   # EX-16: the one required check. Every other job goes into needs.
   ci:
     needs:
+      - changes
       - same-app
       - apiserver-dry-run
       - first-platform
