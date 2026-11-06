@@ -111,11 +111,39 @@ schedule instead of trusting the state on the publishing day.
   - Test: manual: the `Show swap` step in the job log
   - Since: #108
 
-- EX-2: CI MUST run every example's script weekly, in addition to pull
-  requests and pushes to `main`.
+- EX-2: CI MUST run every example's script on every push to `main`,
+  weekly and on a manual run.
 
-  - Test: `examples` workflow, `schedule` trigger
-  - Since: tbd
+  - Test: `examples` workflow, `push`, `schedule` and `workflow_dispatch`
+    triggers
+  - Since: tbd; pull requests moved to EX-2a in #161
+
+- EX-2a: On a pull request, CI MUST run the script of every example
+  folder the pull request changes and of every example that reads a file
+  it changes. A pull request that changes anything under `.github/` MUST
+  run every script.
+
+  The job `changes` diffs the pull request's merge commit against its
+  first parent, the base branch, and lists the folders. Each example's job
+  runs only when its folder is on that list. `ci` counts the others as
+  skipped (EX-16), and so does Renovate before it merges (EX-3h). A new
+  example's job therefore needs `needs: changes` and the `if` on its
+  folder, or it runs on every pull request.
+
+  The workflow sets the versions and checksums of the tools every job
+  installs, so a change under `.github/` runs everything. No example reads
+  `docs/` or a file at the root of the repository, so a change there runs
+  none. The one file an example reads from another folder is
+  `argocd-vs-flux/git-server.yaml`, which `helm-mutate` deploys as its Git
+  server, so a change to it runs `helm-mutate` too. `advisories` still runs
+  on every pull request (EX-3f) and `pins` on every Renovate branch (EX-3).
+
+  A breaking change outside the repository, such as a new generator
+  release or index, shows up on the next push to `main` or in the weekly
+  run, no longer on an unrelated pull request.
+
+  - Test: `examples` workflow, job `changes`; `manual:` tbd
+  - Since: #161
 
 - EX-16: The `ci` job of the `examples` workflow MUST fail unless every
   other job of the run succeeded or was skipped.
@@ -2404,7 +2432,7 @@ and the restart policies of both runtimes.
 |---|---|
 | `.github/workflows/request-review.yml` | requests `neat-bot` (EX-15) |
 | `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml` | compile diff of `first-platform` on pull requests, pinned to a registry commit (EX-25) |
-| `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `pins` (EX-3), `advisories` (EX-3f), `ci` (EX-16) |
+| `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `changes` (EX-2a), `pins` (EX-3), `advisories` (EX-3f), `ci` (EX-16) |
 | `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins, cert-manager's in `chart-vs-kapitan` included, and leave the rest of its Kapitan side to the chart (EX-3), keep the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
