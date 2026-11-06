@@ -415,7 +415,7 @@ schedule instead of trusting the state on the publishing day.
     cryptography override: #86; recipes in a fetch inventory: #132;
     recipe pins through the org preset: #154;
     `platform-baseline`: #135; `helmfile-vs-kapitan`: #140; Playwright in
-    `sso-keycloak`: this change
+    `sso-keycloak`: #166
 
 - EX-3h: Renovate MUST merge its own pull request once every check on it
   passed, unless it is a major update or a digest update of a GitHub Action.
@@ -2594,7 +2594,7 @@ meet the Pod Security level `restricted`. Their namespaces enforce
   - Test: `examples` workflow, job `sso-keycloak`: the deploy in
     `sso-keycloak/tests/chainsaw-test.yaml`, the logins in
     `sso-keycloak/tests/login.py`
-  - Since: #156; Chainsaw and Playwright: this change
+  - Since: #156; Chainsaw and Playwright: #166
 
 - EX-32a: `sso-keycloak/check` MUST fail unless changing Gitea's URL in a
   copy of the class `sso` changes the redirect URI of the client `gitea` in
