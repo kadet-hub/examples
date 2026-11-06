@@ -142,7 +142,10 @@ schedule instead of trusting the state on the publishing day.
   release or index, shows up on the next push to `main` or in the weekly
   run, no longer on an unrelated pull request.
 
-  - Test: `examples` workflow, job `changes`; `manual:` tbd
+  - Test: `examples` workflow, job `changes`; `manual:` on #161, which
+    changes the workflow, `changes` listed every folder; on #162, which
+    changed only `verify-oci/`, `changes`, `verify-oci`, `advisories` and
+    `ci` ran, the rest was skipped and `ci` passed
   - Since: #161
 
 - EX-16: The `ci` job of the `examples` workflow MUST fail unless every
