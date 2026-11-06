@@ -1,0 +1,150 @@
+# Keycloak from the published recipe, with the realm home, its users and one
+# OIDC client per app, imported from the inventory on the first start.
+classes:
+  - recipes.keycloak
+  - sso
+parameters:
+  namespace: keycloak
+  kapitan:
+    vars:
+      target: keycloak
+    # The Secrets below. The kubernetes generator comes with the recipes of
+    # the apps, at the version they pin, into lib/kubernetes.
+    compile:
+      - input_type: kadet
+        input_paths:
+          - lib/kubernetes
+        output_path: manifests/
+        output_type: yml
+  applications:
+    keycloak:
+      host: ${sso.host}
+      issuer:
+        name: sso-ca
+        kind: Issuer
+    postgresql:
+      # One node: further instances on it would share its disk.
+      instances: 1
+  sso:
+    # Puts the group names into ID token and userinfo as the claim groups.
+    groups_mapper:
+      name: groups
+      protocol: openid-connect
+      protocolMapper: oidc-group-membership-mapper
+      config:
+        claim.name: groups
+        full.path: "false"
+        id.token.claim: "true"
+        access.token.claim: "true"
+        userinfo.token.claim: "true"
+  generators:
+    keycloak:
+      instances:
+        keycloak:
+          hostname:
+            hostname: ${sso.url}
+      realm_imports:
+        home:
+          realm:
+            realm: ${sso.realm}
+            enabled: true
+            groups:
+              - name: ${sso.clients.gitea.group}
+              - name: ${sso.clients.open-webui.group}
+              # A group no app admits.
+              - name: family
+            # ${escape:X} renders ${X}, which the import replaces with the
+            # value of spec.placeholders.X.
+            users:
+              - username: alice
+                email: alice@example.test
+                emailVerified: true
+                firstName: Alice
+                lastName: Example
+                enabled: true
+                groups:
+                  - /${sso.clients.gitea.group}
+                  - /${sso.clients.open-webui.group}
+                credentials:
+                  - type: password
+                    value: ${escape:PASSWORD_ALICE}
+              - username: bob
+                email: bob@example.test
+                emailVerified: true
+                firstName: Bob
+                lastName: Example
+                enabled: true
+                groups:
+                  - /family
+                credentials:
+                  - type: password
+                    value: ${escape:PASSWORD_BOB}
+            clients:
+              - clientId: ${sso.clients.gitea.id}
+                secret: ${escape:CLIENT_SECRET_GITEA}
+                redirectUris:
+                  - ${sso.clients.gitea.redirect_uri}
+                protocolMappers:
+                  - ${sso.groups_mapper}
+              - clientId: ${sso.clients.open-webui.id}
+                secret: ${escape:CLIENT_SECRET_OPEN_WEBUI}
+                redirectUris:
+                  - ${sso.clients.open-webui.redirect_uri}
+                protocolMappers:
+                  - ${sso.groups_mapper}
+              - clientId: ${sso.clients.miniflux.id}
+                secret: ${escape:CLIENT_SECRET_MINIFLUX}
+                redirectUris:
+                  - ${sso.clients.miniflux.redirect_uri}
+          spec:
+            placeholders:
+              PASSWORD_ALICE:
+                secret:
+                  name: sso-users
+                  key: alice
+              PASSWORD_BOB:
+                secret:
+                  name: sso-users
+                  key: bob
+              CLIENT_SECRET_GITEA:
+                secret:
+                  name: sso-clients
+                  key: gitea
+              CLIENT_SECRET_OPEN_WEBUI:
+                secret:
+                  name: sso-clients
+                  key: open-webui
+              CLIENT_SECRET_MINIFLUX:
+                secret:
+                  name: sso-clients
+                  key: miniflux
+    certmanager:
+      # The CA of the class sso signs Keycloak's certificate.
+      issuers:
+        sso-ca:
+          spec:
+            ca:
+              secretName: sso-ca
+    kubernetes:
+      secrets:
+        sso-ca:
+          type: kubernetes.io/tls
+          string_data:
+            tls.crt:
+              value: ${sso.ca}
+            tls.key:
+              value: ?{base64:sso/ca.key}
+        sso-clients:
+          string_data:
+            gitea:
+              value: ${sso.clients.gitea.secret}
+            open-webui:
+              value: ${sso.clients.open-webui.secret}
+            miniflux:
+              value: ${sso.clients.miniflux.secret}
+        sso-users:
+          string_data:
+            alice:
+              value: ?{base64:sso/alice-password||random:str:24}
+            bob:
+              value: ?{base64:sso/bob-password||random:str:24}

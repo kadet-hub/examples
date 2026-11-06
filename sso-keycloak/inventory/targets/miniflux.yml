@@ -1,0 +1,58 @@
+# Miniflux from the published recipe, with Keycloak as its OIDC provider.
+# Every user of the realm gets an account on the first login.
+classes:
+  - recipes.miniflux
+  - sso
+parameters:
+  namespace: miniflux
+  kapitan:
+    vars:
+      target: miniflux
+  applications:
+    miniflux:
+      database:
+        # Part of a URL in the recipe, so letters and digits only.
+        password: ?{base64:miniflux/database-password||random:loweralphanum:32}
+      admin:
+        password: ?{base64:miniflux/admin-password||random:str:24}
+  components:
+    miniflux:
+      env:
+        BASE_URL: ${sso.clients.miniflux.url}
+        OAUTH2_PROVIDER: oidc
+        OAUTH2_OIDC_DISCOVERY_ENDPOINT: ${sso.issuer}
+        OAUTH2_REDIRECT_URL: ${sso.clients.miniflux.redirect_uri}
+        OAUTH2_CLIENT_ID: ${sso.clients.miniflux.id}
+        OAUTH2_CLIENT_SECRET:
+          secretKeyRef:
+            name: sso-client
+            key: secret
+        OAUTH2_USER_CREATION: 1
+        # Miniflux reads Keycloak's discovery document over TLS.
+        SSL_CERT_FILE: /etc/sso/ca.crt
+      volumes:
+        sso-ca:
+          secret:
+            secretName: sso-ca
+      volume_mounts:
+        sso-ca:
+          mount_path: /etc/sso
+          read_only: true
+      # The recipe has none, and the rollout ended before Miniflux listened.
+      # /healthcheck answers OK once Miniflux reaches its database.
+      healthcheck:
+        readiness:
+          type: http
+          port: http
+          path: /healthcheck
+  generators:
+    kubernetes:
+      secrets:
+        sso-ca:
+          string_data:
+            ca.crt:
+              value: ${sso.ca}
+        sso-client:
+          string_data:
+            secret:
+              value: ${sso.clients.miniflux.secret}

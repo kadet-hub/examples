@@ -190,6 +190,13 @@
       "groupName": "pihole-powerdns recipes"
     },
     {
+      "description": "EX-32: the recipes of sso-keycloak in one pull request, because keycloak-operator runs only the Keycloak version of keycloak, and keycloak, gitea and open-webui share postgresql and valkey, which one project takes at one digest only",
+      "matchFileNames": [
+        "sso-keycloak/fetch/targets/recipes.yml"
+      ],
+      "groupName": "sso-keycloak recipes"
+    },
+    {
       "description": "EX-3: the Pulumi Kubernetes plugin at the @pulumi/kubernetes version",
       "matchPackageNames": [
         "@pulumi/kubernetes",
