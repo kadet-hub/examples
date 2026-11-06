@@ -1,0 +1,43 @@
+# The Keycloak Operator, Keycloak, Open WebUI and Miniflux's PostgreSQL do not
+# meet the level restricted, Open WebUI and PostgreSQL run as root.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+  labels: {pod-security.kubernetes.io/enforce: restricted}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cnpg-system
+  labels: {pod-security.kubernetes.io/enforce: restricted}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak-operator
+  labels: {pod-security.kubernetes.io/enforce: baseline}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: keycloak
+  labels: {pod-security.kubernetes.io/enforce: baseline}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitea
+  labels: {pod-security.kubernetes.io/enforce: baseline}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: open-webui
+  labels: {pod-security.kubernetes.io/enforce: baseline}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: miniflux
+  labels: {pod-security.kubernetes.io/enforce: baseline}

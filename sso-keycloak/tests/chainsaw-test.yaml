@@ -1,0 +1,194 @@
+# EX-12, EX-32: the compiled targets on the kind cluster of check, each step
+# applying what the one before made ready. check passes the class sso's
+# host as $values.host and signs in with tests/login.py afterwards.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: sso-keycloak
+spec:
+  # check deletes the cluster.
+  skipDelete: true
+  # Apply the compiled manifests as they are: Chainsaw would read a string
+  # in parentheses, such as a CEL rule of CloudNativePG's CRDs, as an
+  # expression.
+  template: false
+  timeouts:
+    # EX-6: a webhook can refuse connections for a few seconds after its
+    # Deployment is ready. Chainsaw repeats an apply until it passes or
+    # this timeout ends.
+    apply: 1m
+    assert: 10m
+    exec: 5m
+  steps:
+    # Pods resolve Keycloak's public name to its Service, as split-horizon
+    # DNS or a hairpin through the ingress would in a real network.
+    - name: coredns
+      try:
+        - script:
+            env:
+              - name: HOST
+                value: ($values.host)
+            content: |
+              set -eu
+              kubectl -n kube-system get configmap coredns -o json |
+                jq --arg r "rewrite name exact $HOST keycloak-service.keycloak.svc.cluster.local answer auto" \
+                  '.data.Corefile |= sub("\n    ready\n"; "\n    ready\n    \($r)\n")' |
+                kubectl replace -f - >/dev/null
+              kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}' |
+                grep -qF "rewrite name exact $HOST " ||
+                { echo "the rewrite rule for $HOST is not in CoreDNS's Corefile" >&2; exit 1; }
+              kubectl -n kube-system rollout restart deployment/coredns >/dev/null
+              kubectl -n kube-system rollout status deployment/coredns --timeout=120s
+      catch:
+        - describe: {apiVersion: v1, kind: Pod, namespace: kube-system, selector: k8s-app=kube-dns}
+        - podLogs: {namespace: kube-system, selector: k8s-app=kube-dns, tail: 50}
+
+    - name: operators
+      try:
+        - apply: {file: namespaces.yaml}
+        - apply: {file: ../compiled/cert-manager/manifests/*.y*ml}
+        - apply: {file: ../compiled/cert-manager/manifests/*/*.yml}
+        - apply: {file: ../compiled/cnpg/manifests/*.yml}
+        - apply: {file: ../compiled/cnpg/manifests/*/*.yml}
+        - apply: {file: ../compiled/keycloak-operator/manifests/*.yml}
+        - apply: {file: ../compiled/keycloak-operator/manifests/*/*.yml}
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: cert-manager-webhook, namespace: cert-manager}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: cnpg-cloudnative-pg, namespace: cnpg-system}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: keycloak-operator, namespace: keycloak-operator}
+              (status.readyReplicas == spec.replicas): true
+      catch:
+        - events: {namespace: cert-manager}
+        - describe: {apiVersion: v1, kind: Pod, namespace: cert-manager}
+        - podLogs: {namespace: cert-manager, tail: 50}
+        - events: {namespace: cnpg-system}
+        - describe: {apiVersion: v1, kind: Pod, namespace: cnpg-system}
+        - podLogs: {namespace: cnpg-system, tail: 50}
+        - events: {namespace: keycloak-operator}
+        - describe: {apiVersion: v1, kind: Pod, namespace: keycloak-operator}
+        - podLogs: {namespace: keycloak-operator, tail: 50}
+
+    # Keycloak exits while PostgreSQL refuses connections, so the Cluster first.
+    - name: keycloak
+      try:
+        - apply: {file: ../compiled/keycloak/manifests/keycloak/postgresql-cluster-cluster.yml}
+        - assert:
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata: {name: postgresql-cluster, namespace: keycloak}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - apply: {file: ../compiled/keycloak/manifests/keycloak/*.yml}
+        - assert:
+            resource:
+              apiVersion: k8s.keycloak.org/v2beta1
+              kind: Keycloak
+              metadata: {name: keycloak, namespace: keycloak}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - assert:
+            resource:
+              apiVersion: k8s.keycloak.org/v2beta1
+              kind: KeycloakRealmImport
+              metadata: {name: home, namespace: keycloak}
+              status:
+                (conditions[?type == 'Done']):
+                  - status: "True"
+      catch:
+        - events: {namespace: keycloak}
+        - describe: {apiVersion: v1, kind: Pod, namespace: keycloak}
+        - podLogs: {namespace: keycloak, tail: 50}
+
+    # Gitea's init container reads Keycloak's discovery document, so the apps
+    # come after the import. Gitea exits while its database or Valkey refuses
+    # connections, Miniflux while its database does, so those first.
+    - name: apps
+      try:
+        - apply: {file: ../compiled/gitea/manifests/gitea/postgresql-*.yml}
+        - apply: {file: ../compiled/gitea/manifests/gitea/valkey-*.yml}
+        - apply: {file: ../compiled/miniflux/manifests/miniflux/miniflux-db-*.yml}
+        - assert:
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata: {name: postgresql-cluster, namespace: gitea}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: valkey, namespace: gitea}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata: {name: miniflux-db, namespace: miniflux}
+              (status.readyReplicas == spec.replicas): true
+        - apply: {file: ../compiled/gitea/manifests/gitea/*.yml}
+        - apply: {file: ../compiled/open-webui/manifests/open-webui/*.yml}
+        - apply: {file: ../compiled/miniflux/manifests/miniflux/*.yml}
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: gitea, namespace: gitea}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: valkey, namespace: open-webui}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata: {name: open-webui, namespace: open-webui}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: miniflux, namespace: miniflux}
+              (status.readyReplicas == spec.replicas): true
+        # open-webui 1.0.0 has no readiness probe, so its pod is ready before
+        # Open WebUI listens. A port-forward ends at the first connection the
+        # pod refuses.
+        - script:
+            content: |
+              for _ in $(seq 150); do
+                kubectl get --raw /api/v1/namespaces/open-webui/services/open-webui:80/proxy/health 2>/dev/null |
+                  jq -e '.status == true' >/dev/null && exit 0
+                sleep 2
+              done
+              echo "Open WebUI did not answer /health" >&2
+              exit 1
+      catch:
+        - events: {namespace: gitea}
+        - describe: {apiVersion: v1, kind: Pod, namespace: gitea}
+        - podLogs: {namespace: gitea, tail: 50}
+        - events: {namespace: open-webui}
+        - describe: {apiVersion: v1, kind: Pod, namespace: open-webui}
+        - podLogs: {namespace: open-webui, tail: 50}
+        - events: {namespace: miniflux}
+        - describe: {apiVersion: v1, kind: Pod, namespace: miniflux}
+        - podLogs: {namespace: miniflux, tail: 50}
