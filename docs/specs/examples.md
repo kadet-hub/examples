@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `argocd-cmp/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `argocd-cmp/`, `sso-keycloak/tests/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -63,7 +63,9 @@ schedule instead of trusting the state on the publishing day.
   `immich-cnpg` unless EX-19 holds, `pihole-powerdns` unless EX-20 holds,
   `helmfile-vs-kapitan` unless EX-21 holds, `timoni-vs-kapitan` unless
   EX-22 to EX-22b hold, `kcl-vs-kapitan` unless EX-23 to EX-23b hold,
-  `argocd-cmp` unless EX-24 holds.
+  `argocd-cmp` unless EX-24 holds, `sso-keycloak` unless EX-32 and
+  EX-32a hold. `sso-keycloak/check` leaves the deploy to a Chainsaw test
+  and the logins to a Playwright script and fails when either fails.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
   label, which names the tool, and `initialDelaySeconds: 0`, the API
@@ -248,7 +250,8 @@ schedule instead of trusting the state on the publishing day.
     node image and the redis image of EX-7 the same way, `gvisor-ci/run`
     the image of its sandbox rootfs, `platform-baseline/check` the Velero
     server and AWS plugin images, `timoni-vs-kapitan/check` the registry
-    image of EX-22.
+    image of EX-22, `sso-keycloak/check` the Playwright image, from which
+    it copies the browsers with `docker create` and `docker cp` (EX-32).
   - Commit: Argo CD's `install.yaml` and kubeconform's
     `openapi2jsonschema.py` are files in the projects' repositories, not
     release assets. They are fetched from raw.githubusercontent.com at the
@@ -297,6 +300,15 @@ schedule instead of trusting the state on the publishing day.
   server image `platform-baseline/check` installs with it (EX-18); the
   charts of both sides of `helmfile-vs-kapitan`, outside the podinfo group
   (EX-21).
+
+  The Playwright package that `sso-keycloak/check` runs drives only the
+  Chromium build of its own release, which the Playwright image of the
+  same version holds (EX-32). Renovate moves the PyPI pin and the image's
+  tag in the group `sso-keycloak playwright` and creates its branch only
+  once both have an update (`minimumGroupSize: 2`). The image on
+  mcr.microsoft.com has no release timestamp, so without the group size
+  its update would come three days before the package's (EX-3b). A digest
+  update of the image stays outside the group.
 
   Two values follow another pin, and the pull request that changes that
   pin has to change them: the redis tag follows Argo CD's manifest (EX-7),
@@ -351,10 +363,10 @@ schedule instead of trusting the state on the publishing day.
   release lists in `sha256sum.txt`. The `first-platform` workflow template
   pins the registry's reusable workflow by the commit of `main`, for which
   the registry publishes no release tag; Renovate follows `main` with
-  `datasource=github-digest`. `gh`, `jq`, `curl`, `openssl`, `python3` and
-  `docker` come from the runner image. Kapitan 0.36.3 with the `omegaconf`
-  extra MUST be installed with `omegaconf==2.4.0.dev4`: omegaconf 2.4.0
-  breaks its OmegaConf backend (kapicorp/kapitan#1621).
+  `datasource=github-digest`. `gh`, `jq`, `curl`, `openssl`, `python3`,
+  `certutil` and `docker` come from the runner image. Kapitan 0.36.3 with
+  the `omegaconf` extra MUST be installed with `omegaconf==2.4.0.dev4`:
+  omegaconf 2.4.0 breaks its OmegaConf backend (kapicorp/kapitan#1621).
 
   Kapitan 0.36.3 requires `cryptography<49`. `first-platform/pyproject.toml`
   lifts that to `cryptography>=50.0.0` with uv's `override-dependencies`,
@@ -402,7 +414,8 @@ schedule instead of trusting the state on the publishing day.
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
     cryptography override: #86; recipes in a fetch inventory: #132;
     recipe pins through the org preset: #154;
-    `platform-baseline`: #135; `helmfile-vs-kapitan`: #140
+    `platform-baseline`: #135; `helmfile-vs-kapitan`: #140; Playwright in
+    `sso-keycloak`: this change
 
 - EX-3h: Renovate MUST merge its own pull request once every check on it
   passed, unless it is a major update or a digest update of a GitHub Action.
@@ -724,6 +737,11 @@ shows under `/recipes/`.
   apply` is idempotent, so a repeat changes nothing that already exists. A
   server-side dry run, used before, cannot pass for a manifest that creates
   its own Namespace and so always waited the full minute.
+
+  `sso-keycloak` leaves the applies and waits to Chainsaw. Its apply
+  timeout of one minute repeats a refused apply as `check` does elsewhere.
+  A failed step's `catch` prints the events of each namespace the step
+  deploys to and the description and last 50 log lines of its pods.
 
   `ErrImagePull` alone does not count as broken: a registry hiccup causes
   it once, and a pull that keeps failing turns into `ImagePullBackOff`
@@ -2461,17 +2479,19 @@ Keycloak's `hostname`, which the target sets to
 name that host, whether the request came from a browser or from a pod. The
 apps' pods therefore have to reach Keycloak by that name.
 
-`check` adds the rule `rewrite name exact sso.example.test
+The Chainsaw test adds the rule `rewrite name exact sso.example.test
 keycloak-service.keycloak.svc.cluster.local answer auto` to kind's
 CoreDNS. It stands in for the split-horizon DNS or the hairpin through an
 ingress that a real network uses. The issuer keeps the port 8443 of the
 Service `keycloak-service`, because the port is part of the issuer and the
-pods connect to the Service directly. The scripted browser is curl on the
-machine that runs `check`. It reaches Keycloak and each app through a
-port-forward on a free local port and `--connect-to`, which leaves the
-name and port of each URL unchanged. The host names are under `.test`,
-which RFC 2606 reserves for testing. Neither an `/etc/hosts` entry nor an
-ingress controller is needed.
+pods connect to the Service directly. The browser is Playwright's headless
+Chromium, which `tests/login.py` drives on the machine that runs `check`.
+It reaches Keycloak and each app through a port-forward on a free local
+port. Chromium's `--host-resolver-rules` map the name and port of each
+URL to that port and resolve no other name, so every request carries the
+URL of the class, its `Host` header and TLS server name included. The
+host names are under `.test`, which RFC 2606 reserves for testing.
+Neither an `/etc/hosts` entry nor an ingress controller is needed.
 
 Keycloak serves HTTPS on port 8443 with the certificate `keycloak-tls`,
 which cert-manager issues with the CA Issuer `sso-ca`. `check` creates the
@@ -2480,7 +2500,10 @@ and `sso/ca.key`, which the class and the target `keycloak` read. A
 repository creates them once and commits the refs. Each app target renders
 a Secret `sso-ca` with the certificate, mounts it at `/etc/sso` and sets
 `SSL_CERT_FILE` to it. The apps themselves serve plain HTTP on their
-Services.
+Services. Chromium on Linux trusts the CAs in the NSS database of
+`$HOME/.pki/nssdb`. `tests/login.py` adds the CA there with `certutil`,
+in a temporary home directory, so Chromium verifies Keycloak's
+certificate and name.
 
 Gitea keeps its login sources in its database. `app.ini` has no setting
 for them, and the admin page or the CLI creates them. The recipe `gitea`
@@ -2493,14 +2516,15 @@ well. In the first local run without it, the init container failed with
 `x509: certificate signed by unknown authority`. `[oauth2_client]` creates
 a user on the first login, named after `preferred_username`. Gitea 28.3.0
 accepts tokens only on its API (`buildAuthGroup` in
-`routers/api/v1/api.go`), so `check` reads the signed-in user from the
-settings page.
+`routers/api/v1/api.go`), so `tests/login.py` reads the signed-in user
+from the settings page.
 
 Open WebUI 0.12.5 reads its OIDC settings from `OAUTH_*` and `OPENID_*`
 variables. `ENABLE_OAUTH_ROLE_MANAGEMENT` with the claim `groups` and the
 allowed role `chat` turns away a user whose groups do not include `chat`.
 The first account Open WebUI creates becomes admin without that check
-(`get_user_role` in `utils/oauth.py`), so `check` signs `alice` in first.
+(`get_user_role` in `utils/oauth.py`), so `tests/login.py` signs `alice`
+in first.
 In the same function, a user without any group gets an account with the
 default role `pending` instead of being turned away. Once a second account
 exists, every login sets the role from the groups again, so the first
@@ -2513,9 +2537,21 @@ Keycloak's discovery document on every login request (`getOAuth2Manager`
 in `internal/ui/auth.go`) and logs an error when that fails. Gitea's init
 container reads it before Gitea starts, so the apps start after the realm
 import. Gitea exits while its database or Valkey refuses connections, and
-Miniflux while its database does, so `check` applies and waits for those
-first. In a local run where Valkey's image took minutes to pull, Gitea
-waited in `CrashLoopBackOff` and EX-6 stopped the check.
+Miniflux while its database does, so the Chainsaw test applies and waits
+for those first. In a local run where Valkey's image took minutes to
+pull, Gitea waited in `CrashLoopBackOff` and EX-6 stopped the check.
+
+`check` creates the kind cluster and runs `tests/chainsaw-test.yaml`, which
+deploys in four steps and waits after each for what the next one needs:
+the CoreDNS rule, until CoreDNS has restarted; the namespaces of
+`tests/namespaces.yaml` and the three operators, until their Deployments
+are ready; Keycloak's PostgreSQL Cluster, until it is Ready, then
+Keycloak, until it is Ready and the realm import is Done; the apps'
+databases and Valkey, then the apps, until every Deployment and
+StatefulSet is ready and Open WebUI answers `/health`. open-webui 1.0.0
+has no readiness probe, so its pod is ready before Open WebUI listens,
+and a port-forward ends at the first connection the pod refuses. Once
+Chainsaw passed, `check` runs `tests/login.py`.
 
 Keycloak, its operator, Open WebUI and the PostgreSQL of Miniflux do not
 meet the Pod Security level `restricted`. Their namespaces enforce
@@ -2539,14 +2575,14 @@ meet the Pod Security level `restricted`. Their namespaces enforce
     the browser to Keycloak and logs that the issuer did not match the one
     Keycloak returned.
 
-  The scripted browser follows the authorization code flow with a cookie
-  jar per user. The app's login URL redirects to Keycloak. Without a
-  Keycloak session Keycloak answers with its login form, whose POST
-  redirects to the app's redirect URI with a code. The app exchanges the
-  code over its own connection to Keycloak, which is where the issuer has
-  to match. With `alice`'s Keycloak session in the jar, Keycloak redirects
-  back at once. That second and third login without a password is the
-  single sign-on.
+  The browser follows the authorization code flow with one browser
+  context, and so one cookie jar, per user. The app's login URL redirects
+  to Keycloak. Without a Keycloak session Keycloak answers with its login
+  form, whose POST redirects to the app's redirect URI with a code. The
+  app exchanges the code over its own connection to Keycloak, which is
+  where the issuer has to match. With `alice`'s Keycloak session in the
+  jar, Keycloak redirects back at once. That second and third login
+  without a password is the single sign-on.
 
   Not tested: logout, back-channel logout and token refresh, a second
   factor, more than one Keycloak instance, TLS between browser and apps,
@@ -2555,8 +2591,10 @@ meet the Pod Security level `restricted`. Their namespaces enforce
 
   Related: EX-4, EX-6, EX-12, EX-17
 
-  - Test: `examples` workflow, job `sso-keycloak`
-  - Since: #156
+  - Test: `examples` workflow, job `sso-keycloak`: the deploy in
+    `sso-keycloak/tests/chainsaw-test.yaml`, the logins in
+    `sso-keycloak/tests/login.py`
+  - Since: #156; Chainsaw and Playwright: this change
 
 - EX-32a: `sso-keycloak/check` MUST fail unless changing Gitea's URL in a
   copy of the class `sso` changes the redirect URI of the client `gitea` in
@@ -2594,7 +2632,7 @@ meet the Pod Security level `restricted`. Their namespaces enforce
 | `.github/workflows/request-review.yml` | requests `neat-bot` (EX-15) |
 | `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml` | compile diff of `first-platform` on pull requests, pinned to a registry commit (EX-25) |
 | `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `changes` (EX-2a), `pins` (EX-3), `advisories` (EX-3f), `ci` (EX-16) |
-| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins, cert-manager's in `chart-vs-kapitan` included, and leave the rest of its Kapitan side to the chart (EX-3), keep the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
+| `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins, cert-manager's in `chart-vs-kapitan` and Playwright's in `sso-keycloak` included, and leave the rest of its Kapitan side to the chart (EX-3), keep the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
 | `helm-vs-terraform/providers/.terraform.lock.hcl`, `helm-vs-terraform/terraform-only/.terraform.lock.hcl` | Provider hashes; the first is copied into the compiled root module |
@@ -2617,4 +2655,4 @@ meet the Pod Security level `restricted`. Their namespaces enforce
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
 | `talos-apps/` | One Kapitan project (targets `talos`, `blackbox-exporter`) on the omegaconf backend, the networks both read in `inventory/classes/cluster.yml`, the talos generator pinned in `inventory/classes/generators.yml`, the recipe pinned in `fetch/targets/recipes.yml`; `check` (EX-29) |
 | `compose-kubernetes/` | One Kapitan project on the omegaconf backend (targets `cluster`, `compose`), the shared class `inventory/classes/miniflux.yml`, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the kadet component `components/compose` that writes `compose.yml`; `check` (EX-30 to EX-30b) |
-| `sso-keycloak/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `cnpg`, `keycloak-operator`, `keycloak`, `gitea`, `open-webui`, `miniflux`), the class `inventory/classes/sso.yml` that Keycloak and the apps read, the seven recipes pinned in the fetch inventory `fetch/targets/recipes.yml`; `check` (EX-32, EX-32a) |
+| `sso-keycloak/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `cnpg`, `keycloak-operator`, `keycloak`, `gitea`, `open-webui`, `miniflux`), the class `inventory/classes/sso.yml` that Keycloak and the apps read, the seven recipes pinned in the fetch inventory `fetch/targets/recipes.yml`, the Chainsaw test `tests/chainsaw-test.yaml` with `tests/namespaces.yaml`, the Playwright script `tests/login.py`; `check` (EX-32, EX-32a) |
