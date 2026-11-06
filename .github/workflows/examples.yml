@@ -106,14 +106,16 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
         run: |
+          set -o pipefail
+          # -z: without it git quotes a path with a non-ASCII byte, folder included.
           if [[ $EVENT == pull_request ]]; then
             # The checkout is the merge commit; its first parent is the base branch.
-            files=$(git diff --no-renames --name-only HEAD^ HEAD)
+            files=$(git diff -z --no-renames --name-only HEAD^ HEAD | tr '\0' '\n')
           fi
           # Everything runs on a push, the schedule, a manual run and a change
           # to the workflow, which sets the tools of every job.
           if [[ $EVENT != pull_request ]] || grep -q '^\.github/' <<<"$files"; then
-            files=$(git ls-files)
+            files=$(git ls-files -z | tr '\0' '\n')
           fi
           # helm-mutate deploys the Git server of argocd-vs-flux.
           if grep -qx argocd-vs-flux/git-server.yaml <<<"$files"; then
