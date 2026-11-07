@@ -5,7 +5,7 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/certmanager:1.0.4@sha256:99bfa0edf76fd7f564c101ce7dedbd2e0a790825db0173f1a64faed51bc0fd1f
+        source: ghcr.io/kadet-hub/certmanager:1.1.0@sha256:a1aac8168deabcca1fd857bd1f404cce138e65542718ad8441e45baccad1522f
         output_path: lib/certmanager
       - type: oci
         source: ghcr.io/kadet-hub/kyverno:1.1.4@sha256:af3f1376bdc69e261bb75d23c01014a24926e14f52780c86d8e941c524525de6
