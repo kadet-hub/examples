@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `argocd-cmp/`, `sso-keycloak/tests/`, `matrix-federation/tests/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `argocd-cmp/`, `sso-keycloak/tests/`, `matrix-federation/tests/`, `open-webui-rag/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -2864,6 +2864,112 @@ a port-forward to its Service.
   - Test: `examples` workflow, job `matrix-federation`
   - Since: #172
 
+## Retrieval with Open WebUI, Qdrant and LiteLLM
+
+`open-webui-rag/` backs the kadet-hub.org blog post on
+retrieval-augmented generation (RAG) from published recipes of
+kadet-hub/recipes. Open WebUI is the chat interface and API and keeps the
+knowledge bases. Qdrant stores the embedded chunks of their documents.
+LiteLLM serves one OpenAI-compatible API for chat and embeddings in front of
+Ollama, which runs both models on the CPU.
+
+The fetch inventory `fetch/targets/recipes.yml` pins `ollama`, `litellm`,
+`qdrant` and `open-webui`. `check` adds the recipes their index records
+list under `includes`, `valkey` and `ollama` of `open-webui` and
+`postgresql` of `litellm`, as EX-17 describes. The target `ollama`
+includes `recipes.ollama`, so `ollama` is pinned as well, at the digest
+that `open-webui` includes. Renovate moves the four pinned recipes in one
+pull request, the group `open-webui-rag recipes`. `postgresql` and the
+generator `cloudnative-pg` it pins are verified and pulled but not
+compiled. Without the option `postgresql` LiteLLM routes requests with the
+master key only, which is all Open WebUI sends.
+
+Each of the four recipes gets a target and a namespace of its own. The
+class `rag` holds what the targets share: the URLs of the Services
+`ollama`, `litellm` and `qdrant`, the two Ollama models, and LiteLLM's
+master key and Qdrant's API key as refs with the base64 backend and a
+`random` function. LiteLLM routes the model name `chat` to
+`ollama_chat/qwen2.5:0.5b` and `embedding` to `ollama/nomic-embed-text:v1.5`.
+Open WebUI reaches LiteLLM through the recipe's option `openai`, with the
+master key as the endpoint's key. Open WebUI 0.12.5 takes the URL and key
+for embeddings from `RAG_OPENAI_API_BASE_URL` and `RAG_OPENAI_API_KEY`.
+Without them it uses `https://api.openai.com/v1`, with an empty key unless
+`OPENAI_API_BASE_URL` is that URL (`backend/open_webui/config.py`). The
+target sets both, with `RAG_EMBEDDING_ENGINE=openai`,
+`RAG_EMBEDDING_MODEL=embedding`, `VECTOR_DB=qdrant`, `QDRANT_URI` and
+`QDRANT_API_KEY`. The Qdrant key is an extra key `qdrant-api-key` of the
+recipe's Secret `open-webui`. Qdrant passes the Pod Security level
+`restricted`. Ollama, LiteLLM and Open WebUI run as root in their images,
+so their namespaces enforce `baseline`.
+
+The first compile runs one target at a time (`--parallelism 1`). Three
+targets read the refs of the class `rag`, and Kapitan 0.36.3 writes a new
+ref file with `open(..., "w")` while another process may already read it.
+A local run of `check` with a parallel first compile stopped with
+`'NoneType' object has no attribute 'items'` in `refs/base64.py`, the
+result of reading an empty ref file. The second compile only reads refs and
+runs in parallel.
+
+`check` creates the kind cluster and runs `tests/chainsaw-test.yaml`, which
+applies the namespaces of `tests/namespaces.yaml` and the four targets in
+one step, until Ollama, Qdrant, LiteLLM, Valkey and Open WebUI are ready.
+`tests/rag.sh` then pulls both models into Ollama with `ollama pull`,
+signs up the first account, which Open WebUI makes admin, and talks to
+Open WebUI, Qdrant and LiteLLM through port-forwards to their Services.
+It uploads `tests/document.md` with `process_in_background=false`, creates
+a knowledge base and adds the file to it.
+
+- EX-31: `open-webui-rag/check` MUST fail unless the recipes and
+  generators pass the checks of EX-17 and, deployed to a new kind cluster,
+  Qdrant holds a point of the knowledge base whose text contains the door
+  code `4417-KESTREL` of `tests/document.md` and whose vector has a cosine
+  similarity above 0.999 to LiteLLM's embedding of that text, and Open
+  WebUI's answer to the question about the door code, asked with the
+  knowledge base attached, contains the code.
+
+  Open WebUI 0.12.5 keeps all knowledge bases in the Qdrant collection
+  `open-webui_knowledge`, with the knowledge base's id as `tenant_id`
+  (`ENABLE_QDRANT_MULTITENANCY_MODE`, on by default). `tests/rag.sh` reads
+  the points of that tenant with their vectors through Qdrant's scroll API
+  and sends the text of the point with the code to LiteLLM's
+  `/v1/embeddings` as the model `embedding`. A matching vector shows that
+  Open WebUI embedded the chunk through LiteLLM with the model in Ollama.
+  The model Open WebUI ships, `sentence-transformers/all-MiniLM-L6-v2`,
+  has 384 dimensions, `nomic-embed-text:v1.5` 768.
+
+  `tests/rag.sh` asks through `/api/chat/completions` with the model
+  `chat`, `temperature: 0` and the knowledge base as a file of the type
+  `collection`. Open WebUI then searches the knowledge base in Qdrant with
+  the embedding of the question and adds the chunks it finds to the prompt.
+
+  Related: EX-4, EX-6, EX-12, EX-17
+
+  - Test: `examples` workflow, job `open-webui-rag`: the deploy in
+    `open-webui-rag/tests/chainsaw-test.yaml`, the knowledge base and the
+    question in `open-webui-rag/tests/rag.sh`
+  - Since: tbd
+
+- EX-31a: `open-webui-rag/check` MUST fail unless the same question gets an
+  answer without the door code when it is asked without the knowledge
+  base, and when it is asked with the knowledge base while Qdrant is scaled
+  to zero, and Open WebUI logs then that the query of the knowledge base
+  failed.
+
+  The code exists only in `tests/document.md`, so the model cannot answer
+  with it unless Open WebUI puts the document into the prompt. With Qdrant
+  scaled to zero, Open WebUI logs `query_collection: 1 collection(s) had
+  failing queries: <id of the knowledge base>` and sends the question
+  without context. The code in the answer of EX-31 therefore came from the
+  search in Qdrant.
+
+  Not tested: a GPU, documents other than Markdown, many documents or
+  users, hybrid search and reranking, access control on knowledge bases,
+  LiteLLM's virtual keys, and the web interface, which `tests/rag.sh` does
+  not open.
+
+  - Test: `examples` workflow, job `open-webui-rag`
+  - Since: tbd
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -2914,3 +3020,4 @@ a port-forward to its Service.
 | `compose-kubernetes/` | One Kapitan project on the omegaconf backend (targets `cluster`, `compose`), the shared class `inventory/classes/miniflux.yml`, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the kadet component `components/compose` that writes `compose.yml`; `check` (EX-30 to EX-30b) |
 | `sso-keycloak/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `cnpg`, `keycloak-operator`, `keycloak`, `gitea`, `open-webui`, `miniflux`, `mattermost`, `matrix-synapse`), the class `inventory/classes/sso.yml` that Keycloak and the apps read, the nine recipes pinned in the fetch inventory `fetch/targets/recipes.yml`, the Chainsaw test `tests/chainsaw-test.yaml` with `tests/namespaces.yaml`, the Playwright script `tests/login.py`; `check` (EX-32 to EX-32c) |
 | `matrix-federation/` | One Kapitan project on the omegaconf backend (targets `cnpg`, `synapse-a`, `synapse-b`), the class `inventory/classes/federated.yml` with the TLS proxy and Synapse's settings for kind, the two recipes pinned in the fetch inventory `fetch/targets/recipes.yml`, the Chainsaw test `tests/chainsaw-test.yaml` with `tests/namespaces.yaml`, the federation script `tests/federate.sh`; `check` (EX-33, EX-33a) |
+| `open-webui-rag/` | One Kapitan project on the omegaconf backend (targets `ollama`, `litellm`, `qdrant`, `open-webui`), the class `inventory/classes/rag.yml` that the targets share, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`, the Chainsaw test `tests/chainsaw-test.yaml` with `tests/namespaces.yaml`, the script `tests/rag.sh` with `tests/document.md`; `check` (EX-31, EX-31a) |
