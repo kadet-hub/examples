@@ -1305,7 +1305,7 @@ Pod Security level `baseline`.
     alone proposed 1.0.1 at its digest on the branch
     `renovate/open-webui-searxng-recipes`
   - Since: #132; includes from the index and searxng 1.0.1: #154; log
-    read whole: tbd
+    read whole: #187
 
 ## Platform baseline
 
@@ -1726,7 +1726,7 @@ changes with every commit.
   of the unpinned bundle whole before it searches it, as EX-17 describes.
 
   - Test: `examples` workflow, job `timoni-vs-kapitan`
-  - Since: #142; build read whole: tbd
+  - Since: #142; build read whole: #187
 
 - EX-22b: `timoni-vs-kapitan/check` MUST fail unless Timoni rejects the
   prod bundle with `replica: 3` in place of `replicas: 3` for web, and
