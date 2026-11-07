@@ -798,8 +798,9 @@ to report exactly that commit. The Gitea image is pinned by digest in
 
   `check` replaces the redis image of Argo CD's manifest, `public.ecr.aws/docker/library/redis`,
   with `REDIS_IMAGE`, the same tag on `mirror.gcr.io/library/redis` pinned
-  by digest (for 8.2.3-alpine identical on ECR Public, Docker Hub and the
-  mirror, checked 2026-10-19), and fails when the manifest names another
+  by digest (for 8.10.1-alpine, the tag of Argo CD v3.6.0, identical on
+  ECR Public, Docker Hub and the mirror, checked 2026-11-07), and fails
+  when the manifest names another
   tag: ECR Public answered anonymous pulls from GitHub runners with "429 Too Many Requests" in three of four runs, and the
   manifest pulls redis with `imagePullPolicy: Always`, so a pull before the
   install would not help. The Argo CD Application syncs automatically with

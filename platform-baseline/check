@@ -221,11 +221,11 @@ EXTERNAL_SECRETS_SHA256=21d51ab38bf7016a3d01e1259a92d40c23e83e68182ae6c4ca816af1
 GRAFANA_OPERATOR_VERSION=v5.25.0
 GRAFANA_OPERATOR_SHA256=b6cf299b645e6415e63c79fcebdd6d9cbb86bfeebf4068b8fd924d336b803f4b
 # renovate: datasource=github-tags depName=argoproj/argo-cd
-ARGOCD_COMMIT=6d732962f61a99c2a0f221fd26b9aac7c83bcf18 # v3.5.7
+ARGOCD_COMMIT=f55566445ee3a2a4f3339bf10df0f6bc1ecf7f23 # v3.6.0
 # EX-7: ECR Public throttles anonymous pulls from runners (429); the same tag
 # from the mirror, pinned by digest. The tag is the one Argo CD's manifest names.
 # renovate: datasource=docker depName=mirror.gcr.io/library/redis
-REDIS_IMAGE=mirror.gcr.io/library/redis:8.2.3-alpine@sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba
+REDIS_IMAGE=mirror.gcr.io/library/redis:8.10.1-alpine@sha256:ef216d85ec44f4fdf7c0e6df2d1757a4734ed32fbb278cabd3181b5a27353b79
 # The server image of the workflow's velero release, and the AWS plugin
 # that speaks S3.
 # renovate: datasource=docker depName=docker.io/velero/velero
