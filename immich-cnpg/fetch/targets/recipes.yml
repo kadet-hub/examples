@@ -4,14 +4,14 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/immich:1.0.0@sha256:7a3d4b118f952edb9606cb176769ebf1a7675a8a76f0a993083ec25c0d183bb6
+        source: ghcr.io/kadet-hub/recipes/immich:1.0.1@sha256:f306966e147c2a3966fe7e5bdf4ca3749566fa9b311c942b47b8c93b592400f7
         output_path: inventory/classes/recipes/immich
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/postgresql:1.1.0@sha256:4af1be4c0e95e21fdc5f4029a9509364df93e995be83b8673e15a71dc08abf27
+        source: ghcr.io/kadet-hub/recipes/postgresql:1.1.1@sha256:1e8465058c256cc86995dc8d6f1eb2f095df244fadcaf756935599f4d9ead6a9
         output_path: inventory/classes/recipes/postgresql
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/valkey:1.0.2@sha256:263dfc2e41097c7c6bd016baadcc8384e79afd10910506a892e9994ee7ece918
+        source: ghcr.io/kadet-hub/recipes/valkey:1.0.3@sha256:a50d43cf9080b58040cf84909b0cd7497392709a23f5759e985bd912a9137ce5
         output_path: inventory/classes/recipes/valkey
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/cnpg:1.0.2@sha256:76038710239a93ead3d44c0162aee4396fa0ab9f96b160b6487d2d437152f4da
+        source: ghcr.io/kadet-hub/recipes/cnpg:1.0.3@sha256:f38aafdaf2a7ff8fe9a3356e435d05d23f0e7584299f7b326d7f25f2500a2343
         output_path: inventory/classes/recipes/cnpg
