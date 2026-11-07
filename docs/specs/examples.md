@@ -2636,7 +2636,7 @@ Synapse `restricted`.
     `sso-keycloak/tests/chainsaw-test.yaml`, the logins in
     `sso-keycloak/tests/login.py`
   - Since: #156; Chainsaw and Playwright: #166; first compile one target
-    at a time: tbd
+    at a time: #191
 
 - EX-32a: `sso-keycloak/check` MUST fail unless changing Gitea's URL in a
   copy of the class `sso` changes the redirect URI of the client `gitea` in
