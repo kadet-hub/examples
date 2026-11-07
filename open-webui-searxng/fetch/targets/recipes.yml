@@ -4,8 +4,8 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/open-webui:1.0.0@sha256:f44fd8d69166996694c83eeb6951e95699dc8601368d0f42259068c20a0c913c
+        source: ghcr.io/kadet-hub/recipes/open-webui:1.0.1@sha256:3af3e706db37531ed72ecfe3810a4d3cd726f3f5ca5ef5ac066ec51bffabebd7
         output_path: inventory/classes/recipes/open-webui
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/searxng:1.0.1@sha256:9a86a09e1d5acbea6c89d73014d42c434513dc121bce8f10319b97d636f016c9
+        source: ghcr.io/kadet-hub/recipes/searxng:1.0.2@sha256:9ec1400ece5dc81baf7e79121d2dc021f8308be7ae9efebba22b691cdff7c74a
         output_path: inventory/classes/recipes/searxng
