@@ -26,16 +26,17 @@ serve() { # a|b
 # Applies a ConfigMap of synapse-<a|b> and replaces Synapse's pod, which
 # reads its configuration only when it starts.
 restart() { # a|b file
-  local ns=synapse-$1 old new
+  local ns=synapse-$1 old new ready=''
   kubectl -n "$ns" apply --server-side --force-conflicts -f "$2" >/dev/null
   old=$(kubectl -n "$ns" get pod matrix-synapse-0 -o jsonpath='{.metadata.uid}')
   kubectl -n "$ns" delete pod matrix-synapse-0 --wait=true >/dev/null
   for _ in $(seq 60); do
     new=$(kubectl -n "$ns" get pod matrix-synapse-0 -o jsonpath='{.metadata.uid}' 2>/dev/null || true)
     [[ $new && $new != "$old" ]] &&
-      kubectl -n "$ns" wait pod/matrix-synapse-0 --for=condition=Ready --timeout=10s >/dev/null 2>&1 && break
+      kubectl -n "$ns" wait pod/matrix-synapse-0 --for=condition=Ready --timeout=10s >/dev/null 2>&1 && ready=1 && break
     sleep 5
   done
+  [[ $ready ]] || fail "no ready pod replaced matrix-synapse-0 of $1.example.test"
   serve "$1"
 }
 login() { # a|b password
