@@ -4,23 +4,23 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/cert-manager:1.0.3@sha256:99d27b9b0ed0afa330d48e1b12cc0bee25f37c5a4b5129ba07a68dfe5063bbef
+        source: ghcr.io/kadet-hub/recipes/cert-manager:1.0.4@sha256:187d4dd1ffe07745dcade7e078830e3a79c707712f16bf21e148029ff6c62247
         output_path: inventory/classes/recipes/cert-manager
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/cnpg:1.0.2@sha256:76038710239a93ead3d44c0162aee4396fa0ab9f96b160b6487d2d437152f4da
+        source: ghcr.io/kadet-hub/recipes/cnpg:1.0.3@sha256:f38aafdaf2a7ff8fe9a3356e435d05d23f0e7584299f7b326d7f25f2500a2343
         output_path: inventory/classes/recipes/cnpg
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/keycloak-operator:1.0.0@sha256:275b500d91cef15eb8daa543565ace51066acd80bd6884f99fa6f22614b4b429
+        source: ghcr.io/kadet-hub/recipes/keycloak-operator:1.0.1@sha256:1974b72563dd21fb53c4b0db115e74e1e2bd41bd58f84f09a7529fb12c85fe83
         output_path: inventory/classes/recipes/keycloak-operator
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/keycloak:1.0.0@sha256:0b176fe3b1073ce5b8f6474d762a26e61a0b0553dfaf519b1ed6c36105c2abae
+        source: ghcr.io/kadet-hub/recipes/keycloak:1.0.1@sha256:9f59c753f035de40b526cb8fd9ff8aab0f4cfd6a996750c05d5a49e6a4549b9d
         output_path: inventory/classes/recipes/keycloak
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/gitea:1.0.0@sha256:12d127bbd2eaab3ec4a366c76569788cb96dbd1744bde58ef4ab4241eae1c875
+        source: ghcr.io/kadet-hub/recipes/gitea:1.0.1@sha256:ac8b258d091a975bf8adddcc5d5ec14536bbd5e23b1db674506513a2f829ec0c
         output_path: inventory/classes/recipes/gitea
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/open-webui:1.0.0@sha256:f44fd8d69166996694c83eeb6951e95699dc8601368d0f42259068c20a0c913c
+        source: ghcr.io/kadet-hub/recipes/open-webui:1.0.1@sha256:3af3e706db37531ed72ecfe3810a4d3cd726f3f5ca5ef5ac066ec51bffabebd7
         output_path: inventory/classes/recipes/open-webui
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/miniflux:1.0.0@sha256:e6686151fc46edd6f889d076efde59901670507f536ad27eaad7e4e44d5a56d4
+        source: ghcr.io/kadet-hub/recipes/miniflux:1.0.1@sha256:d3f8a3688c1a2dd2a82e7cc3fd09b324b8374c69b2f8d92fb9a19e5886d77da7
         output_path: inventory/classes/recipes/miniflux
