@@ -36,7 +36,10 @@ restart() { # a|b file
       kubectl -n "$ns" wait pod/matrix-synapse-0 --for=condition=Ready --timeout=10s >/dev/null 2>&1 && ready=1 && break
     sleep 5
   done
-  [[ $ready ]] || fail "no ready pod replaced matrix-synapse-0 of $1.example.test"
+  if [[ -z $ready ]]; then
+    kubectl -n "$ns" describe pod matrix-synapse-0 >&2 || true
+    fail "no ready pod replaced matrix-synapse-0 of $1.example.test"
+  fi
   serve "$1"
 }
 login() { # a|b password
