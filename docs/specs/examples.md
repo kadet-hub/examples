@@ -2,7 +2,7 @@
 
 Status: Draft
 Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `argocd-cmp/`, `sso-keycloak/tests/`, `matrix-federation/tests/`, `open-webui-rag/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml`, `renovate.json`
-Verified against: main @ tbd
+Verified against: main @ 34709ad
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
 guide. A post or guide states results: identical manifests from three
@@ -75,7 +75,7 @@ schedule instead of trusting the state on the publishing day.
   name since 1.4.0, the other tools leave it unset.
 
   - Test: `examples` workflow, one job per folder
-  - Since: tbd
+  - Since: 237f674
 
 - EX-1a: `gvisor-ci/check` MUST also run the three escape scripts under
   `docker run` with the default runtime and under `docker run
@@ -118,7 +118,7 @@ schedule instead of trusting the state on the publishing day.
 
   - Test: `examples` workflow, `push`, `schedule` and `workflow_dispatch`
     triggers
-  - Since: tbd; pull requests moved to EX-2a in #161
+  - Since: 237f674; pull requests moved to EX-2a in #161
 
 - EX-2a: On a pull request, CI MUST run the script of every example
   folder the pull request changes and of every example that reads a file
@@ -407,7 +407,7 @@ schedule instead of trusting the state on the publishing day.
     Against a local Gitea with `--dry-run=full`, Renovate would commit the
     group's branch, and skipped it with the CRDs' release age raised to 90
     days, which leaves five updates
-  - Since: tbd; checksums by Renovate: #15; operator charts and images: #21;
+  - Since: 237f674; checksums by Renovate: #15; operator charts and images: #21;
     every pin by Renovate: #23; `cert-manager-mutate`: #28; `gvisor-ci/run`:
     #33; `chart-vs-kapitan` follows the chart: #50; cert-manager's group in
     `chart-vs-kapitan`: #51; kafka moved: #77; keycloak moved: #81;
@@ -580,7 +580,7 @@ schedule instead of trusting the state on the publishing day.
     generator again after its pin in `common.yml` changed, and not while
     the pin is unchanged; `same-app/check` also pulls it again over a
     `kapitan/lib/kubernetes` without a reference
-  - Since: tbd; `chart-vs-kapitan` pulls again on a changed pin: #50;
+  - Since: 237f674; `chart-vs-kapitan` pulls again on a changed pin: #50;
     `same-app` and `config-tools`: #51
 
 - EX-15: Every pull request MUST request a review from `neat-bot`. That
@@ -615,8 +615,9 @@ schedule instead of trusting the state on the publishing day.
 
   - Test: `manual:` the next Renovate pull request that changes
     `config-tools/cdk8s/package-lock.json` carries an updated lock file;
-    `npm install --package-lock-only` in `config-tools/cdk8s` fails with
-    `EALLOWREMOTE` on npm 12.2.1 and passes on npm 11.20.0
+    `npm install --package-lock-only` in a copy of `config-tools/cdk8s`
+    without `package-lock.json` fails with `EALLOWREMOTE` on npm 12.2.2
+    and passes on npm 11.20.0 (with the committed lock, npm 12 passes too)
   - Since: #95
 
 - EX-3f: CI MUST fail when osv-scanner reports a published advisory for a
@@ -682,6 +683,7 @@ shows under `/recipes/`.
   [`keycloak-operator`](https://github.com/kadet-hub/recipes/tree/main/keycloak-operator),
   rebuilt from the project's chart.
 
+  - Test: none
   - Since: #8, #20; images by tag and digest: #32; valkey moved: #66;
     mysql moved: #68; mongodb moved: #70; external-dns-powerdns moved: #74; kafka moved: #77;
     postgresql moved: #78; rabbitmq moved: #79; keycloak moved and withdrawn: #81
@@ -691,6 +693,7 @@ shows under `/recipes/`.
   OQ-7, on verifying Keycloak's signatures in the operator class and in
   `recipes/check`, went with them.
 
+  - Test: none
   - Since: #21; OQ-4 decided: #22; Keycloak 26.8.1 re-push: #61;
     kafka moved: #77; postgresql moved: #78; rabbitmq moved: #79;
     keycloak moved and withdrawn: #81
@@ -698,6 +701,7 @@ shows under `/recipes/`.
 - EX-5b: Withdrawn. The `mysql` recipe moved to kadet-hub/recipes, whose
   RCP-16 keeps it on MySQL's 9.7 LTS line with the same package rule.
 
+  - Test: none
   - Since: #32; withdrawn: #68
 
 - EX-6: A check that deploys to a kind cluster MUST fail within about a
@@ -798,7 +802,7 @@ to report exactly that commit. The Gitea image is pinned by digest in
 
   `check` replaces the redis image of Argo CD's manifest, `public.ecr.aws/docker/library/redis`,
   with `REDIS_IMAGE`, the same tag on `mirror.gcr.io/library/redis` pinned
-  by digest (for 8.10.1-alpine, the tag of Argo CD v3.6.0, identical on
+  by digest (for 8.10.1-alpine, the tag of Argo CD v3.6.1, identical on
   ECR Public, Docker Hub and the mirror, checked 2026-11-07), and fails
   when the manifest names another
   tag: ECR Public answered anonymous pulls from GitHub runners with "429 Too Many Requests" in three of four runs, and the
