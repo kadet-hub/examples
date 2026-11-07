@@ -2195,7 +2195,7 @@ enforce the Pod Security level `baseline`.
   - Test: `examples` workflow, job `multi-env`; `manual:` with
     `hostname: news.prod.example.com` in `env/prod.yml`, the guard
     passed and `check` failed on the API endpoint of prod's miniflux
-  - Since: #150; login page read whole: tbd
+  - Since: #150; login page read whole: #189
 
 - EX-28a: `multi-env/check` MUST fail unless, in a copy of the project,
   `METRICS_COLLECTOR: 1` under `components.miniflux.env` changes the
