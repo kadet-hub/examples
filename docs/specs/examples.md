@@ -2947,7 +2947,7 @@ a knowledge base and adds the file to it.
   - Test: `examples` workflow, job `open-webui-rag`: the deploy in
     `open-webui-rag/tests/chainsaw-test.yaml`, the knowledge base and the
     question in `open-webui-rag/tests/rag.sh`
-  - Since: tbd
+  - Since: #185
 
 - EX-31a: `open-webui-rag/check` MUST fail unless the same question gets an
   answer without the door code when it is asked without the knowledge
@@ -2968,7 +2968,7 @@ a knowledge base and adds the file to it.
   not open.
 
   - Test: `examples` workflow, job `open-webui-rag`
-  - Since: tbd
+  - Since: #185
 
 ## Open questions
 
