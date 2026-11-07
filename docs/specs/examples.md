@@ -2163,8 +2163,11 @@ enforce the Pod Security level `baseline`.
   every miniflux container and the storage class from the database's
   claim. For the hostname it logs in as the admin and reads the Google
   Reader API endpoint from miniflux's page `/integrations`, which miniflux
-  builds from `BASE_URL`. The hostnames are under `example.com`, which RFC
-  2606 reserves.
+  builds from `BASE_URL`. It reads the login page whole before it takes the
+  first CSRF field, as EX-17 describes for `grep -q`: `head -1` at the end
+  of a pipe exits after one line, and under `pipefail` a `sed` that still
+  writes then fails the pipe with SIGPIPE. The hostnames are under
+  `example.com`, which RFC 2606 reserves.
 
   `check` applies PostgreSQL first and waits for it, because miniflux exits
   while it cannot connect. It then starts miniflux with one replica, and
@@ -2192,7 +2195,7 @@ enforce the Pod Security level `baseline`.
   - Test: `examples` workflow, job `multi-env`; `manual:` with
     `hostname: news.prod.example.com` in `env/prod.yml`, the guard
     passed and `check` failed on the API endpoint of prod's miniflux
-  - Since: #150
+  - Since: #150; login page read whole: #189
 
 - EX-28a: `multi-env/check` MUST fail unless, in a copy of the project,
   `METRICS_COLLECTOR: 1` under `components.miniflux.env` changes the
