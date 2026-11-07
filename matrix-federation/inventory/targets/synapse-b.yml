@@ -1,0 +1,12 @@
+# Synapse for b.example.test from the published recipe, with federation on.
+classes:
+  - recipes.matrix-synapse
+  - recipes.matrix-synapse.federation
+  - federated
+parameters:
+  namespace: synapse-b
+  kapitan:
+    vars:
+      target: synapse-b
+  federated:
+    name: b

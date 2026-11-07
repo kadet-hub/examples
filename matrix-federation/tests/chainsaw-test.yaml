@@ -1,0 +1,133 @@
+# EX-12, EX-33: the compiled targets on the kind cluster of check, each step
+# applying what the one before made ready. check runs tests/federate.sh
+# afterwards.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: matrix-federation
+spec:
+  # check deletes the cluster.
+  skipDelete: true
+  # Apply the compiled manifests as they are: Chainsaw would read a string
+  # in parentheses, such as a CEL rule of CloudNativePG's CRDs, as an
+  # expression.
+  template: false
+  timeouts:
+    apply: 1m
+    assert: 10m
+    exec: 5m
+  steps:
+    # Pods resolve each server name to its proxy's Service, as the public
+    # DNS of the name would.
+    - name: coredns
+      try:
+        - script:
+            content: |
+              set -eu
+              rule() { echo "rewrite name exact $1.example.test matrix-tls.synapse-$1.svc.cluster.local answer auto"; }
+              kubectl -n kube-system get configmap coredns -o json |
+                jq --arg a "$(rule a)" --arg b "$(rule b)" \
+                  '.data.Corefile |= sub("\n    ready\n"; "\n    ready\n    \($a)\n    \($b)\n")' |
+                kubectl replace -f - >/dev/null
+              for n in a b; do
+                kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}' |
+                  grep -qF "rewrite name exact $n.example.test " ||
+                  { echo "the rewrite rule for $n.example.test is not in CoreDNS's Corefile" >&2; exit 1; }
+              done
+              kubectl -n kube-system rollout restart deployment/coredns >/dev/null
+              kubectl -n kube-system rollout status deployment/coredns --timeout=120s
+      catch:
+        - describe: {apiVersion: v1, kind: Pod, namespace: kube-system, selector: k8s-app=kube-dns}
+        - podLogs: {namespace: kube-system, selector: k8s-app=kube-dns, tail: 50}
+
+    - name: operator
+      try:
+        - apply: {file: namespaces.yaml}
+        - apply: {file: ../compiled/cnpg/manifests/*.yml}
+        - apply: {file: ../compiled/cnpg/manifests/*/*.yml}
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: cnpg-cloudnative-pg, namespace: cnpg-system}
+              (status.readyReplicas == spec.replicas): true
+      catch:
+        - events: {namespace: cnpg-system}
+        - describe: {apiVersion: v1, kind: Pod, namespace: cnpg-system}
+        - podLogs: {namespace: cnpg-system, tail: 50}
+
+    # Synapse exits while PostgreSQL refuses connections, so the Cluster first.
+    - name: synapse-a
+      try:
+        - apply: {file: ../compiled/synapse-a/manifests/synapse-a/postgresql-cluster-cluster.yml}
+        - assert:
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata: {name: postgresql-cluster, namespace: synapse-a}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - apply: {file: ../compiled/synapse-a/manifests/synapse-a/*.yml}
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata: {name: matrix-synapse, namespace: synapse-a}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: matrix-tls, namespace: synapse-a}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: batch/v1
+              kind: Job
+              metadata: {name: matrix-synapse-admin, namespace: synapse-a}
+              status:
+                (conditions[?type == 'Complete']):
+                  - status: "True"
+      catch:
+        - events: {namespace: synapse-a}
+        - describe: {apiVersion: v1, kind: Pod, namespace: synapse-a}
+        - podLogs: {namespace: synapse-a, tail: 50}
+
+    # Synapse exits while PostgreSQL refuses connections, so the Cluster first.
+    - name: synapse-b
+      try:
+        - apply: {file: ../compiled/synapse-b/manifests/synapse-b/postgresql-cluster-cluster.yml}
+        - assert:
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata: {name: postgresql-cluster, namespace: synapse-b}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - apply: {file: ../compiled/synapse-b/manifests/synapse-b/*.yml}
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata: {name: matrix-synapse, namespace: synapse-b}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: matrix-tls, namespace: synapse-b}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: batch/v1
+              kind: Job
+              metadata: {name: matrix-synapse-admin, namespace: synapse-b}
+              status:
+                (conditions[?type == 'Complete']):
+                  - status: "True"
+      catch:
+        - events: {namespace: synapse-b}
+        - describe: {apiVersion: v1, kind: Pod, namespace: synapse-b}
+        - podLogs: {namespace: synapse-b, tail: 50}

@@ -1,0 +1,19 @@
+# Synapse, its PostgreSQL, the proxy and the operator meet the level
+# restricted.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cnpg-system
+  labels: {pod-security.kubernetes.io/enforce: restricted}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: synapse-a
+  labels: {pod-security.kubernetes.io/enforce: restricted}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: synapse-b
+  labels: {pod-security.kubernetes.io/enforce: restricted}

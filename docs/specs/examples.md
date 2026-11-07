@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `argocd-cmp/`, `sso-keycloak/tests/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `argocd-cmp/`, `sso-keycloak/tests/`, `matrix-federation/tests/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml`, `renovate.json`
 Verified against: main @ tbd
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -2768,6 +2768,101 @@ apps do.
     `sso-keycloak/tests/login.py`
   - Since: #173
 
+## Matrix federation
+
+`matrix-federation/` proves in CI that two homeservers with the option
+`federation` of the recipe `matrix-synapse` federate. The recipe's own
+`check` in kadet-hub/recipes deploys one target, which keeps federation off
+to test the default, so the recipe proves the option there by hand only
+(RCP-362 in kadet-hub/recipes). The page is the recipe's page on
+kadet-hub.org. The fetch inventory `fetch/targets/recipes.yml` pins
+`matrix-synapse` and `cnpg`. `check` adds `postgresql`, which
+`matrix-synapse` includes, at the version and digest of its index record,
+as EX-17 describes. Renovate moves the two pinned recipes in one pull
+request, the group `matrix-federation recipes`, because both pin the
+kubernetes generator, which the project holds in `lib/` at one digest only.
+
+The targets `synapse-a` and `synapse-b` render Synapse with the option
+for the server names `a.example.test` and `b.example.test`, each in a
+namespace of its own, and the target `cnpg` renders the operator. The class
+`federated` holds what both servers share and derives the server name and
+the paths of the refs from `federated.name`. The registration secrets and
+the admins' passwords are refs with the base64 backend that get random
+values in the first compile.
+
+Synapse's federation client always speaks TLS. It reads
+`https://<server name>/.well-known/matrix/server`, which the option serves
+and which sends other servers to port 443 of the name. Each target
+therefore runs an nginx, the component `matrix-tls`, that terminates TLS
+on port 443 with a certificate for its server name and forwards to the
+Service `matrix-synapse` on port 8008, where a real deployment has its
+ingress. `check` creates a CA and the two certificates with openssl and
+writes them to the refs `federated/ca.crt`, `federated/a.crt`,
+`federated/a.key`, `federated/b.crt` and `federated/b.key`, as
+`sso-keycloak` does with its CA. The class adds a file `kind.yaml` to
+Synapse's ConfigMap with `federation_custom_ca_list`, the CA from the
+Secret `matrix-synapse`, and `ip_range_whitelist: [10.96.0.0/12]`, kind's
+range of Service addresses. Synapse drops every address of a private range
+in its default `ip_range_blacklist` when it resolves another server, and
+both proxies have such an address. The Chainsaw test adds a rule per server
+name to kind's CoreDNS that rewrites the name to its proxy's Service, as
+`sso-keycloak` does for Keycloak.
+
+`check` creates the kind cluster and runs `tests/chainsaw-test.yaml`: the
+CoreDNS rules, until CoreDNS has restarted; the namespaces of
+`tests/namespaces.yaml`, all at the Pod Security level `restricted`, and
+the operator, until its Deployment is ready; then per server the
+PostgreSQL Cluster, until it is Ready, and the rest of the target, until
+Synapse and the proxy are ready and the Job `matrix-synapse-admin` is
+complete. Synapse exits while its database refuses connections, so the
+Cluster comes first. `tests/federate.sh` then talks to each Synapse through
+a port-forward to its Service.
+
+- EX-33: `matrix-federation/check` MUST fail unless the recipes and
+  generators pass the checks of EX-17 and, deployed to a new kind cluster,
+  the admin of `a.example.test` joins a public room of `b.example.test` by
+  its alias `#fed:b.example.test` and reads the message that the admin of
+  `b.example.test` sent before, and the admin of `b.example.test` reads the
+  reply.
+
+  The join makes `a.example.test` look up the alias through the federation
+  API of `b.example.test` and fetch the room from there over TLS. The reply
+  reaches `b.example.test` through the federation sender of
+  `a.example.test`. Each admin reads through the client API of their own
+  server. Whether `a.example.test` got the keys of `b.example.test` from
+  that server or through `matrix.org`, Synapse's default trusted key
+  server, is not checked.
+
+  Related: EX-4, EX-6, EX-12, EX-17
+
+  - Test: `examples` workflow, job `matrix-federation`: the deploy in
+    `matrix-federation/tests/chainsaw-test.yaml`, the federation in
+    `matrix-federation/tests/federate.sh`
+  - Since: #172
+
+- EX-33a: `matrix-federation/check` MUST fail unless joining a new alias
+  of `b.example.test` from `a.example.test` gets 404 while `b.example.test`
+  runs without the option `federation`, and 502 while `a.example.test` runs
+  without `ip_range_whitelist`.
+
+  `check` compiles each variant from a copy of the inventory with one
+  change, the class `recipes.matrix-synapse.federation` left out of the
+  target `synapse-b` or the lines of `ip_range_whitelist` left out of the
+  class `federated`, and requires that change in the ConfigMap
+  `matrix-synapse`. `tests/federate.sh` applies the variant's ConfigMap,
+  replaces the pod of Synapse and joins. Without the option the listener
+  serves no federation API, and Synapse on `a.example.test` passes the 404
+  of the alias lookup on. Without `ip_range_whitelist` it finds no address
+  for `b.example.test` and answers 502. The ConfigMap of `synapse-b` with
+  the option is applied again before the second variant.
+
+  Not tested: a public DNS name, a certificate of a public CA, delegation
+  to another host, port 8448, more than two servers, and federation with
+  servers outside the cluster.
+
+  - Test: `examples` workflow, job `matrix-federation`
+  - Since: #172
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -2817,3 +2912,4 @@ apps do.
 | `talos-apps/` | One Kapitan project (targets `talos`, `blackbox-exporter`) on the omegaconf backend, the networks both read in `inventory/classes/cluster.yml`, the talos generator pinned in `inventory/classes/generators.yml`, the recipe pinned in `fetch/targets/recipes.yml`; `check` (EX-29) |
 | `compose-kubernetes/` | One Kapitan project on the omegaconf backend (targets `cluster`, `compose`), the shared class `inventory/classes/miniflux.yml`, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the kadet component `components/compose` that writes `compose.yml`; `check` (EX-30 to EX-30b) |
 | `sso-keycloak/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `cnpg`, `keycloak-operator`, `keycloak`, `gitea`, `open-webui`, `miniflux`, `mattermost`, `matrix-synapse`), the class `inventory/classes/sso.yml` that Keycloak and the apps read, the nine recipes pinned in the fetch inventory `fetch/targets/recipes.yml`, the Chainsaw test `tests/chainsaw-test.yaml` with `tests/namespaces.yaml`, the Playwright script `tests/login.py`; `check` (EX-32 to EX-32c) |
+| `matrix-federation/` | One Kapitan project on the omegaconf backend (targets `cnpg`, `synapse-a`, `synapse-b`), the class `inventory/classes/federated.yml` with the TLS proxy and Synapse's settings for kind, the two recipes pinned in the fetch inventory `fetch/targets/recipes.yml`, the Chainsaw test `tests/chainsaw-test.yaml` with `tests/namespaces.yaml`, the federation script `tests/federate.sh`; `check` (EX-33, EX-33a) |
