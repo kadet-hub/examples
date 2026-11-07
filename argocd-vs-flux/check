@@ -140,7 +140,7 @@ echo "revision: $revision" >"$tmp/values.yaml"
 # Argo CD publishes its manifest in the repository only, so it is pinned by
 # the commit of its tag (EX-3).
 # renovate: datasource=github-tags depName=argoproj/argo-cd
-ARGOCD_COMMIT=6d732962f61a99c2a0f221fd26b9aac7c83bcf18 # v3.5.7
+ARGOCD_COMMIT=f55566445ee3a2a4f3339bf10df0f6bc1ecf7f23 # v3.6.0
 # renovate: datasource=github-release-attachments depName=fluxcd/flux2
 FLUX_VERSION=v2.10.0
 FLUX_SHA256=a8c838ccd9be5d30eba9df87cd229b7c4eb80c0049fba1bc3b9840829f267f28
