@@ -20,7 +20,7 @@ import tempfile
 import threading
 from datetime import datetime, timezone
 from typing import Callable, NamedTuple
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 from playwright.sync_api import sync_playwright
 
@@ -47,6 +47,30 @@ def miniflux_user(page, url):
     return m[1] if m else ""
 
 
+def mattermost_user(page, url):
+    return page.goto(f"{url}/api/v4/users/me").json().get("username", "")
+
+
+def matrix_synapse_user(page, url):
+    """Synapse keeps no browser session. A client signs in through SSO: the
+    page Synapse ends on links to the client with a login token, which the
+    client trades once for an access token, which /whoami names."""
+    page.goto(url + apps["matrix-synapse"].login)
+    link = page.locator('a[href*="loginToken="]')
+    if not link.count():
+        return ""
+    token = parse_qs(urlsplit(link.first.get_attribute("href")).query)["loginToken"][0]
+    return page.evaluate("""async token => {
+        const login = await fetch("/_matrix/client/v3/login",
+            {method: "POST", body: JSON.stringify({type: "m.login.token", token})});
+        const {access_token} = await login.json();
+        if (!access_token) return "";
+        const whoami = await fetch("/_matrix/client/v3/account/whoami",
+            {headers: {Authorization: `Bearer ${access_token}`}});
+        return (await whoami.json()).user_id || "";
+    }""", token)
+
+
 class App(NamedTuple):
     url: str
     login: str  # path that starts the authorization code flow
@@ -60,6 +84,13 @@ apps = {
                       open_webui_user),
     "miniflux": App(sso["clients.miniflux.url"], "/oauth2/oidc/redirect", ("miniflux", "miniflux", 80),
                     miniflux_user),
+    "mattermost": App(sso["clients.mattermost.url"], "/oauth/gitlab/login",
+                      ("mattermost", "mattermost-team-edition", 8065), mattermost_user),
+    # Synapse appends the login token to the client's URL, any URL here.
+    "matrix-synapse": App(sso["clients.matrix-synapse.url"],
+                          "/_matrix/client/v3/login/sso/redirect/oidc?redirectUrl="
+                          + quote(sso["clients.matrix-synapse.url"] + "/", safe=""),
+                          ("matrix-synapse", "matrix-synapse", 8443), matrix_synapse_user),
 }
 service = {issuer: ("keycloak", "keycloak-service", 8443)} | {app.url: app.service for app in apps.values()}
 forwards = []
@@ -142,11 +173,17 @@ with tempfile.TemporaryDirectory() as home, sync_playwright() as playwright:
                 end = login(alice, app).url
                 how = "through Keycloak's session"
             user = session_user(alice, app)
-            if user not in ("alice", "alice@example.test"):
+            if user not in ("alice", "alice@example.test", "@alice:example.test"):
                 sys.exit(f"{app}: alice ended at {end} as '{user}'")
             print(f"{app}: alice signed in as {user} {how}, ended at {end.split('?')[0]}")
         role = alice.new_page().goto(f"{apps['open-webui'].url}/api/v1/auths/").json()["role"]
         print(f"open-webui: alice has the role {role}")
+        # The recipe's Job created the first account, the system admin.
+        me = alice.new_page().goto(f"{apps['mattermost'].url}/api/v4/users/me").json()
+        if (me["auth_service"], me["auth_data"]) != ("gitlab", "1") or "system_admin" in me["roles"].split():
+            sys.exit(f"mattermost: alice has {me}")
+        print(f"mattermost: alice has the auth service {me['auth_service']}, the auth data {me['auth_data']}"
+              f" and the roles {me['roles']}")
 
         # A wrong password: Keycloak shows its form again and no app gets a session.
         for app in apps:
@@ -159,7 +196,8 @@ with tempfile.TemporaryDirectory() as home, sync_playwright() as playwright:
         print("a wrong password: Keycloak answered 'Invalid username or password.' and no app has a session")
 
         # bob is in the group family only. Gitea requires git in the claim
-        # groups, Open WebUI chat. Miniflux checks no group.
+        # groups, Open WebUI and Synapse chat. Miniflux and Mattermost check
+        # no group.
         bob = browser.new_context()
         page = login(bob, "gitea", "bob", os.environ["PASSWORD_BOB"])
         if not page.title().startswith("Sign-In Prohibited") or session_user(bob, "gitea"):
@@ -174,6 +212,14 @@ with tempfile.TemporaryDirectory() as home, sync_playwright() as playwright:
         if session_user(bob, "miniflux") != "bob":
             sys.exit(f"miniflux: bob ended at {end}")
         print("miniflux: bob signed in as bob")
+        end = login(bob, "mattermost").url
+        if session_user(bob, "mattermost") != "bob":
+            sys.exit(f"mattermost: bob ended at {end}")
+        print("mattermost: bob signed in as bob")
+        page = login(bob, "matrix-synapse")
+        if "You are not allowed to log in here." not in page.content() or session_user(bob, "matrix-synapse"):
+            sys.exit(f"matrix-synapse: bob ended at {page.url} as '{session_user(bob, 'matrix-synapse')}'")
+        print("matrix-synapse: bob, not in chat, got 'You are not allowed to log in here.' and no login token")
         browser.close()
 
         # The classic pitfall: an app that reads Keycloak's in-cluster name.

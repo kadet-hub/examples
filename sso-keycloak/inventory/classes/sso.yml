@@ -28,3 +28,17 @@ parameters:
         url: http://rss.example.test
         redirect_uri: ${sso.clients.miniflux.url}/oauth2/oidc/callback
         secret: ?{base64:sso/miniflux-client-secret||random:str:40}
+      # Mattermost Team Edition has no OIDC and no group restriction. Its
+      # GitLab login reads Keycloak's endpoints instead of GitLab's.
+      mattermost:
+        id: mattermost
+        url: http://mattermost.example.test
+        redirect_uri: ${sso.clients.mattermost.url}/signup/gitlab/complete
+        secret: ?{base64:sso/mattermost-client-secret||random:str:40}
+      # HTTPS, because Synapse sets its login cookie Secure.
+      matrix-synapse:
+        id: matrix-synapse
+        url: https://matrix.example.test:8443
+        redirect_uri: ${sso.clients.matrix-synapse.url}/_synapse/client/oidc/callback
+        secret: ?{base64:sso/matrix-synapse-client-secret||random:str:40}
+        group: chat

@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# Single sign-on with Keycloak for Gitea, Open WebUI and Miniflux, from
-# published recipes and one Kapitan inventory (EX-32). Verifies the latest
-# signed index, the recipes pinned in fetch/targets/recipes.yml, the recipes
-# they include and the generators they pin, pulls all of them by digest,
-# compiles the targets and deploys them to a new kind cluster with the
-# Chainsaw test in tests/ (EX-12). Exits 0 only if tests/login.py, in a
-# headless Chromium, logs in to each app through Keycloak as the realm's
-# user, a wrong password gets no session, Gitea and Open WebUI turn away a
-# user outside their group, and Miniflux pointed at Keycloak's in-cluster
-# name fails on the issuer. Set KEEP=1 to keep the cluster.
+# Single sign-on with Keycloak for Gitea, Open WebUI, Miniflux, Mattermost
+# and Synapse, from published recipes and one Kapitan inventory (EX-32).
+# Verifies the latest signed index, the recipes pinned in
+# fetch/targets/recipes.yml, the recipes they include and the generators
+# they pin, pulls all of them by digest, compiles the targets and deploys
+# them to a new kind cluster with the Chainsaw test in tests/ (EX-12). Exits
+# 0 only if tests/login.py, in a headless Chromium, logs in to each app
+# through Keycloak as the realm's user, a wrong password gets no session,
+# Gitea, Open WebUI and Synapse turn away a user outside their group, and
+# Miniflux pointed at Keycloak's in-cluster name fails on the issuer. Set
+# KEEP=1 to keep the cluster.
 # Needs gh (authenticated), jq, oras, uv, kind, kubectl, chainsaw, certutil,
 # openssl, docker.
 set -euo pipefail
 cd "$(dirname "$0")"
 id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
-min_serial=115
+min_serial=129
 tmp=$(mktemp -d)
 cluster=sso-keycloak
 export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
@@ -73,8 +74,8 @@ for ((i = 0; i < ${#queue[@]}; i++)); do
   tar -xf "$tmp/recipes/$name/$name.tar" -C "inventory/classes/recipes/$name" --no-same-owner
   echo "recipe $name $version verified and unpacked"
 done
-if ((${#wanted[@]} != 10)); then
-  echo "expected 10 recipes, found ${!wanted[*]}" >&2
+if ((${#wanted[@]} != 12)); then
+  echo "expected 12 recipes, found ${!wanted[*]}" >&2
   exit 1
 fi
 
@@ -103,15 +104,23 @@ while read -r name version digest; do
   echo "generator $name $version verified and unpacked"
 done <<<"$generators"
 
-# The CA that signs Keycloak's certificate, written to the refs the class sso
-# reads, as a reader does once with the backend of the repository. The other
-# refs get random values in the first compile, the second writes them all
-# into the Secrets.
+# The CA that signs Keycloak's certificate and Synapse's, written to the refs
+# the targets read, as a reader does once with the backend of the
+# repository. The other refs get random values in the first compile, the
+# second writes them all into the Secrets.
+"${py[@]}" kapitan inventory -t keycloak -p sso -F >"$tmp/sso"
+sso() { sed -n "s|^$1: ||p" "$tmp/sso"; }
+matrix=$(sso clients.matrix-synapse.url)
+name=${matrix#https://} && name=${name%:*}
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 2 \
   -subj '/CN=sso-keycloak example CA' -addext basicConstraints=critical,CA:TRUE \
   -addext keyUsage=critical,keyCertSign,cRLSign -keyout "$tmp/ca.key" -out "$tmp/ca.crt" 2>/dev/null
-for part in crt key; do
-  "${py[@]}" kapitan refs --refs-path "$tmp/refs" --write "base64:sso/ca.$part" -f "$tmp/ca.$part" >/dev/null
+openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -subj "/CN=$name" \
+  -keyout "$tmp/tls.key" 2>/dev/null |
+  openssl x509 -req -CA "$tmp/ca.crt" -CAkey "$tmp/ca.key" -days 2 \
+    -extfile <(echo "subjectAltName=DNS:$name") -out "$tmp/tls.crt" 2>/dev/null
+for ref in sso/ca.crt sso/ca.key matrix-synapse/tls.crt matrix-synapse/tls.key; do
+  "${py[@]}" kapitan refs --refs-path "$tmp/refs" --write "base64:$ref" -f "$tmp/${ref#*/}" >/dev/null
 done
 compile() {
   "${py[@]}" kapitan compile --refs-path "$tmp/refs" "$@" >"$tmp/compile.log" 2>&1 ||
@@ -120,8 +129,6 @@ compile() {
 compile
 compile --reveal
 reveal() { "${py[@]}" kapitan refs --refs-path "$tmp/refs" --reveal --tag "?{base64:$1}"; }
-"${py[@]}" kapitan inventory -t keycloak -p sso -F >"$tmp/sso"
-sso() { sed -n "s|^$1: ||p" "$tmp/sso"; }
 echo "compiled $(find compiled -type f | wc -l) files"
 
 # EX-32a: a client's URL is set in the class sso only. Changing it in a copy
@@ -209,4 +216,4 @@ password_alice=$(reveal sso/alice-password)
 password_bob=$(reveal sso/bob-password)
 PASSWORD_ALICE=$password_alice PASSWORD_BOB=$password_bob PLAYWRIGHT_BROWSERS_PATH=$tmp/ms-playwright \
   uv run --quiet --python 3.13 --with playwright==1.64.1 python -I tests/login.py "$tmp/ca.pem" "$tmp/sso"
-echo "sso-keycloak: single sign-on through Keycloak for Gitea, Open WebUI and Miniflux passed"
+echo "sso-keycloak: single sign-on through Keycloak for Gitea, Open WebUI, Miniflux, Mattermost and Synapse passed"

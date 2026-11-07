@@ -38,13 +38,6 @@ parameters:
         sso-ca:
           mount_path: /etc/sso
           read_only: true
-      # The recipe has none, and the rollout ended before Miniflux listened.
-      # /healthcheck answers OK once Miniflux reaches its database.
-      healthcheck:
-        readiness:
-          type: http
-          port: http
-          path: /healthcheck
   generators:
     kubernetes:
       secrets:
