@@ -51,7 +51,8 @@ which fails on the issuer. `KEEP=1 ./check` keeps the cluster
   import. Keycloak's admin console does not show it with the default user
   profile.
 - A browser at Synapse over plain HTTP. Synapse sets its login cookie
-  `Secure`, so the login needs HTTPS, which is read from Synapse's code.
+  `Secure`, so the login needs HTTPS. One local run over HTTP ended on
+  `No session cookie found`, and `check` does not repeat it.
 
 The other gaps are listed under EX-32 to EX-32c in
 [docs/specs/examples.md](../docs/specs/examples.md).

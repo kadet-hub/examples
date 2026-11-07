@@ -2719,8 +2719,10 @@ required value 'chat'`.
 Synapse sets the cookies `oidc_session` and `oidc_session_no_samesite`
 with `Secure` when it sends the browser to Keycloak (`_SESSION_COOKIES` in
 `synapse/handlers/oidc.py`). Chromium keeps a `Secure` cookie only from
-an HTTPS origin. Without the cookie the callback fails with `No session
-cookie found`, which is read from the code. Synapse therefore serves its
+an HTTPS origin. In a local run with `public_baseurl` on plain HTTP,
+Chromium ended on Synapse's page `No session cookie found`, and Synapse
+logged `Received OIDC callback, with no session cookie`. `check` does not
+repeat that run. Synapse therefore serves its
 client API with TLS on port 8443, and `public_baseurl` is
 `https://matrix.example.test:8443/`. The target adds the file `tls.yaml`
 to the ConfigMap. Synapse reads it after `federation.yaml`, so its
@@ -2756,8 +2758,9 @@ apps do.
   `bob`, in the group `family` only, gets Synapse's page with `You are not
   allowed to log in here.` and no login token.
 
-  Not tested: a browser at Synapse over plain HTTP, Element Web,
-  federation and the renewal of Synapse's certificate.
+  Not tested: a browser at Synapse over plain HTTP, which only the local
+  run above tried, Element Web, federation and the renewal of Synapse's
+  certificate.
 
   Related: EX-32
 
