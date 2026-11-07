@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# Retrieval-augmented generation with Open WebUI, Qdrant, LiteLLM and Ollama,
+# from the published recipes open-webui, qdrant, litellm and ollama (EX-31).
+# Verifies the latest signed index, the recipes pinned in
+# fetch/targets/recipes.yml, the recipes they include and the generators
+# they pin, pulls all of them by digest, compiles the targets and deploys
+# them to a new kind cluster with the Chainsaw test in tests/ (EX-12). Exits
+# 0 only if tests/rag.sh finds that tests/document.md, added to a knowledge
+# base in Open WebUI, is stored in Qdrant with LiteLLM's embeddings from
+# Ollama, and that Open WebUI answers the question of tests/rag.sh with the
+# code from the document only while the knowledge base is attached and
+# Qdrant runs (EX-31a). Set KEEP=1 to keep the cluster.
+# Needs gh (authenticated), jq, oras, uv, kind, kubectl, chainsaw, curl,
+# docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+min_serial=134
+tmp=$(mktemp -d)
+cluster=open-webui-rag
+export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
+cleanup() {
+  kill "${watcher:-}" 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf lib compiled inventory/classes/recipes
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+
+# EX-4: index signature, digests and attestations, then pull by digest, as
+# "Verifying a recipe by hand" in the registry's docs/consumers.md does it.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+if ((serial < min_serial)); then
+  echo "index serial $serial is lower than $min_serial" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+
+# The pinned recipes, then the recipes their records list under includes, at
+# the listed version and digest, as the consumer workflow adds them. All of
+# them share inventory/classes/recipes/, so one name at two digests fails.
+mapfile -t queue < <(sed -nE 's|^ *source: ghcr\.io/kadet-hub/recipes/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  fetch/targets/recipes.yml)
+declare -A wanted
+for ((i = 0; i < ${#queue[@]}; i++)); do
+  read -r name version digest <<<"${queue[i]}"
+  if [[ -n ${wanted[$name]:-} ]]; then
+    [[ ${wanted[$name]} == "$version $digest" ]] || {
+      echo "recipe $name is wanted as ${wanted[$name]} and as $version $digest" >&2
+      exit 1
+    }
+    continue
+  fi
+  wanted[$name]="$version $digest"
+  record=$(jq -ec --arg n "$name" --arg v "$version" \
+    '.recipes[$n][$v] | select(.yanked == null)' "$tmp/index.json") || {
+    echo "recipe $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  want=$(jq -r .digest <<<"$record")
+  if [[ $want != "$digest" ]]; then
+    echo "recipe $name $version: index has $want, the pin or include names $digest" >&2
+    exit 1
+  fi
+  mapfile -t -O "${#queue[@]}" queue < <(jq -r '.includes[] | "\(.name) \(.version) \(.digest)"' <<<"$record")
+  gh attestation verify "oci://ghcr.io/kadet-hub/recipes/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/recipes/$name" "ghcr.io/kadet-hub/recipes/$name@$digest" >/dev/null
+  mkdir -p "inventory/classes/recipes/$name"
+  tar -xf "$tmp/recipes/$name/$name.tar" -C "inventory/classes/recipes/$name" --no-same-owner
+  echo "recipe $name $version verified and unpacked"
+done
+if ((${#wanted[@]} != 6)); then
+  echo "expected 6 recipes, found ${!wanted[*]}" >&2
+  exit 1
+fi
+
+# The generators the recipes pin, which Kapitan would otherwise fetch
+# unverified. They share lib/, so one name at two digests fails.
+generators=$(cat inventory/classes/recipes/*/*.yml |
+  sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' | sort -u)
+[[ -n $generators ]] || { echo "the recipes pin no generator" >&2; exit 1; }
+twice=$(cut -d' ' -f1 <<<"$generators" | uniq -d)
+[[ -z $twice ]] || { echo "generators pinned at two digests: $twice" >&2; exit 1; }
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "generator $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "generator $name $version: index has $want, a recipe pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/generators/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/generators/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "generator $name $version verified and unpacked"
+done <<<"$generators"
+
+# The first compile creates the refs with random values in the temporary
+# directory, the second writes them into the Secrets. The first compiles one
+# target at a time: the targets share the refs of the class rag, and a
+# parallel compile reads a ref file that another one is still writing.
+compile() {
+  "${py[@]}" kapitan compile --refs-path "$tmp/refs" "$@" >"$tmp/compile.log" 2>&1 ||
+    { cat "$tmp/compile.log" >&2; exit 1; }
+}
+compile --parallelism 1
+compile --reveal
+echo "compiled $(find compiled -type f | wc -l) files"
+
+# EX-6: what a broken pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop Chainsaw or tests/rag.sh as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$ # check's children: the command it waits for and this watch
+    return
+  done
+}
+
+# The node image of the workflow's kind release; Renovate updates both together.
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
+watch_pods &
+watcher=$!
+chainsaw test --test-dir tests --no-color &
+pid=$!
+status=0
+wait "$pid" || status=$?
+((status == 0)) || exit "$status"
+
+model() { sed -nE "s/^ *$1: //p" inventory/classes/rag.yml; }
+tests/rag.sh "$(model chat_model)" "$(model embedding_model)" &
+pid=$!
+status=0
+wait "$pid" || status=$?
+((status == 0)) || exit "$status"
+echo "open-webui-rag: Open WebUI answers from the document in Qdrant, and not without it"

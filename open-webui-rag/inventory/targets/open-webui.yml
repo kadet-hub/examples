@@ -1,0 +1,44 @@
+classes:
+  - rag
+  - recipes.open-webui
+  - recipes.open-webui.openai
+parameters:
+  namespace: open-webui
+  kapitan:
+    vars:
+      target: open-webui
+  applications:
+    open-webui:
+      secret_key: ?{base64:open-webui/secret-key||random:str:40}
+      # LiteLLM, for the chat model.
+      openai:
+        url: ${rag.litellm}
+        api_key: ${rag.master_key}
+    valkey:
+      # Part of a URL in the recipe, so letters and digits only.
+      password: ?{base64:open-webui/valkey-password||random:loweralphanum:40}
+  components:
+    open-webui:
+      env:
+        # LiteLLM, for the embeddings. Open WebUI does not take them from
+        # OPENAI_API_BASE_URL and OPENAI_API_KEY.
+        RAG_EMBEDDING_ENGINE: openai
+        RAG_EMBEDDING_MODEL: embedding
+        RAG_OPENAI_API_BASE_URL: ${rag.litellm}
+        RAG_OPENAI_API_KEY:
+          secretKeyRef:
+            name: open-webui
+            key: openai-api-key
+        VECTOR_DB: qdrant
+        QDRANT_URI: ${rag.qdrant}
+        QDRANT_API_KEY:
+          secretKeyRef:
+            name: open-webui
+            key: qdrant-api-key
+  generators:
+    kubernetes:
+      secrets:
+        open-webui:
+          string_data:
+            qdrant-api-key:
+              value: ${rag.qdrant_api_key}

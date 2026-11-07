@@ -1,0 +1,23 @@
+classes:
+  - rag
+  - recipes.litellm
+parameters:
+  namespace: litellm
+  kapitan:
+    vars:
+      target: litellm
+  applications:
+    litellm:
+      master_key: ${rag.master_key}
+      # The names Open WebUI asks for, routed to the models in Ollama.
+      model_list:
+        - model_name: chat
+          litellm_params:
+            model: ollama_chat/${rag.chat_model}
+            api_base: ${rag.ollama}
+        - model_name: embedding
+          litellm_params:
+            model: ollama/${rag.embedding_model}
+            api_base: ${rag.ollama}
+          model_info:
+            mode: embedding

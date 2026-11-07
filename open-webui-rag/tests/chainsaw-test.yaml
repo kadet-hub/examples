@@ -1,0 +1,65 @@
+# EX-12, EX-31: the compiled targets on the kind cluster of check, all in
+# one step. check runs tests/rag.sh afterwards.
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: open-webui-rag
+spec:
+  # check deletes the cluster.
+  skipDelete: true
+  # Apply the compiled manifests as they are.
+  template: false
+  timeouts:
+    apply: 1m
+    assert: 10m
+  steps:
+    - name: deploy
+      try:
+        - apply: {file: namespaces.yaml}
+        - apply: {file: ../compiled/ollama/manifests/ollama/*.yml}
+        - apply: {file: ../compiled/qdrant/manifests/qdrant/*.yml}
+        - apply: {file: ../compiled/litellm/manifests/litellm/*.yml}
+        - apply: {file: ../compiled/open-webui/manifests/open-webui/*.yml}
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: ollama, namespace: ollama}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata: {name: qdrant, namespace: qdrant}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: litellm, namespace: litellm}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: valkey, namespace: open-webui}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata: {name: open-webui, namespace: open-webui}
+              (status.readyReplicas == spec.replicas): true
+      catch:
+        - events: {namespace: ollama}
+        - describe: {apiVersion: v1, kind: Pod, namespace: ollama}
+        - podLogs: {namespace: ollama, tail: 50}
+        - events: {namespace: qdrant}
+        - describe: {apiVersion: v1, kind: Pod, namespace: qdrant}
+        - podLogs: {namespace: qdrant, tail: 50}
+        - events: {namespace: litellm}
+        - describe: {apiVersion: v1, kind: Pod, namespace: litellm}
+        - podLogs: {namespace: litellm, tail: 50}
+        - events: {namespace: open-webui}
+        - describe: {apiVersion: v1, kind: Pod, namespace: open-webui}
+        - podLogs: {namespace: open-webui, tail: 50}

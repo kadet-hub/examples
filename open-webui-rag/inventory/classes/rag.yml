@@ -1,0 +1,12 @@
+# What the targets share: the Services they reach each other at, the two
+# models and the two keys. LiteLLM and Open WebUI read the master key,
+# Qdrant and Open WebUI the API key.
+parameters:
+  rag:
+    ollama: http://ollama.ollama.svc:11434
+    litellm: http://litellm.litellm.svc:4000/v1
+    qdrant: http://qdrant.qdrant.svc:6333
+    chat_model: qwen2.5:0.5b
+    embedding_model: nomic-embed-text:v1.5
+    master_key: ?{base64:rag/litellm-master-key||random:str:40}
+    qdrant_api_key: ?{base64:rag/qdrant-api-key||random:str:40}
