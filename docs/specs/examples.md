@@ -2167,21 +2167,21 @@ enforce the Pod Security level `baseline`.
   2606 reserves.
 
   `check` applies PostgreSQL first and waits for it, because miniflux exits
-  while it cannot connect. miniflux 2.3.4 runs its migrations without a
-  lock (`Migrate` in `internal/database/database.go`). When several
-  replicas start on an empty database, one can fail with an error such as
-  `pq: column "karakeep_tags" of relation "integrations" already exists`,
-  exit and start again on the migrated schema. In three local runs one
-  pod of stage and one of prod restarted once. In the first CI run of
-  #150 one pod of stage restarted twice and no pod of prod. EX-6 counts
-  restarts as broken from the fourth.
+  while it cannot connect. It then starts miniflux with one replica, and
+  applies the target's replicas once that pod is ready, as the recipe's
+  README asks. miniflux 2.3.4 runs its migrations at every start without a
+  lock (`Migrate` in `internal/database/database.go`). Replicas that start
+  together on an empty database run them at the same time, and the others
+  fail with an error such as `pq: column "readeck_push_enabled" of
+  relation "integrations" already exists`, exit and start again. Pods that
+  start after the first one is ready find the schema migrated.
 
   The recipe 1.0.0 gives miniflux no readiness probe, so a pod counted as
   ready once its container ran. `rollout status` then returned while a pod
   that would lose the race was still migrating, and a CI run of #150 found
   2 of prod's 3 replicas ready. `common` adds a readiness probe on
   miniflux's `/healthcheck`, which answers once the HTTP server runs, after
-  the migrations. `rollout status` then waits through the restarts.
+  the migrations. `rollout status` then waits until miniflux has migrated.
 
   Not tested: an Ingress or Gateway for the hostnames, because kind runs
   no controller that would serve them, and the reclaim of a volume after
@@ -2235,6 +2235,25 @@ enforce the Pod Security level `baseline`.
     between the directories: exit 1 naming `volumeMounts[0].mountPath`
     (exit 0 with the first version of `guard` in #150)
   - Since: #150
+
+- EX-28c: `multi-env/check` MUST fail when a miniflux pod of any target has
+  restarted once all three targets are deployed.
+
+  Until #tbd, `check` applied stage's 2 and prod's 3 replicas at once on
+  the empty database. In each of the 34 passing runs of the job on
+  7 November 2026, on `main` and on pull requests, one of stage's two pods
+  restarted once or twice, and in 17 of them one or two of prod's three
+  pods restarted once. dev, with one replica, restarted in none. A pod
+  that restarts waits with `CrashLoopBackOff`, which EX-6 counts as broken
+  on two polls in a row, and in run 42377634282 on `main` that stopped the
+  check. The restart count fails the check directly instead of leaving it
+  to when EX-6 polls.
+
+  - Test: `examples` workflow, job `multi-env`; `manual:` on kind
+    `v1.37.0` with the one-replica step left out, `check` failed EX-28c
+    with a pod of stage at 2 restarts and one of prod at 1; with the step,
+    all six pods were at 0 and `check` passed
+  - Since: tbd
 
 ## Talos and the app on top
 
@@ -3020,7 +3039,7 @@ a knowledge base and adds the file to it.
 | `argocd-cmp/` | One Kapitan project (target `blackbox-exporter`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the plugin's ConfigMap `kapitan-plugin.yaml`, the sidecar in `repo-server-patch.yaml`, the egress policy `repo-server-egress.yaml`, `application.yaml`, `git-server.yaml`; `check` (EX-24) |
 | `policy-checks/` | One Kapitan project (targets `compliant`, `noncompliant`) with the kubernetes generator pinned in `inventory/classes/web.yml`, the conftest rules in `policy/compiled.rego`, the pull request workflow template `.github/workflows/policy.yml`; `check` (EX-27, EX-27a) |
 | `secrets-end-to-end/` | One Kapitan project (target `vaultwarden`) on the omegaconf backend, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the gpg recipient, the Secret with the ref, the SecretStore and the ExternalSecret in the target, the Vault dev server `vault-server.yaml`; `check` (EX-26) |
-| `multi-env/` | One Kapitan project on the omegaconf backend (targets `dev`, `stage`, `prod`; classes `common`, `env/*`, `cluster/*`), the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, `guard` with `guard-allowed.txt`, `storage-class.yaml`; `check` (EX-28 to EX-28b) |
+| `multi-env/` | One Kapitan project on the omegaconf backend (targets `dev`, `stage`, `prod`; classes `common`, `env/*`, `cluster/*`), the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, `guard` with `guard-allowed.txt`, `storage-class.yaml`; `check` (EX-28 to EX-28c) |
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
 | `talos-apps/` | One Kapitan project (targets `talos`, `blackbox-exporter`) on the omegaconf backend, the networks both read in `inventory/classes/cluster.yml`, the talos generator pinned in `inventory/classes/generators.yml`, the recipe pinned in `fetch/targets/recipes.yml`; `check` (EX-29) |
 | `compose-kubernetes/` | One Kapitan project on the omegaconf backend (targets `cluster`, `compose`), the shared class `inventory/classes/miniflux.yml`, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the kadet component `components/compose` that writes `compose.yml`; `check` (EX-30 to EX-30b) |
