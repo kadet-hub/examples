@@ -214,6 +214,13 @@
       "groupName": "sso-keycloak recipes"
     },
     {
+      "description": "EX-33: the recipes of matrix-federation in one pull request, because cnpg and matrix-synapse both pin the kubernetes generator, which the project holds at one digest only",
+      "matchFileNames": [
+        "matrix-federation/fetch/targets/recipes.yml"
+      ],
+      "groupName": "matrix-federation recipes"
+    },
+    {
       "description": "EX-3: the Pulumi Kubernetes plugin at the @pulumi/kubernetes version",
       "matchPackageNames": [
         "@pulumi/kubernetes",

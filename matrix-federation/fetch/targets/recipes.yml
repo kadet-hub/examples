@@ -1,0 +1,11 @@
+# The recipes the targets include. matrix-synapse includes postgresql, which
+# comes at the version and digest the index lists for it.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/cnpg:1.0.3@sha256:f38aafdaf2a7ff8fe9a3356e435d05d23f0e7584299f7b326d7f25f2500a2343
+        output_path: inventory/classes/recipes/cnpg
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/matrix-synapse:1.0.0@sha256:53c575c0f9d62a0b9506c2aa98fb63f35f1f6a00362c4c6a6eb2abdf7e85d885
+        output_path: inventory/classes/recipes/matrix-synapse

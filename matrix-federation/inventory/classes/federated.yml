@@ -1,0 +1,77 @@
+# What both federated servers share. federated.name, a or b, sets the
+# server name and the paths of the refs. Each server gets a TLS proxy for
+# its name, and Synapse the settings it needs to reach the other server on
+# kind.
+parameters:
+  applications:
+    matrix-synapse:
+      server_name: ${federated.name}.example.test
+      registration_shared_secret: ?{base64:federated/${federated.name}/registration-shared-secret||random:str:32}
+      admin:
+        username: admin
+        password: ?{base64:federated/${federated.name}/admin-password||random:str:24}
+    # One node: further instances on it would share its disk.
+    postgresql:
+      instances: 1
+  components:
+    matrix-synapse:
+      config_maps:
+        config:
+          data:
+            # Trusts the CA of check's certificates. Synapse drops addresses
+            # of private ranges, and kind's Services are in 10.96.0.0/12.
+            kind.yaml:
+              value: |
+                federation_custom_ca_list:
+                  - /secrets/ca.crt
+                ip_range_whitelist:
+                  - 10.96.0.0/12
+      secrets:
+        credentials:
+          string_data:
+            ca.crt:
+              value: ?{base64:federated/ca.crt}
+    # TLS on port 443 for the server name, where a real deployment has its
+    # ingress. Other servers reach Synapse here, also for
+    # /.well-known/matrix/server.
+    matrix-tls:
+      image: docker.io/nginxinc/nginx-unprivileged:1.31.7-alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
+      security_profile: restricted
+      ports:
+        https:
+          container_port: 8443
+          service_port: 443
+      service:
+        type: ClusterIP
+      healthcheck:
+        readiness:
+          type: tcp
+          port: https
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+        limits: {memory: 64Mi}
+      config_maps:
+        config:
+          mount: /etc/nginx/conf.d
+          data:
+            default.conf:
+              value: |
+                server {
+                  listen 8443 ssl;
+                  ssl_certificate /tls/tls.crt;
+                  ssl_certificate_key /tls/tls.key;
+                  location / {
+                    proxy_pass http://matrix-synapse:8008;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Forwarded-For $remote_addr;
+                    proxy_set_header X-Forwarded-Proto https;
+                  }
+                }
+      secrets:
+        tls:
+          mount: /tls
+          string_data:
+            tls.crt:
+              value: ?{base64:federated/${federated.name}.crt}
+            tls.key:
+              value: ?{base64:federated/${federated.name}.key}
