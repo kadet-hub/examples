@@ -12,7 +12,7 @@ parameters:
         source: ghcr.io/kadet-hub/argocd:1.1.0@sha256:1e5901704537d89b57038289512423a0aee70eebdd1abd10a38f656527a27db1
         output_path: lib/argocd
       - type: oci
-        source: ghcr.io/kadet-hub/kubernetes:1.14.0@sha256:787129e1eaed6b9bc868fe4c4aec58d40de6a89fc3cc08424a4cb5822b855080
+        source: ghcr.io/kadet-hub/kubernetes:1.15.0@sha256:dc02ea8530be005377503155a52a9432975755c251cd30c2eaadbda44d331afa
         output_path: lib/kubernetes
     compile:
       - {input_type: kadet, output_type: yml, input_paths: [lib/kubernetes], output_path: apps/}
