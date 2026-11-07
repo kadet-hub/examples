@@ -1275,6 +1275,10 @@ Pod Security level `baseline`.
   Open WebUI's log must show that it cannot connect to the host of
   `SEARXNG_QUERY_URL`. SearXNG is the only search engine Open WebUI is
   configured with, so the results of the first call come from SearXNG.
+  `check` reads the log whole before it searches it. `grep -q` exits at
+  the first match, and under `pipefail` a `kubectl logs` that still writes
+  into the pipe then fails with SIGPIPE. The job failed at this step with
+  the required 400, on `main` after #185 and on #181.
 
   searxng 1.0.1 has a readiness probe on `/healthz` (RCP-185 in
   kadet-hub/recipes), so the rollout of SearXNG ends once it answers.
@@ -1300,7 +1304,8 @@ Pod Security level `baseline`.
     (`--platform=local --dry-run=lookup`, 2026-11-05) with the org preset
     alone proposed 1.0.1 at its digest on the branch
     `renovate/open-webui-searxng-recipes`
-  - Since: #132; includes from the index and searxng 1.0.1: #154
+  - Since: #132; includes from the index and searxng 1.0.1: #154; log
+    read whole: tbd
 
 ## Platform baseline
 
@@ -1717,10 +1722,11 @@ changes with every commit.
 
   The second push sets `imagePullPolicy: Always` in the module. Timoni
   compares the digest the registry returns for the version with the
-  pinned one and reports that they do not match.
+  pinned one and reports that they do not match. `check` reads the build
+  of the unpinned bundle whole before it searches it, as EX-17 describes.
 
   - Test: `examples` workflow, job `timoni-vs-kapitan`
-  - Since: #142
+  - Since: #142; build read whole: tbd
 
 - EX-22b: `timoni-vs-kapitan/check` MUST fail unless Timoni rejects the
   prod bundle with `replica: 3` in place of `replicas: 3` for web, and
