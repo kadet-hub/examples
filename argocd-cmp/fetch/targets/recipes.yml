@@ -3,5 +3,5 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/blackbox-exporter:1.0.0@sha256:6d189ab3ab3910de812460fe8a0e7026eb2e8d33c2310fb1149f6ebdadfbd8d3
+        source: ghcr.io/kadet-hub/recipes/blackbox-exporter:1.0.1@sha256:46692ba7208a46a1c780f098c1c176c2eee6630988c3f07c2b2920a81a051bb4
         output_path: inventory/classes/recipes/blackbox-exporter
