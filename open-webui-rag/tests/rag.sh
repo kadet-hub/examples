@@ -103,6 +103,10 @@ since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 answer=$(ask "$collection") || fail "the chat completion with Qdrant scaled to zero failed"
 ! has_code "$answer" || fail "with Qdrant scaled to zero the answer still has $code: $answer"
 failed="query_collection: 1 collection(s) had failing queries: $knowledge"
-kubectl -n open-webui logs open-webui-0 -c open-webui --since-time="$since" | grep -qF "$failed" ||
+# Read whole, because grep -q would end the pipe while kubectl still writes.
+log=$(kubectl -n open-webui logs open-webui-0 -c open-webui --since-time="$since")
+grep -qF "$failed" <<<"$log" || {
+  grep -E 'ERROR|Error:' <<<"$log" | tail -20 >&2
   fail "with Qdrant scaled to zero Open WebUI did not log: $failed"
+}
 echo "with the knowledge base and Qdrant scaled to zero, Open WebUI logged '$failed' and answered: $(tr -s '[:space:]' ' ' <<<"$answer")"
