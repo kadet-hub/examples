@@ -3,5 +3,5 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/vaultwarden:1.0.0@sha256:1d0e702c639b83ebfd6b59e9aba690cbe80df00a3a3134806fb77365299a6cb6
+        source: ghcr.io/kadet-hub/recipes/vaultwarden:1.0.1@sha256:55a988881f27e76af4607ed4aa08c5057f141c4b10114e9c1ec2dd6aa771586a
         output_path: inventory/classes/recipes/vaultwarden
