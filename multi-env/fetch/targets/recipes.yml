@@ -3,5 +3,5 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/recipes/miniflux:1.0.0@sha256:e6686151fc46edd6f889d076efde59901670507f536ad27eaad7e4e44d5a56d4
+        source: ghcr.io/kadet-hub/recipes/miniflux:1.0.1@sha256:d3f8a3688c1a2dd2a82e7cc3fd09b324b8374c69b2f8d92fb9a19e5886d77da7
         output_path: inventory/classes/recipes/miniflux
