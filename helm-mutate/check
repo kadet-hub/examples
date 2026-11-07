@@ -207,7 +207,7 @@ else
   # Argo CD publishes its manifest in the repository only, so it is pinned by
   # the commit of its tag (EX-3).
   # renovate: datasource=github-tags depName=argoproj/argo-cd
-  ARGOCD_COMMIT=f55566445ee3a2a4f3339bf10df0f6bc1ecf7f23 # v3.6.0
+  ARGOCD_COMMIT=94037c4d4e1af4bd0651d37a179fbd9e347e668c # v3.6.1
   # renovate: datasource=github-release-attachments depName=fluxcd/flux2
   FLUX_VERSION=v2.10.0
   FLUX_SHA256=a8c838ccd9be5d30eba9df87cd229b7c4eb80c0049fba1bc3b9840829f267f28
