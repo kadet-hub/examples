@@ -2677,7 +2677,7 @@ a port-forward to its Service.
   - Test: `examples` workflow, job `matrix-federation`: the deploy in
     `matrix-federation/tests/chainsaw-test.yaml`, the federation in
     `matrix-federation/tests/federate.sh`
-  - Since: this change
+  - Since: #172
 
 - EX-33a: `matrix-federation/check` MUST fail unless joining a new alias
   of `b.example.test` from `a.example.test` gets 404 while `b.example.test`
@@ -2700,7 +2700,7 @@ a port-forward to its Service.
   servers outside the cluster.
 
   - Test: `examples` workflow, job `matrix-federation`
-  - Since: this change
+  - Since: #172
 
 ## Open questions
 
