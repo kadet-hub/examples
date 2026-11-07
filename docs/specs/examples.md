@@ -2537,6 +2537,15 @@ Services, all but Synapse, which EX-32c explains. Chromium on Linux trusts the C
 in a temporary home directory, so Chromium verifies Keycloak's
 certificate and name.
 
+Each client secret is a ref with a `random` function in the class `sso`,
+which the target `keycloak` and the app's target both read. `check` runs
+the first compile, which creates these refs, one target at a time
+(`--parallelism 1`). Kapitan 0.36.3 creates a ref file by opening it for
+writing, and a parallel compile that reads the file in that moment finds
+it empty and stops with `'NoneType' object has no attribute 'items'`.
+2 of 40 parallel first compiles of this project on one machine with 24
+CPUs failed that way. EX-31 describes the same race in `open-webui-rag`.
+
 Gitea keeps its login sources in its database. `app.ini` has no setting
 for them, and the admin page or the CLI creates them. The recipe `gitea`
 1.0.1 leaves the chart's OAuth sources out. The target adds the init
@@ -2626,7 +2635,8 @@ Synapse `restricted`.
   - Test: `examples` workflow, job `sso-keycloak`: the deploy in
     `sso-keycloak/tests/chainsaw-test.yaml`, the logins in
     `sso-keycloak/tests/login.py`
-  - Since: #156; Chainsaw and Playwright: #166
+  - Since: #156; Chainsaw and Playwright: #166; first compile one target
+    at a time: #191
 
 - EX-32a: `sso-keycloak/check` MUST fail unless changing Gitea's URL in a
   copy of the class `sso` changes the redirect URI of the client `gitea` in

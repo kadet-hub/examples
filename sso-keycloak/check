@@ -126,7 +126,9 @@ compile() {
   "${py[@]}" kapitan compile --refs-path "$tmp/refs" "$@" >"$tmp/compile.log" 2>&1 ||
     { cat "$tmp/compile.log" >&2; exit 1; }
 }
-compile
+# One target at a time: keycloak and each app read the client secret the
+# first compile creates, and a parallel compile can read its file empty.
+compile --parallelism 1
 compile --reveal
 reveal() { "${py[@]}" kapitan refs --refs-path "$tmp/refs" --reveal --tag "?{base64:$1}"; }
 echo "compiled $(find compiled -type f | wc -l) files"
