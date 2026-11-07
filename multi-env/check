@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One inventory, three environments, two clusters (EX-28 to EX-28b).
+# One inventory, three environments, two clusters (EX-28 to EX-28c).
 # Verifies the latest signed index, the recipe pinned in
 # fetch/targets/recipes.yml and the generator it pins, and pulls them by
 # digest. Compiles the targets dev, stage and prod. Exits 0 only if
@@ -10,7 +10,7 @@
 #   it from the three env classes into common.yml changes no compiled file,
 # - deployed to the kind clusters the inventory names, each target runs with
 #   the cluster, namespace, replicas, memory limit, hostname and storage class
-#   of the table below.
+#   of the table below, and no miniflux pod restarted.
 # Set KEEP=1 to keep the clusters.
 # Needs gh (authenticated), jq, oras, uv, kind, kubectl, curl, docker.
 set -euo pipefail
@@ -230,13 +230,20 @@ watch_pods &
 watcher=$!
 
 # EX-28: PostgreSQL first, because miniflux exits while it cannot connect.
-# The images run as root, so the namespaces enforce baseline.
+# Then one miniflux pod alone, as the recipe's README asks: miniflux migrates
+# the empty database at start without a lock. The target's replicas follow
+# once that pod is ready. The images run as root, so the namespaces enforce
+# baseline.
 while read -r t cluster ns _; do
   deploying=$SECONDS
   kubectl --context "kind-$cluster" create namespace "$ns" >/dev/null
   kubectl --context "kind-$cluster" label namespace "$ns" pod-security.kubernetes.io/enforce=baseline >/dev/null
   kubectl --context "kind-$cluster" apply -R -f "compiled/$t" -l name=miniflux-db >/dev/null
   install_wait "$cluster" "$ns" rollout status statefulset/miniflux-db --timeout=300s >/dev/null
+  kubectl --context "kind-$cluster" apply -R -f "compiled/$t" --dry-run=client -o json |
+    jq '(.items[] | select(.kind == "Deployment") | .spec.replicas) = 1' |
+    kubectl --context "kind-$cluster" apply -f - >/dev/null
+  install_wait "$cluster" "$ns" rollout status deploy/miniflux --timeout=300s >/dev/null
   kubectl --context "kind-$cluster" apply -R -f "compiled/$t" >/dev/null
   install_wait "$cluster" "$ns" rollout status deploy/miniflux --timeout=300s >/dev/null
   echo "deployed $t to $cluster in $((SECONDS - deploying))s"
@@ -287,9 +294,14 @@ while read -r t cluster ns replicas memory hostname class; do
   echo "EX-28: $t on $cluster in namespace $ns: ready replicas $ready, memory.max $limits ($memory)," \
     "API endpoint $endpoint, database claim on $class with reclaim policy $reclaim"
 done <<<"$expected"
-# EX-28: a pod that lost the race for the first migration exited and started again.
-for c in "${clusters[@]}"; do
+# EX-28c: no miniflux pod restarted.
+restarts=$(for c in "${clusters[@]}"; do
   kubectl --context "kind-$c" get pods -A -l name=miniflux -o json | jq -r --arg c "$c" '.items[]
     | "  \($c) \(.metadata.namespace)/\(.metadata.name): restart count \(.status.containerStatuses[0].restartCount)"'
-done
+done)
+echo "$restarts"
+if grep -qv ': restart count 0$' <<<"$restarts"; then
+  echo "EX-28c: a miniflux pod restarted" >&2
+  exit 1
+fi
 echo "multi-env: passed in $((SECONDS - started))s"
