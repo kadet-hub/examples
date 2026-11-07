@@ -48,6 +48,20 @@ parameters:
           realm:
             realm: ${sso.realm}
             enabled: true
+            # With clientScopes set, Keycloak creates its default client
+            # scopes, such as profile and email, only with this attribute.
+            attributes:
+              CreateDefaultClientScopes: "true"
+            # Keycloak's userinfo endpoint requires openid among the scopes of
+            # the token. Mattermost asks for none, because with openid it
+            # switches to its OpenID provider, which Team Edition lacks. As a
+            # default scope of its client, openid is in the token all the same.
+            clientScopes:
+              - name: openid
+                protocol: openid-connect
+                attributes:
+                  include.in.token.scope: "true"
+                  display.on.consent.screen: "false"
             groups:
               - name: ${sso.clients.gitea.group}
               - name: ${sso.clients.open-webui.group}
@@ -65,6 +79,10 @@ parameters:
                 groups:
                   - /${sso.clients.gitea.group}
                   - /${sso.clients.open-webui.group}
+                # Mattermost's user ID, a number unique in the realm.
+                attributes:
+                  mattermost_id:
+                    - "1"
                 credentials:
                   - type: password
                     value: ${escape:PASSWORD_ALICE}
@@ -76,6 +94,9 @@ parameters:
                 enabled: true
                 groups:
                   - /family
+                attributes:
+                  mattermost_id:
+                    - "2"
                 credentials:
                   - type: password
                     value: ${escape:PASSWORD_BOB}
@@ -96,6 +117,34 @@ parameters:
                 secret: ${escape:CLIENT_SECRET_MINIFLUX}
                 redirectUris:
                   - ${sso.clients.miniflux.redirect_uri}
+              - clientId: ${sso.clients.mattermost.id}
+                secret: ${escape:CLIENT_SECRET_MATTERMOST}
+                redirectUris:
+                  - ${sso.clients.mattermost.redirect_uri}
+                defaultClientScopes:
+                  - basic
+                  - profile
+                  - email
+                  - openid
+                protocolMappers:
+                  # Mattermost reads the user ID from the integer id, as
+                  # GitLab's API returns it.
+                  - name: id
+                    protocol: openid-connect
+                    protocolMapper: oidc-usermodel-attribute-mapper
+                    config:
+                      user.attribute: mattermost_id
+                      claim.name: id
+                      jsonType.label: long
+                      userinfo.token.claim: "true"
+                      id.token.claim: "false"
+                      access.token.claim: "false"
+              - clientId: ${sso.clients.matrix-synapse.id}
+                secret: ${escape:CLIENT_SECRET_MATRIX_SYNAPSE}
+                redirectUris:
+                  - ${sso.clients.matrix-synapse.redirect_uri}
+                protocolMappers:
+                  - ${sso.groups_mapper}
           spec:
             placeholders:
               PASSWORD_ALICE:
@@ -118,6 +167,14 @@ parameters:
                 secret:
                   name: sso-clients
                   key: miniflux
+              CLIENT_SECRET_MATTERMOST:
+                secret:
+                  name: sso-clients
+                  key: mattermost
+              CLIENT_SECRET_MATRIX_SYNAPSE:
+                secret:
+                  name: sso-clients
+                  key: matrix-synapse
     certmanager:
       # The CA of the class sso signs Keycloak's certificate.
       issuers:
@@ -142,6 +199,10 @@ parameters:
               value: ${sso.clients.open-webui.secret}
             miniflux:
               value: ${sso.clients.miniflux.secret}
+            mattermost:
+              value: ${sso.clients.mattermost.secret}
+            matrix-synapse:
+              value: ${sso.clients.matrix-synapse.secret}
         sso-users:
           string_data:
             alice:

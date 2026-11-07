@@ -34,8 +34,8 @@ env:
   # renovate: datasource=docker depName=registry.k8s.io/kustomize/kustomize
   KUSTOMIZE_IMAGE: registry.k8s.io/kustomize/kustomize:v5.8.3@sha256:429eda4a1c76a7de458d0c4ca3ded9b5d764899ff6bdaeccc1d98b1b6ee873e4
   # renovate: datasource=github-release-attachments depName=pulumi/pulumi
-  PULUMI_VERSION: v3.270.0
-  PULUMI_SHA256: d05899c251cb0413a9a2304f23229218c46852a61256913f34f08ebc27266139
+  PULUMI_VERSION: v3.273.0
+  PULUMI_SHA256: ec08f86671fd58f0a186540e1cee00066393beaf5c6716b0075f690919800432
   # Provider plugin linux-amd64 archive at the @pulumi/kubernetes version in
   # same-app/pulumi/package-lock.json, checked by same-app/check.
   # renovate: datasource=github-release-attachments depName=pulumi/pulumi-kubernetes
@@ -61,8 +61,8 @@ env:
   KCL_VERSION: v0.13.3
   KCL_SHA256: 37c8bf8e965f3f04f512a46fdb1ba471174d7d4592a831123115bcedb77d2633
   # renovate: datasource=node-version depName=node
-  NODE_VERSION: 26.12.1
-  NODE_SHA256: 6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd
+  NODE_VERSION: 26.13.0
+  NODE_SHA256: d28a96af6c38596f6d9d97c0ee531c13d238d757742387d1928de822d959e997
   # renovate: datasource=github-release-attachments depName=google/gvisor
   GVISOR_RELEASE: release-20261012.0
   GVISOR_SHA512: ce2e1aeb853c104e854dea6644333a1dba0fbc9dd1646af97e1d013fdf810da6d4176dd96f2139d7b055e5382117c0d7c4567ebd64ed9bef47fdd15f80fd67ab

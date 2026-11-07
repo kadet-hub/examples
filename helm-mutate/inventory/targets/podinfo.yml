@@ -21,8 +21,8 @@ parameters:
       match: {kind: Deployment, name: podinfo}
       images:
         ghcr.io/stefanprodan/podinfo:
-          tag: 6.15.0
-          digest: sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da
+          tag: 6.17.0
+          digest: sha256:fa2f27c1a8561097e5144bfc0853eba6054d743b68b03de4cad4675616ddefb0
     # Restricted Pod Security for the container, and a memory limit, merged
     # into the container named podinfo instead of replacing the list. The
     # image's user is the name app, which runAsNonRoot cannot verify without

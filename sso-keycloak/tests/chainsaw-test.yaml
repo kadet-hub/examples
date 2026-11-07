@@ -170,18 +170,6 @@ spec:
               kind: Deployment
               metadata: {name: miniflux, namespace: miniflux}
               (status.readyReplicas == spec.replicas): true
-        # open-webui 1.0.0 has no readiness probe, so its pod is ready before
-        # Open WebUI listens. A port-forward ends at the first connection the
-        # pod refuses.
-        - script:
-            content: |
-              for _ in $(seq 150); do
-                kubectl get --raw /api/v1/namespaces/open-webui/services/open-webui:80/proxy/health 2>/dev/null |
-                  jq -e '.status == true' >/dev/null && exit 0
-                sleep 2
-              done
-              echo "Open WebUI did not answer /health" >&2
-              exit 1
       catch:
         - events: {namespace: gitea}
         - describe: {apiVersion: v1, kind: Pod, namespace: gitea}
@@ -192,3 +180,55 @@ spec:
         - events: {namespace: miniflux}
         - describe: {apiVersion: v1, kind: Pod, namespace: miniflux}
         - podLogs: {namespace: miniflux, tail: 50}
+
+    # Mattermost and Synapse connect to their database on start, so the
+    # Clusters first. Mattermost makes the first account a system admin, so
+    # the logins wait for the recipe's Job that creates the admin.
+    - name: chat
+      try:
+        - apply: {file: ../compiled/mattermost/manifests/mattermost/postgresql-*.yml}
+        - apply: {file: ../compiled/matrix-synapse/manifests/matrix-synapse/postgresql-*.yml}
+        - assert:
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata: {name: postgresql-cluster, namespace: mattermost}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - assert:
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata: {name: postgresql-cluster, namespace: matrix-synapse}
+              status:
+                (conditions[?type == 'Ready']):
+                  - status: "True"
+        - apply: {file: ../compiled/mattermost/manifests/mattermost/*.yml}
+        - apply: {file: ../compiled/matrix-synapse/manifests/matrix-synapse/*.yml}
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata: {name: mattermost-mattermost-team-edition, namespace: mattermost}
+              (status.readyReplicas == spec.replicas): true
+        - assert:
+            resource:
+              apiVersion: batch/v1
+              kind: Job
+              metadata: {name: mattermost-admin, namespace: mattermost}
+              status:
+                succeeded: 1
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: StatefulSet
+              metadata: {name: matrix-synapse, namespace: matrix-synapse}
+              (status.readyReplicas == spec.replicas): true
+      catch:
+        - events: {namespace: mattermost}
+        - describe: {apiVersion: v1, kind: Pod, namespace: mattermost}
+        - podLogs: {namespace: mattermost, tail: 50}
+        - events: {namespace: matrix-synapse}
+        - describe: {apiVersion: v1, kind: Pod, namespace: matrix-synapse}
+        - podLogs: {namespace: matrix-synapse, tail: 50}
