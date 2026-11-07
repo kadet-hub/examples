@@ -39,8 +39,8 @@ env:
   # Provider plugin linux-amd64 archive at the @pulumi/kubernetes version in
   # same-app/pulumi/package-lock.json, checked by same-app/check.
   # renovate: datasource=github-release-attachments depName=pulumi/pulumi-kubernetes
-  PULUMI_KUBERNETES_VERSION: v4.34.2
-  PULUMI_KUBERNETES_SHA256: b2a3471a897d8d4aa5c6f0ea2933d363dfa72bee8ed651a16246a09e3e728bb6
+  PULUMI_KUBERNETES_VERSION: v4.34.3
+  PULUMI_KUBERNETES_SHA256: 868aa7dcd6961a9967612e388b64d0d36e87099f3f9ffae6d6ba2e0b920ab0aa
   # renovate: datasource=docker depName=registry.k8s.io/kube-apiserver
   KUBE_APISERVER_IMAGE: registry.k8s.io/kube-apiserver:v1.37.2@sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4
   # renovate: datasource=docker depName=registry.k8s.io/kubectl
