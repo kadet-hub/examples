@@ -1,0 +1,102 @@
+# Synapse from the published recipe with its option oidc, with Keycloak as
+# OIDC provider. Users of the group chat get an account on their first login.
+classes:
+  - recipes.matrix-synapse
+  - recipes.matrix-synapse.oidc
+  - sso
+parameters:
+  namespace: matrix-synapse
+  kapitan:
+    vars:
+      target: matrix-synapse
+  applications:
+    matrix-synapse:
+      server_name: example.test
+      public_baseurl: ${sso.clients.matrix-synapse.url}/
+      registration_shared_secret: ?{base64:matrix-synapse/registration-shared-secret||random:loweralphanum:64}
+      admin:
+        username: synapse-admin
+        password: ?{base64:matrix-synapse/admin-password||random:str:24}
+      oidc:
+        name: Keycloak
+        issuer: ${sso.issuer}
+        client_id: ${sso.clients.matrix-synapse.id}
+        client_secret: ${sso.clients.matrix-synapse.secret}
+    postgresql:
+      # One node: further instances on it would share its disk.
+      instances: 1
+  components:
+    matrix-synapse:
+      env:
+        # Synapse reads Keycloak's discovery document over TLS.
+        SSL_CERT_FILE: /etc/sso/ca.crt
+      ports:
+        https:
+          container_port: 8443
+          service_port: 8443
+      config_maps:
+        config:
+          data:
+            # The recipe's provider with a required group in the claim groups.
+            oidc.yaml:
+              value: |
+                oidc_providers:
+                  - idp_id: oidc
+                    idp_name: ${applications.matrix-synapse.oidc.name}
+                    issuer: ${applications.matrix-synapse.oidc.issuer}
+                    client_id: ${applications.matrix-synapse.oidc.client_id}
+                    client_secret_path: /secrets/oidc-client-secret
+                    scopes:
+                      - openid
+                      - profile
+                    user_mapping_provider:
+                      config:
+                        localpart_template: "{{ user.preferred_username }}"
+                        display_name_template: "{{ user.name }}"
+                    attribute_requirements:
+                      - attribute: groups
+                        value: ${sso.clients.matrix-synapse.group}
+            # Synapse sets its OIDC session cookie Secure, which a browser
+            # keeps from an HTTPS origin only. The recipe's listener on 8008
+            # stays for the probe and the admin Job. Read after
+            # federation.yaml, so these listeners replace the recipe's.
+            tls.yaml:
+              value: |
+                tls_certificate_path: /secrets/tls.crt
+                tls_private_key_path: /secrets/tls.key
+                listeners:
+                  - port: ${components.matrix-synapse.ports.http.container_port}
+                    type: http
+                    x_forwarded: true
+                    resources:
+                      - names:
+                          - client
+                  - port: ${components.matrix-synapse.ports.https.container_port}
+                    type: http
+                    tls: true
+                    resources:
+                      - names:
+                          - client
+      secrets:
+        credentials:
+          string_data:
+            # Signed by the CA of the class sso, from refs as the CA is.
+            tls.crt:
+              value: ?{base64:matrix-synapse/tls.crt}
+            tls.key:
+              value: ?{base64:matrix-synapse/tls.key}
+      volumes:
+        sso-ca:
+          secret:
+            secretName: sso-ca
+      volume_mounts:
+        sso-ca:
+          mount_path: /etc/sso
+          read_only: true
+  generators:
+    kubernetes:
+      secrets:
+        sso-ca:
+          string_data:
+            ca.crt:
+              value: ${sso.ca}

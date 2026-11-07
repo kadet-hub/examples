@@ -1,0 +1,64 @@
+# Mattermost Team Edition from the published recipe. Its only SSO login is
+# GitLab's, which here reads Keycloak's endpoints. Every user of the realm
+# with a mattermost_id gets an account on the first login, after the admin
+# that the recipe's Job creates.
+classes:
+  - recipes.mattermost
+  - sso
+parameters:
+  namespace: mattermost
+  kapitan:
+    vars:
+      target: mattermost
+  applications:
+    mattermost:
+      admin:
+        username: mattermost-admin
+        email: mattermost-admin@example.test
+        password: ?{base64:mattermost/admin-password||random:str:24}
+    postgresql:
+      # One node: further instances on it would share its disk.
+      instances: 1
+  components:
+    mattermost-mattermost-team-edition:
+      env:
+        # Mattermost reads Keycloak's token and userinfo endpoints over TLS.
+        SSL_CERT_FILE: /etc/sso/ca.crt
+      volumes:
+        sso-ca:
+          secret:
+            secretName: sso-ca
+      volume_mounts:
+        sso-ca:
+          mount_path: /etc/sso
+          read_only: true
+  generators:
+    kubernetes:
+      secrets:
+        mattermost-mattermost-team-edition-config:
+          string_data:
+            MM_SERVICESETTINGS_SITEURL:
+              value: ${sso.clients.mattermost.url}
+            # Mattermost refuses connections to private addresses, such as
+            # Keycloak's Service, unless the host is listed.
+            MM_SERVICESETTINGS_ALLOWEDUNTRUSTEDINTERNALCONNECTIONS:
+              value: ${sso.host}
+            MM_GITLABSETTINGS_ENABLE:
+              value: "true"
+            MM_GITLABSETTINGS_ID:
+              value: ${sso.clients.mattermost.id}
+            MM_GITLABSETTINGS_SECRET:
+              value: ${sso.clients.mattermost.secret}
+            MM_GITLABSETTINGS_AUTHENDPOINT:
+              value: ${sso.issuer}/protocol/openid-connect/auth
+            MM_GITLABSETTINGS_TOKENENDPOINT:
+              value: ${sso.issuer}/protocol/openid-connect/token
+            MM_GITLABSETTINGS_USERAPIENDPOINT:
+              value: ${sso.issuer}/protocol/openid-connect/userinfo
+            # The user name from preferred_username instead of GitLab's username.
+            MM_GITLABSETTINGS_USEPREFERREDUSERNAME:
+              value: "true"
+        sso-ca:
+          string_data:
+            ca.crt:
+              value: ${sso.ca}

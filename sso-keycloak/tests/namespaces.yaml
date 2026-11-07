@@ -41,3 +41,15 @@ kind: Namespace
 metadata:
   name: miniflux
   labels: {pod-security.kubernetes.io/enforce: baseline}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mattermost
+  labels: {pod-security.kubernetes.io/enforce: restricted}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: matrix-synapse
+  labels: {pod-security.kubernetes.io/enforce: restricted}
