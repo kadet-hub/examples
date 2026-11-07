@@ -3,7 +3,7 @@
   "private": true,
   "main": "index.ts",
   "dependencies": {
-    "@pulumi/kubernetes": "4.34.2",
+    "@pulumi/kubernetes": "4.34.3",
     "@pulumi/pulumi": "3.273.0"
   },
   "devDependencies": {
