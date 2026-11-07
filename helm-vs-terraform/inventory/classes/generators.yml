@@ -8,7 +8,7 @@ parameters:
         source: ghcr.io/kadet-hub/kubernetes:1.14.0@sha256:787129e1eaed6b9bc868fe4c4aec58d40de6a89fc3cc08424a4cb5822b855080
         output_path: lib/kubernetes
       - type: oci
-        source: ghcr.io/kadet-hub/terraform-aws:0.1.2@sha256:5030e53e51c3eafc3404d6c77bbf6276ce8628894d65419917945081cf2b151f
+        source: ghcr.io/kadet-hub/terraform-aws:0.1.4@sha256:9f1c2415fc071c8460e2f8daa6ee428d517688eca2a9c4a236d3443ff6e7e065
         output_path: lib/terraform-aws
     compile:
       - {input_type: kadet, output_type: yml, input_paths: [lib/kubernetes], output_path: manifests/}
