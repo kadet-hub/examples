@@ -284,9 +284,8 @@ schedule instead of trusting the state on the publishing day.
   `image_name:` key or an `-image=` argument names one, by tag or by
   `tag@sha256:digest`, as
   `repository`, `tag` and `digest` values, or as a mutate `images` entry
-  with `tag` and `digest`. A `tag` value may be quoted: trust-manager's
-  default package image has the tag `20250419.2`, which YAML reads as a
-  number otherwise. `renovate.json` keeps only `**/node_modules/**`
+  with `tag` and `digest`. A `tag` value may be quoted, for a tag that
+  YAML would read as a number. `renovate.json` keeps only `**/node_modules/**`
   of the `ignorePaths` that `config:recommended` sets, because those skip
   `tests/` and with it the image pins of the Chainsaw tests. Package rules put what has to change together
   into one pull request: the chart and images of the cert-manager and
