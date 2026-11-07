@@ -72,7 +72,7 @@ YAML
     ;;
   kube-prometheus-stack)
     # renovate: datasource=docker depName=ghcr.io/prometheus-community/charts/kube-prometheus-stack
-    CHART=ghcr.io/prometheus-community/charts/kube-prometheus-stack:92.18.0@sha256:bf0af6052d5e38a59118bb14f1cb5db1705a45d18799836d699e0a21d6ff5b76
+    CHART=ghcr.io/prometheus-community/charts/kube-prometheus-stack:92.22.0@sha256:f3987a327638427f4a4a514f2dd2f1065b8c1f89669ea8517627b67a56790601
     # renovate: datasource=github-release-attachments depName=prometheus-operator/prometheus-operator
     CRDS_VERSION=v0.94.1
     CRDS_SHA256=e35c128e5ae8607e04fe92e7d6aae28c7fc9cf24262549a84904fa0042ac21ae
