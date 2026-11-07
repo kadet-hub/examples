@@ -2239,7 +2239,7 @@ enforce the Pod Security level `baseline`.
 - EX-28c: `multi-env/check` MUST fail when a miniflux pod of any target has
   restarted once all three targets are deployed.
 
-  Until #tbd, `check` applied stage's 2 and prod's 3 replicas at once on
+  Until #188, `check` applied stage's 2 and prod's 3 replicas at once on
   the empty database. In each of the 34 passing runs of the job on
   7 November 2026, on `main` and on pull requests, one of stage's two pods
   restarted once or twice, and in 17 of them one or two of prod's three
@@ -2253,7 +2253,7 @@ enforce the Pod Security level `baseline`.
     `v1.37.0` with the one-replica step left out, `check` failed EX-28c
     with a pod of stage at 2 restarts and one of prod at 1; with the step,
     all six pods were at 0 and `check` passed
-  - Since: tbd
+  - Since: #188
 
 ## Talos and the app on top
 
