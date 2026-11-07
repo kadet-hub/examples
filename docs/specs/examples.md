@@ -2703,7 +2703,7 @@ sign in through Keycloak, therefore gets the role `system_user` only.
   - Test: `examples` workflow, job `sso-keycloak`: the deploy in
     `sso-keycloak/tests/chainsaw-test.yaml`, the logins in
     `sso-keycloak/tests/login.py`
-  - Since: #tbd
+  - Since: #173
 
 Synapse 1.164.2 logs in through the provider of the recipe option `oidc`,
 DEC-287 of the recipe `matrix-synapse`, with the issuer, client ID and
@@ -2767,7 +2767,7 @@ apps do.
   - Test: `examples` workflow, job `sso-keycloak`: the deploy in
     `sso-keycloak/tests/chainsaw-test.yaml`, the logins in
     `sso-keycloak/tests/login.py`
-  - Since: #tbd
+  - Since: #173
 
 ## Open questions
 
