@@ -115,7 +115,8 @@ else
   cat "$out/moved.log" >&2
   status=1
 fi
-if build timoni/prod.cue | grep -q 'imagePullPolicy: Always'; then
+# Read whole, as grep -q would end the pipe early and pipefail fail it.
+if grep -q 'imagePullPolicy: Always' <<<"$(build timoni/prod.cue)"; then
   echo "timoni: unpinned bundle built the new push"
 else
   echo "timoni did not build the new push without the pin" >&2

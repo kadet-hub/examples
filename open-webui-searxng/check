@@ -254,8 +254,10 @@ kubectl -n searxng wait pod/searxng-0 --for=delete --timeout=120s >/dev/null
 since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 r=$(search)
 code=${r##*$'\n'}
-if [[ $code != 400 ]] || ! kubectl -n open-webui logs open-webui-0 -c open-webui --since-time="$since" |
-  grep -qF "Cannot connect to host $host"; then
+# The log is read whole: grep -q would end a pipe while kubectl still writes,
+# and pipefail would then fail the search for a line that is there.
+if [[ $code != 400 ]] || ! grep -qF "Cannot connect to host $host" \
+  <<<"$(kubectl -n open-webui logs open-webui-0 -c open-webui --since-time="$since")"; then
   echo "web search for $query with SearXNG scaled to zero: HTTP $code: ${r%$'\n'*}" >&2
   exit 1
 fi
