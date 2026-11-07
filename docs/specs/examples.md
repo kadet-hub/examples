@@ -2432,19 +2432,21 @@ and the restart policies of both runtimes.
 ## Single sign-on with Keycloak
 
 `sso-keycloak/` backs the kadet-hub.org blog post on single sign-on for
-self-hosted apps. Keycloak is the OIDC provider of Gitea, Open WebUI and
-Miniflux. All four come from published recipes of kadet-hub/recipes:
-`keycloak` with the operator recipe `keycloak-operator`, `gitea`,
-`open-webui` and `miniflux`. The fetch inventory `fetch/targets/recipes.yml`
-pins these five and `cert-manager` and `cnpg`, the recipes the targets
+self-hosted apps. Keycloak is the identity provider of Gitea, Open WebUI,
+Miniflux, Mattermost and Synapse. All six come from published recipes of
+kadet-hub/recipes: `keycloak` with the operator recipe
+`keycloak-operator`, `gitea`, `open-webui`, `miniflux`, `mattermost` and
+`matrix-synapse`. The fetch inventory `fetch/targets/recipes.yml` pins
+these seven and `cert-manager` and `cnpg`, the recipes the targets
 include. `check` adds the recipes their index records list under
 `includes`, `postgresql`, `valkey` and `ollama`, as EX-17 describes. The
 operators `cert-manager`, `cnpg` and `keycloak-operator` get a target and a
-namespace each, and so do Keycloak and the three apps. Renovate moves the
-seven pinned recipes in one pull request, the group `sso-keycloak
+namespace each, and so do Keycloak and the five apps. Renovate moves the
+nine pinned recipes in one pull request, the group `sso-keycloak
 recipes`. `keycloak-operator` runs only the Keycloak version of
-`keycloak`, and `keycloak`, `gitea` and `open-webui` share `postgresql`
-and `valkey`, which one project takes at one digest only.
+`keycloak`. `keycloak`, `gitea`, `mattermost` and `matrix-synapse` share
+`postgresql`, and `gitea` and `open-webui` share `valkey`, which one
+project takes at one digest only.
 
 The class `sso` holds what both ends of a login read. It sets the issuer,
 and per app the client ID, the app's URL, the redirect URI, the client
@@ -2454,7 +2456,9 @@ groups `git`, `chat` and `family`, the users `alice` and `bob` and one
 confidential client per app, whose client ID and redirect URI come from the
 class. The app targets read the same values: Gitea's `ROOT_URL` and the
 client ID and secret of its login source, Open WebUI's and Miniflux's
-redirect URI, client ID and secret. The client secrets and the users'
+redirect URI, client ID and secret, and Mattermost's and Synapse's URL,
+client ID and secret, from which each builds its redirect URI. The client
+secrets and the users'
 passwords reach the realm as placeholders, which the import fills from the
 Secrets `sso-clients` and `sso-users` of the target `keycloak`. Those
 Secrets hold the same refs as the apps' Secrets. The target renders them
@@ -2500,14 +2504,14 @@ and `sso/ca.key`, which the class and the target `keycloak` read. A
 repository creates them once and commits the refs. Each app target renders
 a Secret `sso-ca` with the certificate, mounts it at `/etc/sso` and sets
 `SSL_CERT_FILE` to it. The apps themselves serve plain HTTP on their
-Services. Chromium on Linux trusts the CAs in the NSS database of
+Services, all but Synapse, which EX-32c explains. Chromium on Linux trusts the CAs in the NSS database of
 `$HOME/.pki/nssdb`. `tests/login.py` adds the CA there with `certutil`,
 in a temporary home directory, so Chromium verifies Keycloak's
 certificate and name.
 
 Gitea keeps its login sources in its database. `app.ini` has no setting
 for them, and the admin page or the CLI creates them. The recipe `gitea`
-1.0.0 leaves the chart's OAuth sources out. The target adds the init
+1.0.1 leaves the chart's OAuth sources out. The target adds the init
 container `configure-oauth` after the recipe's `configure-gitea`. It adds
 the source `keycloak` with Gitea's CLI, or updates it when it exists, with
 `--required-claim-name groups --required-claim-value git`. The CLI reads
@@ -2542,21 +2546,21 @@ for those first. In a local run where Valkey's image took minutes to
 pull, Gitea waited in `CrashLoopBackOff` and EX-6 stopped the check.
 
 `check` creates the kind cluster and runs `tests/chainsaw-test.yaml`, which
-deploys in four steps and waits after each for what the next one needs:
+deploys in five steps and waits after each for what the next one needs:
 the CoreDNS rule, until CoreDNS has restarted; the namespaces of
 `tests/namespaces.yaml` and the three operators, until their Deployments
 are ready; Keycloak's PostgreSQL Cluster, until it is Ready, then
-Keycloak, until it is Ready and the realm import is Done; the apps'
-databases and Valkey, then the apps, until every Deployment and
-StatefulSet is ready and Open WebUI answers `/health`. open-webui 1.0.0
-has no readiness probe, so its pod is ready before Open WebUI listens,
-and a port-forward ends at the first connection the pod refuses. Once
-Chainsaw passed, `check` runs `tests/login.py`.
+Keycloak, until it is Ready and the realm import is Done; the databases
+and Valkey of Gitea, Open WebUI and Miniflux, then the apps, until every
+Deployment and StatefulSet is ready; the PostgreSQL Clusters of
+Mattermost and Synapse, until they are Ready, then both apps, until they
+are ready and the Job `mattermost-admin` has completed. Once Chainsaw
+passed, `check` runs `tests/login.py`.
 
 Keycloak, its operator, Open WebUI and the PostgreSQL of Miniflux do not
 meet the Pod Security level `restricted`. Their namespaces enforce
-`baseline`, the namespaces of cert-manager and CloudNativePG
-`restricted`.
+`baseline`, the namespaces of cert-manager, CloudNativePG, Mattermost and
+Synapse `restricted`.
 
 - EX-32: `sso-keycloak/check` MUST fail unless the recipes and generators
   pass the checks of EX-17 and, deployed to a new kind cluster:
@@ -2607,6 +2611,161 @@ meet the Pod Security level `restricted`. Their namespaces enforce
   - Test: `examples` workflow, job `sso-keycloak`
   - Since: #156
 
+Mattermost 12.0.2 Team Edition has no OIDC login. GitLab is its only SSO
+provider, as DEC-290 of the recipe `mattermost` in kadet-hub/recipes
+notes. The GitLab login is an OAuth 2.0 authorization code flow against
+three URLs of `GitLabSettings`. The target `mattermost` points them at
+Keycloak's endpoints with `MM_GITLABSETTINGS_*` variables in the Secret
+`mattermost-mattermost-team-edition-config`. Mattermost makes these calls
+in `GetAuthorizationCode` and `AuthorizeOAuthUser` of
+`server/channels/app/oauth.go` in v12.0.2:
+
+| Step | Mattermost sends | Variable | Keycloak endpoint |
+|---|---|---|---|
+| 1 | the browser to the URL with `response_type=code`, `client_id`, `redirect_uri` `<SiteURL>/signup/gitlab/complete` and `state`, without `scope` | `MM_GITLABSETTINGS_AUTHENDPOINT` | `<issuer>/protocol/openid-connect/auth` |
+| 2 | a form POST with `client_id`, `client_secret`, `code`, `grant_type=authorization_code` and `redirect_uri` | `MM_GITLABSETTINGS_TOKENENDPOINT` | `<issuer>/protocol/openid-connect/token` |
+| 3 | a GET with the access token as `Bearer` | `MM_GITLABSETTINGS_USERAPIENDPOINT` | `<issuer>/protocol/openid-connect/userinfo` |
+
+Mattermost decodes the answer of step 3 as a GitLab user with the fields
+`id`, an integer, `username`, `login`, `email`, `name` and
+`preferred_username` (`server/channels/app/oauthproviders/gitlab/gitlab.go`).
+It refuses a user without `id` or `email`. The decimal `id` becomes the
+account's auth data, by which Mattermost finds the account on every later
+login. The realm provides the fields this way:
+
+| Field | Keycloak claim | Source in the realm |
+|---|---|---|
+| `id` | `id`, JSON type long | user attribute `mattermost_id`, through a mapper `oidc-usermodel-attribute-mapper` on the client `mattermost` |
+| `email` | `email` | client scope `email` |
+| `name` | `name` | client scope `profile` |
+| `preferred_username` | `preferred_username` | client scope `profile`, which Mattermost takes as user name with `MM_GITLABSETTINGS_USEPREFERREDUSERNAME` |
+
+Keycloak's `sub` is a UUID string and does not decode as an integer,
+hence the attribute. Each user needs a number of their own. Two users with
+one number share one Mattermost account, because Mattermost compares the
+auth data only (`IsSameUser`). The realm import gives `alice` 1 and `bob`
+2. Keycloak 26.8.1's default user profile treats `mattermost_id` as an
+unmanaged attribute. The import stores it and the mapper reads it, but in
+a local run the admin API returned no attributes for `alice`, so the admin
+console does not show it either. A realm that adds users after the import
+has to declare the attribute in its user profile, which is not tested.
+
+Keycloak's userinfo endpoint answers 403 with `error="insufficient_scope",
+error_description="Missing openid scope"` when the access token's scopes
+lack `openid` (`UserInfoEndpoint.java` of 26.8.1). Mattermost cannot ask
+for it. With `openid` in `GitLabSettings.Scope` it uses its OpenID
+provider instead of GitLab's (`getSSOProvider` in `oauth.go`), which Team
+Edition does not have. The realm import therefore adds a client scope
+named `openid` and makes it a default client scope of the client
+`mattermost`, next to `basic`, `profile` and `email`. Keycloak writes the
+names of a client's default scopes into the token, whose `scope` then
+reads `openid email profile`. An import that lists `clientScopes` creates
+Keycloak's own default client scopes only with the realm attribute
+`CreateDefaultClientScopes: "true"` (`isCreateDefaultClientScopes` in
+`RealmManager.java`). In a local run without the scope, Mattermost logged
+`Error getting OAuth user` with the response 403. curl, making the three
+calls with the client `mattermost`, got the header above.
+
+Mattermost makes steps 2 and 3 with an HTTP client that refuses private
+addresses unless `ServiceSettings.AllowedUntrustedInternalConnections`
+lists the host (`MakeTransport` in
+`server/public/shared/httpservice/httpservice.go`). Keycloak's Service has
+a private address, so the target sets
+`MM_SERVICESETTINGS_ALLOWEDUNTRUSTEDINTERNALCONNECTIONS` to
+`sso.example.test`. Without it, step 2 failed in a local run with
+`address forbidden, you may need to set
+AllowedUntrustedInternalConnections`. Mattermost reads Keycloak's
+endpoints over TLS with `SSL_CERT_FILE`, as the other apps do.
+
+Team Edition's GitLab login has no group restriction. Every user of the
+realm with a `mattermost_id` gets an account on the first login, `bob`
+too. A user without the attribute has no claim `id`, which Mattermost
+refuses. That is read from the code and not tested. Mattermost makes the
+first account a system admin, also one from the GitLab login. The
+recipe's Job `mattermost-admin` creates that account from the target's
+`applications.mattermost.admin` as soon as Mattermost answers, and the
+Chainsaw test waits until the Job has completed. `alice`, the first to
+sign in through Keycloak, therefore gets the role `system_user` only.
+
+- EX-32b: `sso-keycloak/check` MUST fail unless, deployed as in EX-32,
+  `alice` signs in to Mattermost through its GitLab login and Keycloak's
+  session, and the session names `alice` with the auth service `gitlab`,
+  the auth data `1` and no role `system_admin`; a wrong password gets
+  Keycloak's form again and no Mattermost session; and `bob` signs in to
+  Mattermost.
+
+  Not tested: a group restriction, which Team Edition does not have, a
+  user without `mattermost_id`, and changing the attribute after the
+  import.
+
+  Related: EX-32
+
+  - Test: `examples` workflow, job `sso-keycloak`: the deploy in
+    `sso-keycloak/tests/chainsaw-test.yaml`, the logins in
+    `sso-keycloak/tests/login.py`
+  - Since: #tbd
+
+Synapse 1.164.2 logs in through the provider of the recipe option `oidc`,
+DEC-287 of the recipe `matrix-synapse`, with the issuer, client ID and
+secret of the class. The recipe's provider checks no group. The target
+replaces the file `oidc.yaml` of the ConfigMap `matrix-synapse` with the
+same provider and `attribute_requirements` for `chat` in the claim
+`groups`, which the client `matrix-synapse` gets from `sso.groups_mapper`
+as Gitea's and Open WebUI's do. Synapse answers a user outside the group
+with status 400 and its page `Authentication failed` with `You are not
+allowed to log in here.`, and logs `SSO attribute groups did not match
+required value 'chat'`.
+
+Synapse sets the cookies `oidc_session` and `oidc_session_no_samesite`
+with `Secure` when it sends the browser to Keycloak (`_SESSION_COOKIES` in
+`synapse/handlers/oidc.py`). Chromium keeps a `Secure` cookie only from
+an HTTPS origin. Without the cookie the callback fails with `No session
+cookie found`, which is read from the code. Synapse therefore serves its
+client API with TLS on port 8443, and `public_baseurl` is
+`https://matrix.example.test:8443/`. The target adds the file `tls.yaml`
+to the ConfigMap. Synapse reads it after `federation.yaml`, so its
+`listeners` replace the recipe's. They are the plain listener on 8008,
+which the readiness probe and the Job `matrix-synapse-admin` use, and the
+TLS listener on 8443. The CA of the class signs the certificate for
+`matrix.example.test`. `check` creates it with openssl after the CA and
+writes it to the refs `matrix-synapse/tls.crt` and
+`matrix-synapse/tls.key`, which the target adds to the Secret
+`matrix-synapse`. In a real network an ingress terminates TLS in front of
+Synapse, and the target needs neither file nor refs.
+
+A client starts the login at
+`/_matrix/client/v3/login/sso/redirect/oidc?redirectUrl=<client URL>`.
+After Keycloak, Synapse creates `@alice:example.test` from
+`preferred_username` on the first login. It answers with its page
+`Continue to your account`, which links to the client URL with a
+`loginToken`. A client listed in `sso.client_whitelist` gets a redirect
+instead, which the target does not set. The client trades the login token
+once at `/_matrix/client/v3/login` with the type `m.login.token` for an
+access token. Synapse keeps no browser session, so `tests/login.py` names
+Synapse's user by such a login: it follows the link's token from the page,
+trades it with `fetch` in the page, and calls
+`/_matrix/client/v3/account/whoami` with the access token. Synapse reads
+Keycloak's discovery document over TLS with `SSL_CERT_FILE`, as the other
+apps do.
+
+- EX-32c: `sso-keycloak/check` MUST fail unless, deployed as in EX-32 and
+  reached over HTTPS, Synapse completes `alice`'s login through Keycloak's
+  session with a login token, `/_matrix/client/v3/login` trades the token
+  for an access token, and `/whoami` with it names `@alice:example.test`;
+  a wrong password gets Keycloak's form again and no login token; and
+  `bob`, in the group `family` only, gets Synapse's page with `You are not
+  allowed to log in here.` and no login token.
+
+  Not tested: a browser at Synapse over plain HTTP, Element Web,
+  federation and the renewal of Synapse's certificate.
+
+  Related: EX-32
+
+  - Test: `examples` workflow, job `sso-keycloak`: the deploy in
+    `sso-keycloak/tests/chainsaw-test.yaml`, the logins in
+    `sso-keycloak/tests/login.py`
+  - Since: #tbd
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -2655,4 +2814,4 @@ meet the Pod Security level `restricted`. Their namespaces enforce
 | `cert-manager-mutate/` | One Kapitan project (targets `helm`, `cert-manager`, `trust-manager`), the charts pinned in `inventory/classes/`, the mutations in the two targets, `internal-ca.yaml`, `bundle.yaml`, one Chainsaw test; `check` |
 | `talos-apps/` | One Kapitan project (targets `talos`, `blackbox-exporter`) on the omegaconf backend, the networks both read in `inventory/classes/cluster.yml`, the talos generator pinned in `inventory/classes/generators.yml`, the recipe pinned in `fetch/targets/recipes.yml`; `check` (EX-29) |
 | `compose-kubernetes/` | One Kapitan project on the omegaconf backend (targets `cluster`, `compose`), the shared class `inventory/classes/miniflux.yml`, the recipe pinned in the fetch inventory `fetch/targets/recipes.yml`, the kadet component `components/compose` that writes `compose.yml`; `check` (EX-30 to EX-30b) |
-| `sso-keycloak/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `cnpg`, `keycloak-operator`, `keycloak`, `gitea`, `open-webui`, `miniflux`), the class `inventory/classes/sso.yml` that Keycloak and the apps read, the seven recipes pinned in the fetch inventory `fetch/targets/recipes.yml`, the Chainsaw test `tests/chainsaw-test.yaml` with `tests/namespaces.yaml`, the Playwright script `tests/login.py`; `check` (EX-32, EX-32a) |
+| `sso-keycloak/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `cnpg`, `keycloak-operator`, `keycloak`, `gitea`, `open-webui`, `miniflux`, `mattermost`, `matrix-synapse`), the class `inventory/classes/sso.yml` that Keycloak and the apps read, the nine recipes pinned in the fetch inventory `fetch/targets/recipes.yml`, the Chainsaw test `tests/chainsaw-test.yaml` with `tests/namespaces.yaml`, the Playwright script `tests/login.py`; `check` (EX-32 to EX-32c) |
