@@ -1,0 +1,19 @@
+# The recipes the targets include. open-webui includes ollama and valkey,
+# litellm includes postgresql, which come at the versions and digests the
+# index lists for them. ollama is pinned too, because the target ollama
+# includes it.
+parameters:
+  kapitan:
+    dependencies:
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/ollama:1.0.1@sha256:7d1081b5c348b8c6e119af4a972b91a5543e0fad1f92d494c8a86bd0026d7db2
+        output_path: inventory/classes/recipes/ollama
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/litellm:1.0.0@sha256:1c0b0e14f7d460b4b61be712bd342dd409a82c5cce62760bc2847da82e6a68c3
+        output_path: inventory/classes/recipes/litellm
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/qdrant:1.0.0@sha256:48d3dadaf619d3bf4d640abbfe48a4f46fb1c0ba988b6436531583a8feb6794b
+        output_path: inventory/classes/recipes/qdrant
+      - type: oci
+        source: ghcr.io/kadet-hub/recipes/open-webui:1.0.1@sha256:3af3e706db37531ed72ecfe3810a4d3cd726f3f5ca5ef5ac066ec51bffabebd7
+        output_path: inventory/classes/recipes/open-webui

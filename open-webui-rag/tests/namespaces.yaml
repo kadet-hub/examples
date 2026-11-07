@@ -1,0 +1,25 @@
+# Qdrant meets the level restricted. Ollama, LiteLLM and Open WebUI run as
+# root in their images.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ollama
+  labels: {pod-security.kubernetes.io/enforce: baseline}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: litellm
+  labels: {pod-security.kubernetes.io/enforce: baseline}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: qdrant
+  labels: {pod-security.kubernetes.io/enforce: restricted}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: open-webui
+  labels: {pod-security.kubernetes.io/enforce: baseline}

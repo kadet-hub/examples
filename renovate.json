@@ -221,6 +221,13 @@
       "groupName": "matrix-federation recipes"
     },
     {
+      "description": "EX-31: the recipes of open-webui-rag in one pull request, because open-webui includes the pinned ollama, which the project takes at one digest only",
+      "matchFileNames": [
+        "open-webui-rag/fetch/targets/recipes.yml"
+      ],
+      "groupName": "open-webui-rag recipes"
+    },
+    {
       "description": "EX-3: the Pulumi Kubernetes plugin at the @pulumi/kubernetes version",
       "matchPackageNames": [
         "@pulumi/kubernetes",
