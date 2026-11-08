@@ -17,7 +17,7 @@ is normalized is in [docs/specs/examples.md](../docs/specs/examples.md)
 |---|---|---|
 | metrics-server | 3.14.0 | `kubectl top nodes` answers |
 | cert-manager | v1.21.2 | a self-signed ClusterIssuer issues a Certificate |
-| kube-prometheus-stack | 92.11.0 | Prometheus scrapes the same jobs with the same health and loads the same rules, Alertmanager is ready, Grafana has the same datasources and dashboards as the chart's |
+| kube-prometheus-stack | 93.1.0 | Prometheus scrapes the same jobs with the same health and loads the same rules, Alertmanager is ready, Grafana has the same datasources and dashboards as the chart's |
 
 The rules and dashboards of kube-prometheus-stack are not copied from the
 chart. `kapitan/components/kube-prometheus-stack.jsonnet` compiles them
