@@ -1032,7 +1032,7 @@ chart's still fails.
     the tag
   - Since: #44; digest pinning: #50
 
-kube-prometheus-stack 92.11.0 cannot be compared object by object. Its
+kube-prometheus-stack 93.1.0 cannot be compared object by object. Its
 Kapitan side renders the operator, kube-state-metrics, node-exporter and
 Grafana with the `kubernetes` generator and Prometheus, Alertmanager and
 the 13 ServiceMonitors with the `prometheus-operator` generator, under the
@@ -1083,7 +1083,7 @@ Grafana's `GF_PATHS_*` and log mode.
     (`kube-prometheus-stack`); `manual:` with one ServiceMonitor and one
     rule group dropped from the Kapitan side, the check fails on the
     missing job and rules
-  - Since: #47
+  - Since: #47; Kapitan side at chart 93.1.0: #195
 
 Prometheus names a scrape job after the Service it scrapes, unless the
 ServiceMonitor's `jobLabel` names a label of that Service. The chart's
@@ -1098,8 +1098,8 @@ The rules and dashboards are not copied from the chart.
 `kapitan/components/kube-prometheus-stack.jsonnet` builds them with
 Kapitan's `jsonnet` input from the sources that the chart's
 `hack/sync_prometheus_rules.py` and `hack/sync_grafana_dashboards.py` read
-at the tag `kube-prometheus-stack-92.11.0`: kube-prometheus at
-`f81c076ab8f542c457840cd4c62656b8d6b4f43a`, the etcd mixin at
+at the tag `kube-prometheus-stack-93.1.0`: kube-prometheus at
+`b6c2f62b287524652592e6e2f7ea0d3054cb8ac6`, the etcd mixin at
 `479c194f3f5754f039a74c396f3e70f6419edf8e` and the chart's own
 `files/dashboards/k8s-coredns.json`. The kubernetes-mixin commit the
 scripts name is used for the Windows rules and dashboards only, which the
@@ -3027,8 +3027,9 @@ a knowledge base and adds the file to it.
   post's workflow template reads them from the folder?
 - OQ-6: `chart-vs-kapitan/check kube-prometheus-stack` compares what both
   sides do, not their versions. A chart pull request that leaves an image
-  tag or the CRDs of the Kapitan side behind passes CI. Should `check` also
-  compare the image tags of both sides?
+  tag or the CRDs of the Kapitan side behind passes CI. #122 and #182 moved
+  the chart from 92.11.0 to 92.22.0 that way, and #195 brought the Kapitan
+  side to 93.1.0. Should `check` also compare the image tags of both sides?
 
 ## Inventory
 
