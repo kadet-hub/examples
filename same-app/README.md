@@ -1,6 +1,6 @@
 # same-app
 
-The app from [the post](https://kadet-hub.org/blog/same-app/) rendered with
+The app from [the post](https://kadet-hub.org/guides/same-app/) rendered with
 Helm (`helm/`), Helmfile (`helmfile/`, the same chart and values files),
 Kustomize (`kustomize/`), Pulumi (`pulumi/`) and Kapitan (`kapitan/`). `./check` renders dev and prod with each tool and diffs the
 normalized output against Kapitan's.

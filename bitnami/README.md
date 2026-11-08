@@ -1,6 +1,6 @@
 # PostgreSQL without the Bitnami chart
 
-Companion to the post "Bitnami Helm alternatives: render manifests yourself" on the [kadet-hub blog](https://kadet-hub.org/blog/bitnami/).
+Companion to the post "Bitnami Helm alternatives: render manifests yourself" on the [kadet-hub blog](https://kadet-hub.org/guides/bitnami/).
 
 `inventory/targets/app-db.yml` describes one CloudNativePG Cluster. `run.sh`
 verifies the index and the [cloudnative-pg](https://kadet-hub.org/generators/cloudnative-pg/)

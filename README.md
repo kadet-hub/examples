@@ -7,20 +7,20 @@ longer holds.
 
 | Folder | Page | Script |
 |---|---|---|
-| [same-app](same-app/) | https://kadet-hub.org/blog/same-app/ | `same-app/check` |
-| [apiserver-dry-run](apiserver-dry-run/) | https://kadet-hub.org/blog/apiserver-dry-run/ | `apiserver-dry-run/check` |
-| [first-platform](first-platform/) | https://kadet-hub.org/blog/first-platform/ | `first-platform/check` |
-| [bitnami](bitnami/) | https://kadet-hub.org/blog/bitnami/ | `bitnami/run.sh` |
-| [verify-oci](verify-oci/) | https://kadet-hub.org/blog/verify-oci/ | `verify-oci/verify kubernetes 1.2.0 47` |
-| [gvisor-ci](gvisor-ci/) | https://kadet-hub.org/blog/gvisor-ci/ | `gvisor-ci/check` |
-| [config-tools](config-tools/) | https://kadet-hub.org/blog/config-tools/ | `config-tools/check` |
+| [same-app](same-app/) | https://kadet-hub.org/guides/same-app/ | `same-app/check` |
+| [apiserver-dry-run](apiserver-dry-run/) | https://kadet-hub.org/guides/apiserver-dry-run/ | `apiserver-dry-run/check` |
+| [first-platform](first-platform/) | https://kadet-hub.org/guides/first-platform/ | `first-platform/check` |
+| [bitnami](bitnami/) | https://kadet-hub.org/guides/bitnami/ | `bitnami/run.sh` |
+| [verify-oci](verify-oci/) | https://kadet-hub.org/guides/verify-oci/ | `verify-oci/verify kubernetes 1.2.0 47` |
+| [gvisor-ci](gvisor-ci/) | https://kadet-hub.org/guides/gvisor-ci/ | `gvisor-ci/check` |
+| [config-tools](config-tools/) | https://kadet-hub.org/guides/config-tools/ | `config-tools/check` |
 | [timoni-vs-kapitan](timoni-vs-kapitan/) | https://kadet-hub.org/blog/timoni-vs-kapitan/ | `timoni-vs-kapitan/check` |
 | [kcl-vs-kapitan](kcl-vs-kapitan/) | https://kadet-hub.org/blog/kcl-vs-kapitan/ | `kcl-vs-kapitan/check` |
 | [talos-machine-config](talos-machine-config/) | https://kadet-hub.org/guides/talos-machine-config/ | `talos-machine-config/check` |
 | [helm-vs-terraform](helm-vs-terraform/) | https://kadet-hub.org/guides/helm-vs-terraform/ | `helm-vs-terraform/check` |
 | [argocd-vs-flux](argocd-vs-flux/) | https://kadet-hub.org/guides/argocd-vs-flux/ | `argocd-vs-flux/check argocd`, `argocd-vs-flux/check flux` |
 | [helm-mutate](helm-mutate/) | https://kadet-hub.org/guides/patch-helm-chart/ | `helm-mutate/check kubectl`, `helm-mutate/check argocd`, `helm-mutate/check flux` |
-| [cert-manager-mutate](cert-manager-mutate/) | https://kadet-hub.org/blog/cert-manager-helm-chart-patches/ | `cert-manager-mutate/check` |
+| [cert-manager-mutate](cert-manager-mutate/) | https://kadet-hub.org/guides/cert-manager-helm-chart-patches/ | `cert-manager-mutate/check` |
 | [open-webui-searxng](open-webui-searxng/) | https://kadet-hub.org/blog/open-webui-searxng-kubernetes/ | `open-webui-searxng/check` |
 | [platform-baseline](platform-baseline/) | https://kadet-hub.org/blog/kubernetes-cluster-add-ons/ | `platform-baseline/check` |
 | [immich-cnpg](immich-cnpg/) | https://kadet-hub.org/blog/immich-kubernetes/ | `immich-cnpg/check` |
