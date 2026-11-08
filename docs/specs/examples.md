@@ -435,7 +435,7 @@ schedule instead of trusting the state on the publishing day.
 
   - Test: workflow `examples`, whose jobs all run when `.github/` changes
     (EX-2a); `manual:` actionlint 1.7.12 and zizmor 1.31.1 on `.github/`
-  - Since: this change
+  - Since: #203
 
 - EX-3h: Renovate MUST merge its own pull request once every check on it
   passed, unless it is a major update or a digest update of a GitHub Action.
