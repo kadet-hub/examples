@@ -416,6 +416,27 @@ schedule instead of trusting the state on the publishing day.
     `platform-baseline`: #135; `helmfile-vs-kapitan`: #140; Playwright in
     `sso-keycloak`: #166
 
+- EX-3i: The install steps of the CI jobs MUST download their release
+  assets from GitHub with the job's `GITHUB_TOKEN`.
+
+  They use `gh release download` with `GH_TOKEN` set to `github.token`,
+  because github.com ignores a token on a release download URL. GitHub
+  rate-limits anonymous requests more tightly, and on 2026-11-08, during
+  its timeouts for unauthenticated users, anonymous release downloads
+  failed CI runs of kadet-hub/registry and kadet-hub/recipes with HTTP 504.
+  The sha256 checks of EX-3 stay as they are, and no job needs a new
+  permission.
+
+  The `check` scripts still fetch their manifests and files from GitHub
+  anonymously, as they do for a reader who runs them locally. So do the
+  workflow templates in `apiserver-dry-run/` and `policy-checks/`, which
+  run in a reader's repository, and the k3s download in the cloud-init
+  script of `kubevirt-csi`, which runs in a VM without a token.
+
+  - Test: workflow `examples`, whose jobs all run when `.github/` changes
+    (EX-2a); `manual:` actionlint 1.7.12 and zizmor 1.31.1 on `.github/`
+  - Since: this change
+
 - EX-3h: Renovate MUST merge its own pull request once every check on it
   passed, unless it is a major update or a digest update of a GitHub Action.
 
