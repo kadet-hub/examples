@@ -2,7 +2,7 @@
 # Kubernetes through a reference, once per way of writing the ConfigMap.
 terraform {
   required_providers {
-    aws        = { source = "hashicorp/aws", version = "6.71.0" }
+    aws        = { source = "hashicorp/aws", version = "6.72.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = "3.4.0" }
     helm       = { source = "hashicorp/helm", version = "3.3.0" }
   }
