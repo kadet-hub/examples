@@ -137,14 +137,16 @@ jobs:
         with:
           persist-credentials: false
       - name: Install helm, Helmfile, kustomize, Pulumi, Node.js, oras and uv
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" "$RUNNER_TEMP/node" && cd "$RUNNER_TEMP/bin"
           curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
-          curl -fsSLo helmfile.tgz "https://github.com/helmfile/helmfile/releases/download/$HELMFILE_VERSION/helmfile_${HELMFILE_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo pulumi.tgz "https://github.com/pulumi/pulumi/releases/download/$PULUMI_VERSION/pulumi-$PULUMI_VERSION-linux-x64.tar.gz"
+          gh release download "$HELMFILE_VERSION" -R helmfile/helmfile -p "helmfile_${HELMFILE_VERSION#v}_linux_amd64.tar.gz" -O helmfile.tgz
+          gh release download "$PULUMI_VERSION" -R pulumi/pulumi -p "pulumi-$PULUMI_VERSION-linux-x64.tar.gz" -O pulumi.tgz
           curl -fsSLo node.txz "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           sha256sum -c <<EOF
           $HELM_SHA256  helm.tgz
           $HELMFILE_SHA256  helmfile.tgz
@@ -181,11 +183,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Install kube-apiserver, kubectl, etcd, kubeconform and uv
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo etcd.tgz "https://github.com/etcd-io/etcd/releases/download/$ETCD_VERSION/etcd-$ETCD_VERSION-linux-amd64.tar.gz"
-          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$ETCD_VERSION" -R etcd-io/etcd -p "etcd-$ETCD_VERSION-linux-amd64.tar.gz" -O etcd.tgz
+          gh release download "$KUBECONFORM_VERSION" -R yannh/kubeconform -p "kubeconform-linux-amd64.tar.gz" -O kubeconform.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           sha256sum -c <<EOF
           $ETCD_SHA256  etcd.tgz
           $KUBECONFORM_SHA256  kubeconform.tgz
@@ -214,13 +218,15 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, kubeconform, uv, kubectl and kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$KUBECONFORM_VERSION" -R yannh/kubeconform -p "kubeconform-linux-amd64.tar.gz" -O kubeconform.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $KUBECONFORM_SHA256  kubeconform.tgz
@@ -251,11 +257,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, kubeconform and uv
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$KUBECONFORM_VERSION" -R yannh/kubeconform -p "kubeconform-linux-amd64.tar.gz" -O kubeconform.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $KUBECONFORM_SHA256  kubeconform.tgz
@@ -303,10 +311,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Install runsc and uv
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo gvisor.tar.zstd "https://github.com/google/gvisor/releases/download/$GVISOR_RELEASE/gvisor-x86_64.tar.zstd"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$GVISOR_RELEASE" -R google/gvisor -p "gvisor-x86_64.tar.zstd" -O gvisor.tar.zstd
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           echo "$GVISOR_SHA512  gvisor.tar.zstd" | sha512sum -c -
           echo "$UV_SHA256  uv.tgz" | sha256sum -c -
           # runsc starts its sidecars from gvisor-bin/ next to it, so unpack everything.
@@ -343,13 +353,15 @@ jobs:
         with:
           persist-credentials: false
       - name: Install tk, jb, Node.js, oras and uv
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" "$RUNNER_TEMP/node" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo tk "https://github.com/grafana/tanka/releases/download/$TANKA_VERSION/tk-linux-amd64"
-          curl -fsSLo jb "https://github.com/jsonnet-bundler/jsonnet-bundler/releases/download/$JB_VERSION/jb-linux-amd64"
+          gh release download "$TANKA_VERSION" -R grafana/tanka -p "tk-linux-amd64" -O tk
+          gh release download "$JB_VERSION" -R jsonnet-bundler/jsonnet-bundler -p "jb-linux-amd64" -O jb
           curl -fsSLo node.txz "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           sha256sum -c <<EOF
           $TANKA_SHA256  tk
           $JB_SHA256  jb
@@ -383,11 +395,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Install timoni, oras and uv
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo timoni.tgz "https://github.com/stefanprodan/timoni/releases/download/$TIMONI_VERSION/timoni_${TIMONI_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$TIMONI_VERSION" -R stefanprodan/timoni -p "timoni_${TIMONI_VERSION#v}_linux_amd64.tar.gz" -O timoni.tgz
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           sha256sum -c <<EOF
           $TIMONI_SHA256  timoni.tgz
           $ORAS_SHA256  oras.tgz
@@ -416,11 +430,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Install kcl, oras and uv
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo kcl.tgz "https://github.com/kcl-lang/cli/releases/download/$KCL_VERSION/kcl-$KCL_VERSION-linux-amd64.tar.gz"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$KCL_VERSION" -R kcl-lang/cli -p "kcl-$KCL_VERSION-linux-amd64.tar.gz" -O kcl.tgz
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           sha256sum -c <<EOF
           $KCL_SHA256  kcl.tgz
           $ORAS_SHA256  oras.tgz
@@ -449,11 +465,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Install talosctl, oras and uv
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo talosctl "https://github.com/siderolabs/talos/releases/download/$TALOSCTL_VERSION/talosctl-linux-amd64"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$TALOSCTL_VERSION" -R siderolabs/talos -p "talosctl-linux-amd64" -O talosctl
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           sha256sum -c <<EOF
           $TALOSCTL_SHA256  talosctl
           $ORAS_SHA256  oras.tgz
@@ -484,14 +502,16 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, kubeconform, uv, tofu, kubectl and kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo tofu.tgz "https://github.com/opentofu/opentofu/releases/download/$TOFU_VERSION/tofu_${TOFU_VERSION#v}_linux_amd64.tar.gz"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$KUBECONFORM_VERSION" -R yannh/kubeconform -p "kubeconform-linux-amd64.tar.gz" -O kubeconform.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$TOFU_VERSION" -R opentofu/opentofu -p "tofu_${TOFU_VERSION#v}_linux_amd64.tar.gz" -O tofu.tgz
           c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $KUBECONFORM_SHA256  kubeconform.tgz
@@ -529,14 +549,16 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, kubeconform, uv, kubectl, kind and chainsaw
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$KUBECONFORM_VERSION" -R yannh/kubeconform -p "kubeconform-linux-amd64.tar.gz" -O kubeconform.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
-          curl -fsSLo chainsaw.tgz "https://github.com/kyverno/chainsaw/releases/download/$CHAINSAW_VERSION/chainsaw_linux_amd64.tar.gz"
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
+          gh release download "$CHAINSAW_VERSION" -R kyverno/chainsaw -p "chainsaw_linux_amd64.tar.gz" -O chainsaw.tgz
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $KUBECONFORM_SHA256  kubeconform.tgz
@@ -576,15 +598,17 @@ jobs:
         with:
           persist-credentials: false
       - name: Install helm, oras, kubeconform, uv, kubectl, kind and chainsaw
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
           curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION/kubeconform-linux-amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$KUBECONFORM_VERSION" -R yannh/kubeconform -p "kubeconform-linux-amd64.tar.gz" -O kubeconform.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
-          curl -fsSLo chainsaw.tgz "https://github.com/kyverno/chainsaw/releases/download/$CHAINSAW_VERSION/chainsaw_linux_amd64.tar.gz"
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
+          gh release download "$CHAINSAW_VERSION" -R kyverno/chainsaw -p "chainsaw_linux_amd64.tar.gz" -O chainsaw.tgz
           sha256sum -c <<EOF
           $HELM_SHA256  helm.tgz
           $ORAS_SHA256  oras.tgz
@@ -625,14 +649,16 @@ jobs:
         with:
           persist-credentials: false
       - name: Install helm, oras, uv, jb, kubectl and kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
           curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo jb "https://github.com/jsonnet-bundler/jsonnet-bundler/releases/download/$JB_VERSION/jb-linux-amd64"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$JB_VERSION" -R jsonnet-bundler/jsonnet-bundler -p "jb-linux-amd64" -O jb
           c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
           sha256sum -c <<EOF
           $HELM_SHA256  helm.tgz
           $ORAS_SHA256  oras.tgz
@@ -666,14 +692,16 @@ jobs:
         with:
           persist-credentials: false
       - name: Install helm, oras, uv, kubectl, kind and chainsaw
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
           curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
-          curl -fsSLo chainsaw.tgz "https://github.com/kyverno/chainsaw/releases/download/$CHAINSAW_VERSION/chainsaw_linux_amd64.tar.gz"
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
+          gh release download "$CHAINSAW_VERSION" -R kyverno/chainsaw -p "chainsaw_linux_amd64.tar.gz" -O chainsaw.tgz
           sha256sum -c <<EOF
           $HELM_SHA256  helm.tgz
           $ORAS_SHA256  oras.tgz
@@ -708,12 +736,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, uv, kubectl, kind and virtctl
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
-          curl -fsSLo virtctl "https://github.com/kubevirt/kubevirt/releases/download/$VIRTCTL_VERSION/virtctl-$VIRTCTL_VERSION-linux-amd64"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
+          gh release download "$VIRTCTL_VERSION" -R kubevirt/kubevirt -p "virtctl-$VIRTCTL_VERSION-linux-amd64" -O virtctl
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
@@ -745,11 +775,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, uv, kubectl and kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
@@ -781,12 +813,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, uv, kubectl, kind and velero
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
-          curl -fsSLo velero.tgz "https://github.com/vmware-tanzu/velero/releases/download/$VELERO_VERSION/velero-$VELERO_VERSION-linux-amd64.tar.gz"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
+          gh release download "$VELERO_VERSION" -R vmware-tanzu/velero -p "velero-$VELERO_VERSION-linux-amd64.tar.gz" -O velero.tgz
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
@@ -818,11 +852,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, uv, kubectl and kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
@@ -852,11 +888,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, uv, kubectl and kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
@@ -888,13 +926,15 @@ jobs:
         with:
           persist-credentials: false
       - name: Install helm, Helmfile, oras, uv, kubectl and kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
           curl -fsSLo helm.tgz "https://get.helm.sh/helm-$HELM_VERSION-linux-amd64.tar.gz"
-          curl -fsSLo helmfile.tgz "https://github.com/helmfile/helmfile/releases/download/$HELMFILE_VERSION/helmfile_${HELMFILE_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          gh release download "$HELMFILE_VERSION" -R helmfile/helmfile -p "helmfile_${HELMFILE_VERSION#v}_linux_amd64.tar.gz" -O helmfile.tgz
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
           sha256sum -c <<EOF
           $HELM_SHA256  helm.tgz
           $HELMFILE_SHA256  helmfile.tgz
@@ -928,10 +968,12 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, kubectl and kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $KIND_SHA256  kind
@@ -968,13 +1010,15 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, uv, the Kyverno CLI, conftest, kubectl and kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kyverno.tgz "https://github.com/kyverno/kyverno/releases/download/$KYVERNO_CLI_VERSION/kyverno-cli_${KYVERNO_CLI_VERSION}_linux_x86_64.tar.gz"
-          curl -fsSLo conftest.tgz "https://github.com/open-policy-agent/conftest/releases/download/$CONFTEST_VERSION/conftest_${CONFTEST_VERSION#v}_Linux_x86_64.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KYVERNO_CLI_VERSION" -R kyverno/kyverno -p "kyverno-cli_${KYVERNO_CLI_VERSION}_linux_x86_64.tar.gz" -O kyverno.tgz
+          gh release download "$CONFTEST_VERSION" -R open-policy-agent/conftest -p "conftest_${CONFTEST_VERSION#v}_Linux_x86_64.tar.gz" -O conftest.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
@@ -1010,11 +1054,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, uv, kubectl and kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
@@ -1046,11 +1092,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, uv, kubectl and kind
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
@@ -1082,11 +1130,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Install talosctl, oras, uv and kubectl
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo talosctl "https://github.com/siderolabs/talos/releases/download/$TALOSCTL_VERSION/talosctl-linux-amd64"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
+          gh release download "$TALOSCTL_VERSION" -R siderolabs/talos -p "talosctl-linux-amd64" -O talosctl
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
           sha256sum -c <<EOF
           $TALOSCTL_SHA256  talosctl
           $ORAS_SHA256  oras.tgz
@@ -1124,13 +1174,15 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, uv, kubectl, kind and docker compose
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           plugins=${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins
           mkdir -p "$RUNNER_TEMP/bin" "$plugins" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
-          curl -fsSLo "$plugins/docker-compose" "https://github.com/docker/compose/releases/download/$DOCKER_COMPOSE_VERSION/docker-compose-linux-x86_64"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
+          gh release download "$DOCKER_COMPOSE_VERSION" -R docker/compose -p "docker-compose-linux-x86_64" -O "$plugins/docker-compose"
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
@@ -1161,12 +1213,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, uv, kubectl, kind and chainsaw
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
-          curl -fsSLo chainsaw.tgz "https://github.com/kyverno/chainsaw/releases/download/$CHAINSAW_VERSION/chainsaw_linux_amd64.tar.gz"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
+          gh release download "$CHAINSAW_VERSION" -R kyverno/chainsaw -p "chainsaw_linux_amd64.tar.gz" -O chainsaw.tgz
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
@@ -1198,12 +1252,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, uv, kubectl, kind and chainsaw
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
-          curl -fsSLo chainsaw.tgz "https://github.com/kyverno/chainsaw/releases/download/$CHAINSAW_VERSION/chainsaw_linux_amd64.tar.gz"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
+          gh release download "$CHAINSAW_VERSION" -R kyverno/chainsaw -p "chainsaw_linux_amd64.tar.gz" -O chainsaw.tgz
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
@@ -1236,12 +1292,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Install oras, uv, kubectl, kind and chainsaw
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo oras.tgz "https://github.com/oras-project/oras/releases/download/$ORAS_VERSION/oras_${ORAS_VERSION#v}_linux_amd64.tar.gz"
-          curl -fsSLo uv.tgz "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-x86_64-unknown-linux-gnu.tar.gz"
-          curl -fsSLo kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
-          curl -fsSLo chainsaw.tgz "https://github.com/kyverno/chainsaw/releases/download/$CHAINSAW_VERSION/chainsaw_linux_amd64.tar.gz"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
+          gh release download "$CHAINSAW_VERSION" -R kyverno/chainsaw -p "chainsaw_linux_amd64.tar.gz" -O chainsaw.tgz
           sha256sum -c <<EOF
           $ORAS_SHA256  oras.tgz
           $UV_SHA256  uv.tgz
@@ -1271,9 +1329,11 @@ jobs:
         with:
           persist-credentials: false
       - name: Install osv-scanner
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
-          curl -fsSLo osv-scanner "https://github.com/google/osv-scanner/releases/download/$OSV_SCANNER_VERSION/osv-scanner_linux_amd64"
+          gh release download "$OSV_SCANNER_VERSION" -R google/osv-scanner -p "osv-scanner_linux_amd64" -O osv-scanner
           echo "$OSV_SCANNER_SHA256  osv-scanner" | sha256sum -c -
           chmod +x osv-scanner
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
