@@ -2,7 +2,7 @@
 
 Server-side dry run of every manifest against etcd and kube-apiserver
 v1.37.1 on 127.0.0.1, without a cluster. Written up at
-https://kadet-hub.org/blog/apiserver-dry-run/.
+https://kadet-hub.org/guides/apiserver-dry-run/.
 
 ```sh
 # etcd, kube-apiserver, kubectl, openssl and curl on PATH

@@ -917,7 +917,7 @@ mutation matches them by kind and label, not by name.
 
 ## cert-manager and trust-manager charts patched with mutate
 
-`cert-manager-mutate/` backs the kadet-hub.org blog post that fixes two
+`cert-manager-mutate/` backs the kadet-hub.org guide that fixes two
 requests against the cert-manager project's Helm charts with mutate
 instead of a chart value. cert-manager/cert-manager#6071 asks for init
 containers on the controller Deployment; a maintainer declined the value
