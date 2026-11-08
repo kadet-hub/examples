@@ -113,8 +113,8 @@ parameters:
         main:
           rbac: true
           service_account_name: prometheus
-          image: quay.io/prometheus/prometheus:v3.15.0-distroless@sha256:b2a413d5a03ea6a76782a508d1c7947440bba3b973931a25676e278431891b01
-          version: v3.15.0
+          image: quay.io/prometheus/prometheus:v3.16.0-distroless@sha256:9764044e09eb2c9e1abdb12d0f0188d4efb7384b0262d3c080f0fc59045c89ba
+          version: v3.16.0
           retention: 10d
           service_monitor_selector: {release: "${release}"}
           service_monitor_namespace_selector: {}
@@ -136,8 +136,8 @@ parameters:
           alertmanager_config_selector: {}
           alertmanager_config_namespace_selector: {}
           spec:
-            image: quay.io/prometheus/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
-            version: v0.34.1
+            image: quay.io/prometheus/alertmanager:v0.34.2@sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
+            version: v0.34.2
             externalUrl: http://${release}-alertmanager.${namespace}:9093
             securityContext: ${operated_security_context}
       service_monitors:
@@ -197,7 +197,9 @@ parameters:
               metricRelabelings:
                 - {action: drop, sourceLabels: [__name__], regex: 'container_cpu_(cfs_throttled_seconds_total|load_average_10s|system_seconds_total|user_seconds_total)'}
                 - {action: drop, sourceLabels: [__name__], regex: 'container_fs_(io_current|io_time_seconds_total|io_time_weighted_seconds_total|reads_merged_total|sector_reads_total|sector_writes_total|writes_merged_total)'}
-                - {action: drop, sourceLabels: [__name__], regex: 'container_memory_(mapped_file|swap)'}
+                # container_memory_swap stays, as in the chart since prometheus-community/helm-charts#7384:
+                # the recording rules of k8s.rules.container_memory_swap and the dashboards' swap columns read it
+                - {action: drop, sourceLabels: [__name__], regex: 'container_memory_mapped_file'}
                 - {action: drop, sourceLabels: [__name__], regex: 'container_(file_descriptors|tasks_state|threads_max)'}
                 - {action: drop, sourceLabels: [__name__, scope], regex: 'container_memory_failures_total;hierarchy'}
                 - {action: drop, sourceLabels: [__name__, interface], regex: 'container_network_.*;(cali|cilium|cni|lxc|nodelocaldns|tunl).*'}
@@ -232,7 +234,7 @@ parameters:
           endpoints: [{port: http-metrics, scheme: https, tlsConfig: {insecureSkipVerify: true}, authorization: "${prometheus_token}"}]
   components:
     prometheus-operator:
-      image: quay.io/prometheus-operator/prometheus-operator:v0.94.1@sha256:7c88d4e7bae63bd8d0f8da986054337c23b4472fa8d3c6817f5bc4b8407a2d6a
+      image: quay.io/prometheus-operator/prometheus-operator:v0.95.1@sha256:9c2490af910d58ec2abd77642d340e30bd5e2de5c80fd19ab4b49e28dc7bbb83
       args:
         - --kubelet-service=kube-system/${release}-kubelet
         - --localhost=127.0.0.1
@@ -252,13 +254,13 @@ parameters:
       service: {type: ClusterIP, service_name: "${release}-operator"}
       cluster_role:
         rules:
-          - {apiGroups: [monitoring.coreos.com], resources: [alertmanagers, prometheusagents, prometheuses, thanosrulers], verbs: [patch]}
-          - {apiGroups: [monitoring.coreos.com], resources: [alertmanagers/status, podmonitors/status, probes/status, prometheuses/status, prometheusagents/status, prometheusrules/status, scrapeconfigs/status, servicemonitors/status, thanosrulers/status], verbs: [create, update, patch, delete]}
+          - {apiGroups: [monitoring.coreos.com], resources: [alertmanagers, alertmanagers/finalizers, prometheusagents, prometheusagents/finalizers, prometheuses, prometheuses/finalizers, thanosrulers, thanosrulers/finalizers], verbs: [patch]}
+          - {apiGroups: [monitoring.coreos.com], resources: [alertmanagers/status, alertmanagerconfigs/status, podmonitors/status, probes/status, prometheuses/status, prometheusagents/status, prometheusrules/status, scrapeconfigs/status, servicemonitors/status, thanosrulers/status], verbs: [create, update, patch, delete]}
           - {apiGroups: [monitoring.coreos.com], resources: [alertmanagers/finalizers, prometheusagents/finalizers, prometheuses/finalizers, thanosrulers/finalizers], verbs: [update]}
           - {apiGroups: [monitoring.coreos.com], resources: [alertmanagers, alertmanagerconfigs, podmonitors, probes, prometheusagents, prometheuses, prometheusrules, servicemonitors, scrapeconfigs, thanosrulers], verbs: [get, list, watch]}
           - {apiGroups: [apps], resources: [statefulsets], verbs: [get, list, watch, create, update, patch, delete]}
           - {apiGroups: [''], resources: [configmaps, secrets], verbs: [get, list, watch, create, update, delete]}
-          - {apiGroups: [''], resources: [pods], verbs: [list, delete]}
+          - {apiGroups: [''], resources: [pods], verbs: [list]}
           - {apiGroups: [''], resources: [services, services/finalizers, endpoints], verbs: [get, create, update, delete]}
           - {apiGroups: [''], resources: [nodes], verbs: [list, watch]}
           - {apiGroups: [''], resources: [namespaces], verbs: [get, list, watch]}
@@ -268,6 +270,7 @@ parameters:
           - {apiGroups: [discovery.k8s.io], resources: [endpointslices], verbs: [get, create, list, watch, update, delete]}
     kube-state-metrics:
       image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+      node_selector: {kubernetes.io/os: linux}
       # the defaults without the admission policies, which the ClusterRole below does not grant
       args:
         - --resources=certificatesigningrequests,configmaps,cronjobs,daemonsets,deployments,endpointslices,horizontalpodautoscalers,ingresses,jobs,leases,limitranges,mutatingwebhookconfigurations,namespaces,networkpolicies,nodes,persistentvolumeclaims,persistentvolumes,poddisruptionbudgets,pods,replicasets,replicationcontrollers,resourcequotas,secrets,services,statefulsets,storageclasses,validatingwebhookconfigurations,volumeattachments
@@ -299,6 +302,7 @@ parameters:
       service_account: {automount_service_account_token: false}
       host_network: true
       host_pid: true
+      security_context: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}, seccompProfile: {type: RuntimeDefault}}
       node_selector: {kubernetes.io/os: linux}
       affinity:
         nodeAffinity:
@@ -330,7 +334,7 @@ parameters:
         root: {hostPath: {path: /}}
       service: {type: ClusterIP}
     grafana:
-      image: docker.io/grafana/grafana:13.2.4-distroless@sha256:ae3d3add290adbe6a88412229f5d76fd7bb82743050881698642d3d62f277e35
+      image: docker.io/grafana/grafana:13.3.0-distroless@sha256:540b8afb775bf34aefce417e4329039daa5d44b6f2fbda6881397b1b247ca7df
       workload_security_context: {runAsUser: 472, runAsGroup: 472, fsGroup: 472}
       ports:
         http-web: {container_port: 3000, service_port: 80}
@@ -373,7 +377,7 @@ parameters:
       # Copy the labelled dashboard and datasource ConfigMaps into Grafana and reload it.
       additional_containers:
         grafana-sc-dashboard:
-          image: quay.io/kiwigrid/k8s-sidecar:2.14.1@sha256:092dbe0c335fba9af414a27630ca68f34df6185784fa847d9954187e69dbfdd7
+          image: quay.io/kiwigrid/k8s-sidecar:2.14.3@sha256:52d311dcedd587421a236c4d6c621f05614c40a51386e955e0699dca97ec0880
           env:
             LABEL: grafana_dashboard
             LABEL_VALUE: "1"
