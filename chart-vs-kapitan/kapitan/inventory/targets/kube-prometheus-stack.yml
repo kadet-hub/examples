@@ -197,6 +197,8 @@ parameters:
               metricRelabelings:
                 - {action: drop, sourceLabels: [__name__], regex: 'container_cpu_(cfs_throttled_seconds_total|load_average_10s|system_seconds_total|user_seconds_total)'}
                 - {action: drop, sourceLabels: [__name__], regex: 'container_fs_(io_current|io_time_seconds_total|io_time_weighted_seconds_total|reads_merged_total|sector_reads_total|sector_writes_total|writes_merged_total)'}
+                # container_memory_swap stays, as in the chart since prometheus-community/helm-charts#7384:
+                # the recording rules of k8s.rules.container_memory_swap and the dashboards' swap columns read it
                 - {action: drop, sourceLabels: [__name__], regex: 'container_memory_mapped_file'}
                 - {action: drop, sourceLabels: [__name__], regex: 'container_(file_descriptors|tasks_state|threads_max)'}
                 - {action: drop, sourceLabels: [__name__, scope], regex: 'container_memory_failures_total;hierarchy'}
