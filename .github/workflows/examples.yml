@@ -29,8 +29,8 @@ env:
   HELM_VERSION: v4.3.1
   HELM_SHA256: 0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b
   # renovate: datasource=github-release-attachments depName=helmfile/helmfile
-  HELMFILE_VERSION: v1.8.2
-  HELMFILE_SHA256: f179485c5bb9f8e20fbd8ea16d8807915988aba4d60131ee864fb3232452716e
+  HELMFILE_VERSION: v1.8.3
+  HELMFILE_SHA256: 7d79c6d2099a4819213873164eda23bdbd32f1404fec7a7104d934e5d102596f
   # renovate: datasource=docker depName=registry.k8s.io/kustomize/kustomize
   KUSTOMIZE_IMAGE: registry.k8s.io/kustomize/kustomize:v5.8.3@sha256:429eda4a1c76a7de458d0c4ca3ded9b5d764899ff6bdaeccc1d98b1b6ee873e4
   # renovate: datasource=github-release-attachments depName=pulumi/pulumi
