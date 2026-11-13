@@ -5,7 +5,7 @@ parameters:
   kapitan:
     dependencies:
       - type: oci
-        source: ghcr.io/kadet-hub/prometheus-operator:1.1.6@sha256:99faa008d1335edc787f164685a04e855012b6b48364e67737fb764bb98c449b
+        source: ghcr.io/kadet-hub/prometheus-operator:1.1.7@sha256:959f544b5599d950b74db00a226a23741967219a7ae5d867533c2d80d2b81371
         output_path: lib/prometheus-operator
     compile:
       - input_type: kadet
