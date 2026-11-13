@@ -34,8 +34,8 @@ env:
   # renovate: datasource=docker depName=registry.k8s.io/kustomize/kustomize
   KUSTOMIZE_IMAGE: registry.k8s.io/kustomize/kustomize:v5.8.3@sha256:429eda4a1c76a7de458d0c4ca3ded9b5d764899ff6bdaeccc1d98b1b6ee873e4
   # renovate: datasource=github-release-attachments depName=pulumi/pulumi
-  PULUMI_VERSION: v3.274.0
-  PULUMI_SHA256: 4d8fcc13a3bc6c2bcfbb45fcea422a62b7173f3d62d3f51d66da701e5aa578da
+  PULUMI_VERSION: v3.274.1
+  PULUMI_SHA256: 32ae6d09d0df51637db7a0affb3ceb7d0511093b22d477aff5f20214d0b7e471
   # Provider plugin linux-amd64 archive at the @pulumi/kubernetes version in
   # same-app/pulumi/package-lock.json, checked by same-app/check.
   # renovate: datasource=github-release-attachments depName=pulumi/pulumi-kubernetes
