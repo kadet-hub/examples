@@ -88,6 +88,10 @@ env:
   OSV_SCANNER_VERSION: v2.7.0
   OSV_SCANNER_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
 
+concurrency: # EX-34
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   # EX-2a: the example folders whose jobs run, as a JSON list.
   changes:
@@ -107,19 +111,52 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           set -o pipefail
-          # -z: without it git quotes a path with a non-ASCII byte, folder included.
+          wf=.github/workflows/examples.yml
+          all=true
           if [[ $EVENT == pull_request ]]; then
+            all=false
+            # -z: without it git quotes a path with a non-ASCII byte, folder included.
             # The checkout is the merge commit; its first parent is the base branch.
             files=$(git diff -z --no-renames --name-only HEAD^ HEAD | tr '\0' '\n')
           fi
-          # Everything runs on a push, the schedule, a manual run and a change
-          # to the workflow, which sets the tools of every job.
-          if [[ $EVENT != pull_request ]] || grep -q '^\.github/' <<<"$files"; then
+          # A change to this workflow runs the jobs whose block it changes, and the
+          # jobs and files that name a top-level env variable whose value it
+          # changes. Any other change but to env and jobs, or to this job, runs
+          # everything. Comments are not compared.
+          if [[ $all == false ]] && grep -qx "$wf" <<<"$files"; then
+            git show "HEAD^:$wf" | yq -o=json >"$RUNNER_TEMP/old.json"
+            yq -o=json "$wf" >"$RUNNER_TEMP/new.json"
+            sel=$(jq -cn --slurpfile o "$RUNNER_TEMP/old.json" --slurpfile n "$RUNNER_TEMP/new.json" '
+              $o[0] as $o | $n[0] as $n
+              | [($o.env + $n.env) | keys[] | . as $k | select($o.env[$k] != $n.env[$k])] as $vars
+              | {all: (($o | del(.env, .jobs)) != ($n | del(.env, .jobs)) or $o.jobs.changes != $n.jobs.changes),
+                 vars: ($vars | join("|")),
+                 jobs: [$n.jobs | to_entries[] | select(.value != $o.jobs[.key]
+                   or ($vars != [] and (.value | tostring | test("\\b(" + ($vars | join("|")) + ")\\b"))))
+                   | .key + "/"]}')
+            all=$(jq -r .all <<<"$sel")
+            files+=$'\n'$(jq -r '.jobs[]' <<<"$sel")
+            vars=$(jq -r .vars <<<"$sel")
+            if [[ -n $vars ]]; then
+              files+=$'\n'$(git grep -lwE "$vars" -- . ":!$wf" || true)
+            fi
+          fi
+          # Everything runs on a push, the schedule, a manual run and a change to
+          # the workflow outside its env and jobs.
+          if [[ $all == true ]]; then
             files=$(git ls-files -z | tr '\0' '\n')
           fi
           # helm-mutate deploys the Git server of argocd-vs-flux.
           if grep -qx argocd-vs-flux/git-server.yaml <<<"$files"; then
             files+=$'\nhelm-mutate/'
+          fi
+          # advisories reads the lock files (EX-3f). pins also checks the
+          # checksums of the apiserver-dry-run template (EX-3).
+          if grep -qE '(^|/)(uv\.lock|package-lock\.json|osv-scanner\.toml)$' <<<"$files"; then
+            files+=$'\nadvisories/'
+          fi
+          if grep -qx apiserver-dry-run/.github/workflows/dry-run.yml <<<"$files"; then
+            files+=$'\npins/'
           fi
           folders=$(cut -s -d/ -f1 <<<"$files" | sort -u | jq -Rnc '[inputs]')
           echo "folders=$folders" | tee -a "$GITHUB_OUTPUT"
@@ -1320,6 +1357,8 @@ jobs:
 
   # EX-3f: published advisories for the packages in the lock files.
   advisories:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'advisories')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -1342,7 +1381,8 @@ jobs:
   # EX-3: Renovate bumps these versions only; the checksum comes from the
   # publisher, and the failure names the line to paste.
   pins:
-    if: startsWith(github.head_ref, 'renovate/')
+    needs: changes
+    if: startsWith(github.head_ref, 'renovate/') && contains(fromJSON(needs.changes.outputs.folders), 'pins')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

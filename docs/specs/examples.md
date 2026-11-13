@@ -122,8 +122,11 @@ schedule instead of trusting the state on the publishing day.
 
 - EX-2a: On a pull request, CI MUST run the script of every example
   folder the pull request changes and of every example that reads a file
-  it changes. A pull request that changes anything under `.github/` MUST
-  run every script.
+  it changes. A change to `.github/workflows/examples.yml` MUST run every
+  job whose block it changes, and every job and example that names a
+  top-level `env` variable whose value it changes. A change to that file
+  outside `env` and `jobs`, or to the job `changes`, MUST run every
+  script.
 
   The job `changes` diffs the pull request's merge commit against its
   first parent, the base branch, and lists the folders. Each example's job
@@ -132,13 +135,29 @@ schedule instead of trusting the state on the publishing day.
   example's job therefore needs `needs: changes` and the `if` on its
   folder, or it runs on every pull request.
 
-  The workflow sets the versions and checksums of the tools every job
-  installs, so a change under `.github/` runs everything. No example reads
-  `docs/` or a file at the root of the repository, so a change there runs
-  none. The one file an example reads from another folder is
+  The workflow's top-level `env` holds the versions and checksums of the
+  tools. A job installs the tools it names, and a script can also read a
+  variable from the environment it inherits, as `same-app/check` reads
+  `PULUMI_KUBERNETES_SHA256`. `changes` therefore compares the workflow of
+  the base with that of the merge commit, both as JSON from `yq`, which
+  drops comments. It lists the jobs whose block differs, the jobs whose
+  block names a changed variable, and the folders of the files that name
+  one (`git grep -w`). A pin that every job installs, such as uv or oras,
+  still runs every job. No example reads another file under `.github/`.
+  `compile-diff.yml` starts its own workflow (EX-25), and
+  `request-review.yml` has nothing to test. No example reads `docs/` or a
+  file at the root of the repository, so a change there runs none. The
+  one file an example reads from another folder is
   `argocd-vs-flux/git-server.yaml`, which `helm-mutate` deploys as its Git
-  server, so a change to it runs `helm-mutate` too. `advisories` still runs
-  on every pull request (EX-3f) and `pins` on every Renovate branch (EX-3).
+  server, so a change to it runs `helm-mutate` too. `advisories` runs on a
+  pull request that changes a lock file (EX-3f), `pins` on a Renovate
+  branch that changes a pin it checks (EX-3).
+
+  Before this, any change under `.github/` ran every job. Replayed over the
+  150 pull requests merged from 2026-10-22 to 2026-11-13, the first push
+  of each started 1819 example and `advisories` job runs, with the matrix
+  jobs counted per entry. The rules above start 451. A Renovate update of
+  OpenTofu runs `helm-vs-terraform` alone instead of all 35 example jobs.
 
   A breaking change outside the repository, such as a new generator
   release or index, shows up on the next push to `main` or in the weekly
@@ -147,8 +166,27 @@ schedule instead of trusting the state on the publishing day.
   - Test: `examples` workflow, job `changes`; `manual:` on #161, which
     changes the workflow, `changes` listed every folder; on #162, which
     changed only `verify-oci/`, `changes`, `verify-oci`, `advisories` and
-    `ci` ran, the rest was skipped and `ci` passed
-  - Since: #161
+    `ci` ran, the rest was skipped and `ci` passed; `manual:` the replay of
+    `changes` over the 150 pull requests above, and on the pull request
+    that introduced the `env` and `jobs` comparison, a draft pull request
+    changing only `README.md` ran `changes` and `ci`
+  - Since: #161; `env` and `jobs` comparison, `advisories` and `pins` on
+    their inputs: this change
+
+- EX-34: A newer commit of a pull request MUST cancel the runs that an
+  older commit of the same pull request started in `examples` and
+  `compile-diff`. Runs on any other event MUST NOT be cancelled.
+
+  Both workflows set `concurrency` to the group
+  `<workflow>-<pull request number>` with `cancel-in-progress: true`. A run
+  on another event takes its run ID as the group, so every push to `main`
+  runs to the end (EX-2). A cancelled `compile-diff` run gets no comment,
+  because `compile-diff-comment` posts only for the pull request's current
+  head.
+
+  - Test: manual: on the pull request that introduced this, the second
+    commit of a draft pull request cancelled the runs of the first
+  - Since: this change
 
 - EX-16: The `ci` job of the `examples` workflow MUST fail unless every
   other job of the run succeeded or was skipped.
@@ -263,8 +301,9 @@ schedule instead of trusting the state on the publishing day.
     `apiserver-dry-run` workflow template, which downloads them from
     dl.k8s.io, have neither a release asset nor an image published by the
     project (the Docker Hub `node` image is built by Docker's Official
-    Images program). Renovate bumps the version only. On Renovate pull
-    requests the `pins` job compares each checksum with the publisher's
+    Images program). Renovate bumps the version only. On a Renovate pull
+    request that changes one of these pins, the `apiserver-dry-run`
+    template or the job, the `pins` job compares each checksum with the publisher's
     (helm `.sha256sum`, Node.js `SHASUMS256.txt`, the dl.k8s.io binary)
     and fails with the line to paste.
 
@@ -642,10 +681,14 @@ schedule instead of trusting the state on the publishing day.
   - Since: #95
 
 - EX-3f: CI MUST fail when osv-scanner reports a published advisory for a
-  package in a lock file of the repository.
+  package in a lock file of the repository, on every push to `main`, in
+  the weekly run and on a pull request that changes a lock file, an
+  `osv-scanner.toml`, the osv-scanner pin or the job.
 
-  The `advisories` job runs `osv-scanner scan source -r .` on every pull
-  request and in the weekly run (EX-2). It reads `uv.lock` and both
+  The `advisories` job runs `osv-scanner scan source -r .`. A pull request
+  that changes none of its inputs cannot change its result, so an advisory
+  published in between fails the next run on `main` or the weekly run, not
+  every open pull request. It reads `uv.lock` and both
   `package-lock.json`, dev dependencies included, since a reader copies them
   whole. osv-scanner matches versions; it does not check whether an example
   reaches the vulnerable code. An advisory without a usable fix is accepted
@@ -658,7 +701,7 @@ schedule instead of trusting the state on the publishing day.
   - Test: `examples` workflow, job `advisories`; `manual:` on `main` before
     #86 it exits 1 with the 8 advisories of certifi, cryptography and
     fast-uri, after #86 it exits 0
-  - Since: #88
+  - Since: #88; pull requests that change its inputs only: this change
 
 ## Recipes
 
@@ -1924,10 +1967,13 @@ runs from the default branch only.
   comment workflow is not on the default branch yet. Its compile run
   uploads the artifact the comment would show.
 
+  `compile-diff` also runs when its own workflow file changes, since no
+  other workflow starts on that file.
+
   - Test: manual: the `compile-diff` run of the pull request that added this
     uploads a `dev.diff` with the replica change; the comment on the first
     pull request after the merge
-  - Since: #143
+  - Since: #143; its own file in `paths`: this change
 
 ## Policy checks
 
@@ -3058,7 +3104,7 @@ a knowledge base and adds the file to it.
 |---|---|
 | `.github/workflows/request-review.yml` | requests `neat-bot` (EX-15) |
 | `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml` | compile diff of `first-platform` on pull requests, pinned to a registry commit (EX-25) |
-| `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `changes` (EX-2a), `pins` (EX-3), `advisories` (EX-3f), `ci` (EX-16) |
+| `.github/workflows/examples.yml` | One job per example, tool versions, sha256 and images in `env`; job `changes` (EX-2a), `pins` (EX-3), `advisories` (EX-3f), `ci` (EX-16); `concurrency` (EX-34) |
 | `renovate.json` | Org preset for generator pins; regex managers for `# renovate:` comments, inventory charts and images, `==` pins in scripts; package rules that group pins, cert-manager's in `chart-vs-kapitan` and Playwright's in `sso-keycloak` included, and leave the rest of its Kapitan side to the chart (EX-3), keep the Python image of `gvisor-ci/run` on 3.13 (EX-3a); release age and the custom datasource `opentofu-provider` (EX-3b) |
 | `apiserver-dry-run/.github/workflows/dry-run.yml`, `first-platform/.github/workflows/compile.yml` | Templates shown in the posts; GitHub does not run them here |
 | `talos-machine-config/` | One Kapitan project, target `lab` with three Talos nodes; `check` verifies the generator, fills the refs, compiles and runs `talosctl validate` |
