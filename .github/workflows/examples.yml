@@ -85,8 +85,8 @@ env:
   VELERO_VERSION: v1.18.4
   VELERO_SHA256: e520c17d8997e1c9d0a28ae013592e4473ca3bd82cb3acd132e51286263f74bf
   # renovate: datasource=github-release-attachments depName=google/osv-scanner
-  OSV_SCANNER_VERSION: v2.7.0
-  OSV_SCANNER_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b
+  OSV_SCANNER_VERSION: v2.7.1
+  OSV_SCANNER_SHA256: fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8
 
 concurrency: # EX-34
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
