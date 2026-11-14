@@ -11,7 +11,7 @@ parameters:
         source: ghcr.io/kadet-hub/kyverno:1.1.4@sha256:af3f1376bdc69e261bb75d23c01014a24926e14f52780c86d8e941c524525de6
         output_path: lib/kyverno
       - type: oci
-        source: ghcr.io/kadet-hub/prometheus-operator:1.1.6@sha256:99faa008d1335edc787f164685a04e855012b6b48364e67737fb764bb98c449b
+        source: ghcr.io/kadet-hub/prometheus-operator:1.1.7@sha256:959f544b5599d950b74db00a226a23741967219a7ae5d867533c2d80d2b81371
         output_path: lib/prometheus-operator
       - type: oci
         source: ghcr.io/kadet-hub/external-secrets:1.0.6@sha256:184e8a60f92c0c09eae32973ceaf909b2da53457e88233161ffb90c4b9a63e60
