@@ -212,8 +212,8 @@ until_true() { # seconds jq-filter kubectl-get-arguments
 KYVERNO_VERSION=v1.19.2
 KYVERNO_SHA256=4f785937dc7fe49a0731108b15def1538923c73d9236255bc69d94d498037969
 # renovate: datasource=github-release-attachments depName=prometheus-operator/prometheus-operator
-PROMETHEUS_OPERATOR_VERSION=v0.94.2
-PROMETHEUS_OPERATOR_SHA256=045754c91469cccb27d7832168a5b5f0448188bcb3513f74a13c76c9079d654b
+PROMETHEUS_OPERATOR_VERSION=v0.95.1
+PROMETHEUS_OPERATOR_SHA256=6f0faaf14999d63451ecbf0d689350ecce3eeda44576d25918878c5119d618fa
 # renovate: datasource=github-release-attachments depName=external-secrets/external-secrets
 EXTERNAL_SECRETS_VERSION=v2.14.0
 EXTERNAL_SECRETS_SHA256=21d51ab38bf7016a3d01e1259a92d40c23e83e68182ae6c4ca816af18717cb55
