@@ -73,8 +73,8 @@ env:
   CHAINSAW_VERSION: v0.2.15
   CHAINSAW_SHA256: 295d226c89f126c0a97775d364be149f47a810c8a3f9829ee410583d0c1abe3c
   # renovate: datasource=github-release-attachments depName=siderolabs/talos
-  TALOSCTL_VERSION: v1.14.5
-  TALOSCTL_SHA256: ff432b68986709e6b69c563a08a2ced4232d5196b0dccd6d2e783e9d714d7d7d
+  TALOSCTL_VERSION: v1.14.6
+  TALOSCTL_SHA256: 11acde7f7578ffe9cbe6fb8349b34595065f597de0842615982e350b365de987
   # renovate: datasource=github-release-attachments depName=opentofu/opentofu
   TOFU_VERSION: v1.13.9
   TOFU_SHA256: b34b327cc1ef07178207b6f2cd1f5276537d3e5b7be316500f6dac50d4c0a857
