@@ -172,8 +172,8 @@ until_true() { # seconds jq-filter kubectl-get-arguments
 # External Secrets from its release manifest, pinned by version and sha256
 # (EX-3).
 # renovate: datasource=github-release-attachments depName=external-secrets/external-secrets
-EXTERNAL_SECRETS_VERSION=v2.14.0
-EXTERNAL_SECRETS_SHA256=21d51ab38bf7016a3d01e1259a92d40c23e83e68182ae6c4ca816af18717cb55
+EXTERNAL_SECRETS_VERSION=v2.15.0
+EXTERNAL_SECRETS_SHA256=34cf25e951da2aeefe465e6767036272a1db1f713b9be6a1b7bc811ae9a739c2
 curl -fsSL -o "$tmp/external-secrets.yaml" \
   "https://github.com/external-secrets/external-secrets/releases/download/$EXTERNAL_SECRETS_VERSION/external-secrets.yaml"
 echo "$EXTERNAL_SECRETS_SHA256  $tmp/external-secrets.yaml" | sha256sum -c --quiet
