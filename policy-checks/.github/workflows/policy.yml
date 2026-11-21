@@ -16,7 +16,7 @@ env:
   CONFTEST_SHA256: c3f6b2a753bd56e377a1e51a95ae3e057f926f2e9139f7d5b5dfbbaf810f7985
   # The release branch of KYVERNO_VERSION's minor version.
   # renovate: datasource=github-digest depName=kyverno/policies
-  KYVERNO_POLICIES_COMMIT: 282e77f6d54e1e1a636190ff2dacc3d02c2d689c # release-1.19
+  KYVERNO_POLICIES_COMMIT: 693ea0215f96347dbd71203e6d1a824efd12f7c8 # release-1.19
 
 jobs:
   compile:

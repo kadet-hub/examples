@@ -36,7 +36,7 @@ indent() { sed 's/^/  /'; }
 KYVERNO_VERSION=v1.19.2
 KYVERNO_SHA256=4f785937dc7fe49a0731108b15def1538923c73d9236255bc69d94d498037969
 # renovate: datasource=github-digest depName=kyverno/policies
-KYVERNO_POLICIES_COMMIT=282e77f6d54e1e1a636190ff2dacc3d02c2d689c # release-1.19
+KYVERNO_POLICIES_COMMIT=693ea0215f96347dbd71203e6d1a824efd12f7c8 # release-1.19
 cli=v$(kyverno version | sed -n 's/^Version: //p')
 if [[ $cli != "$KYVERNO_VERSION" ]]; then
   echo "EX-27: the Kyverno CLI is $cli, the cluster would run $KYVERNO_VERSION" >&2
