@@ -1204,8 +1204,8 @@ jobs:
     env:
       # EX-30: replaces the runner's compose plugin.
       # renovate: datasource=github-release-attachments depName=docker/compose
-      DOCKER_COMPOSE_VERSION: v5.7.1
-      DOCKER_COMPOSE_SHA256: af426722a8af5de812fcee30cc1c39f0639f5f723cbadefb25e5d4db054064cf
+      DOCKER_COMPOSE_VERSION: v5.8.0
+      DOCKER_COMPOSE_SHA256: b8840f5008c447f41fce0a57ae3adeab42c89b1eb6e6012524bcabbfb4ffbaf6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
