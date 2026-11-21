@@ -218,8 +218,8 @@ PROMETHEUS_OPERATOR_SHA256=4bc269572c7b0a6849a6933eef2843bf2a0eaa6e55eb5d7b185ef
 EXTERNAL_SECRETS_VERSION=v2.15.0
 EXTERNAL_SECRETS_SHA256=34cf25e951da2aeefe465e6767036272a1db1f713b9be6a1b7bc811ae9a739c2
 # renovate: datasource=github-release-attachments depName=grafana/grafana-operator
-GRAFANA_OPERATOR_VERSION=v5.25.0
-GRAFANA_OPERATOR_SHA256=b6cf299b645e6415e63c79fcebdd6d9cbb86bfeebf4068b8fd924d336b803f4b
+GRAFANA_OPERATOR_VERSION=v5.26.0
+GRAFANA_OPERATOR_SHA256=579a7ce3b57c096f8f661eb82db7fd579ad1d8c304b0da1fe224b4374efc1bdc
 # renovate: datasource=github-tags depName=argoproj/argo-cd
 ARGOCD_COMMIT=94037c4d4e1af4bd0651d37a179fbd9e347e668c # v3.6.1
 # EX-7: ECR Public throttles anonymous pulls from runners (429); the same tag
