@@ -61,7 +61,7 @@ env:
   KCL_VERSION: v0.13.3
   KCL_SHA256: 37c8bf8e965f3f04f512a46fdb1ba471174d7d4592a831123115bcedb77d2633
   # renovate: datasource=node-version depName=node
-  NODE_VERSION: 26.13.0
+  NODE_VERSION: 26.13.1
   NODE_SHA256: d28a96af6c38596f6d9d97c0ee531c13d238d757742387d1928de822d959e997
   # renovate: datasource=github-release-attachments depName=google/gvisor
   GVISOR_RELEASE: release-20261102.0
