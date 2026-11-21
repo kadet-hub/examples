@@ -9,8 +9,8 @@ permissions: {}
 
 env:
   # renovate: datasource=github-release-attachments depName=kyverno/kyverno
-  KYVERNO_VERSION: v1.19.2
-  KYVERNO_SHA256: 357eaf1df8bc24ddd5a73979fadeaae6a032e8710f11af264229756e4956bf4a
+  KYVERNO_VERSION: v1.20.0
+  KYVERNO_SHA256: 06b8f3ca7b5626473be8fb4d343ad54ab84e317142766f72420e7d44b80942e2
   # renovate: datasource=github-release-attachments depName=open-policy-agent/conftest
   CONFTEST_VERSION: v0.71.1
   CONFTEST_SHA256: c3f6b2a753bd56e377a1e51a95ae3e057f926f2e9139f7d5b5dfbbaf810f7985

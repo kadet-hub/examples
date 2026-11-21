@@ -33,8 +33,8 @@ indent() { sed 's/^/  /'; }
 # the release branch of that minor version. The branch is the comment of
 # the commit pin, which Renovate moves along the branch only (EX-27).
 # renovate: datasource=github-release-attachments depName=kyverno/kyverno
-KYVERNO_VERSION=v1.19.2
-KYVERNO_SHA256=4f785937dc7fe49a0731108b15def1538923c73d9236255bc69d94d498037969
+KYVERNO_VERSION=v1.20.0
+KYVERNO_SHA256=a93cbe980ce77142f6a5b2c0fdee72a2aaa7b1d0434116d2adbed1909dc9483e
 # renovate: datasource=github-digest depName=kyverno/policies
 KYVERNO_POLICIES_COMMIT=282e77f6d54e1e1a636190ff2dacc3d02c2d689c # release-1.19
 cli=v$(kyverno version | sed -n 's/^Version: //p')
