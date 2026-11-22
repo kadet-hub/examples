@@ -157,7 +157,7 @@ until_true() { # seconds jq-filter kubectl-get-arguments
 # Argo CD publishes its manifest in the repository only, so it is pinned by
 # the commit of its tag (EX-3).
 # renovate: datasource=github-tags depName=argoproj/argo-cd
-ARGOCD_COMMIT=94037c4d4e1af4bd0651d37a179fbd9e347e668c # v3.6.1
+ARGOCD_COMMIT=8e8268ef2f3df99ca95663f5080fa6056f156805 # v3.6.2
 # EX-7: ECR Public throttles anonymous pulls from runners (429); the same tag
 # from the mirror, pinned by digest. The tag is the one Argo CD's manifest names.
 # renovate: datasource=docker depName=mirror.gcr.io/library/redis
