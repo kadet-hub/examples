@@ -20,8 +20,8 @@ env:
   UV_VERSION: 0.13.9
   UV_SHA256: a7fbaff2b9a271d85c1bdb540941090fd1ce011797b4abeb48e4dcd39c2471d5
   # renovate: datasource=github-release-attachments depName=oras-project/oras
-  ORAS_VERSION: v1.3.6
-  ORAS_SHA256: 66fb0ad7206f3f6fa77ed5b552049d364ccf4b50b1684554f731f76302b52ca0
+  ORAS_VERSION: v1.4.0
+  ORAS_SHA256: d8e1dce2fd8ce996f1d901845b688eb0cf505a6082897606f053825bb47935d1
   # renovate: datasource=github-release-attachments depName=yannh/kubeconform
   KUBECONFORM_VERSION: v0.8.0
   KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
