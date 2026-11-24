@@ -7,7 +7,7 @@
 set -euo pipefail
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 # renovate: datasource=docker depName=python
-PYTHON_IMAGE=python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90
+PYTHON_IMAGE=python:3.13-slim@sha256:7249d5587b78209a006dc4a3b5340678f84ea729239193aa559962cd8c1fce50
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 export XDG_RUNTIME_DIR=$work/run; mkdir -p "$XDG_RUNTIME_DIR"
