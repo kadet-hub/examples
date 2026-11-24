@@ -14,7 +14,7 @@ KUBECONFORM_COMMIT=02374e583d700721f57300fae78e11acd27ee539 # v0.8.0
 curl -fsSLo "$tmp/openapi2jsonschema.py" \
   "https://raw.githubusercontent.com/yannh/kubeconform/$KUBECONFORM_COMMIT/scripts/openapi2jsonschema.py"
 mkdir "$tmp/schemas"
-(cd "$tmp/schemas" && uv run --quiet --no-project --with pyyaml==6.0.3 \
+(cd "$tmp/schemas" && uv run --quiet --no-project --with pyyaml==6.0.4 \
   python -I ../openapi2jsonschema.py "$OLDPWD"/crds/*.yaml >/dev/null)
 kubeconform -strict -summary -kubernetes-version 1.37.1 -schema-location default \
   -schema-location "$tmp/schemas/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" manifests/
