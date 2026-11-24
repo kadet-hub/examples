@@ -35,7 +35,7 @@ min_serial=113
 tmp=$(mktemp -d)
 cluster=talosapps-talos-apps
 # renovate: datasource=docker depName=ghcr.io/siderolabs/talos
-TALOS_IMAGE=ghcr.io/siderolabs/talos:v1.14.6@sha256:7015cf6be90c17b283d887088872256c3af24299c42d3aa91e5e4f99a8207331
+TALOS_IMAGE=ghcr.io/siderolabs/talos:v1.14.7@sha256:cf23135c4dc42f4031f6e68af92e312f2a1540c4071005d47ed82dbd58201cc3
 export KUBECONFIG=$tmp/kubeconfig TALOSCONFIG=$tmp/talosconfig
 cleanup() {
   kill "${watcher:-}" 2>/dev/null || true
