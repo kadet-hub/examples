@@ -20,7 +20,7 @@ parameters:
           cpu:
             cores: 2
           memory: 2Gi
-          image: quay.io/containerdisks/debian:13@sha256:90b09aed0bbca79adf4ebb2445b548332dee59a600de20038639747526a44ba7
+          image: quay.io/containerdisks/debian:13@sha256:c5311770c8f1a4c43d7858369df3d8f6403e89cccde876d32aa94ede22dced75
           cloudinit: |
             #!/bin/bash
             set -euo pipefail
