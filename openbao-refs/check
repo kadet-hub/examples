@@ -187,12 +187,13 @@ echo "OpenBao: $(bao read -format=json auth/approle/role/ci |
   jq -r '.data | "AppRole ci with token_ttl \(.token_ttl), policies \(.token_policies | join(","))"');" \
   "$(bao read -format=json auth/kubernetes/role/deployer |
     jq -r '.data | "Kubernetes role deployer for \(.bound_service_account_namespaces[0])/\(.bound_service_account_names[0]), policies \(.token_policies | join(","))"')"
-login() { # auth-path json: prints the client token
-  curl -fsS --data "$2" "$url/v1/auth/$1/login" | jq -er .auth.client_token
-}
-approle() { # role
-  login approle "$(jq -cn --arg r "$(bao read -field=role_id "auth/approle/role/$1/role-id")" \
-    --arg s "$(bao write -f -field=secret_id "auth/approle/role/$1/secret-id")" '{role_id: $r, secret_id: $s}')"
+# The CI job's login: role ID and secret ID go to curl on stdin, not on
+# its command line.
+approle() { # role: prints the client token of a new login
+  ROLE_ID=$(bao read -field=role_id "auth/approle/role/$1/role-id") \
+    SECRET_ID=$(bao write -f -field=secret_id "auth/approle/role/$1/secret-id") \
+    jq -n '{role_id: env.ROLE_ID, secret_id: env.SECRET_ID}' |
+    curl -fsS --data @- "$url/v1/auth/approle/login" | jq -er .auth.client_token
 }
 
 # Before: two gpg refs, encrypted for a key that exists for this run only.
@@ -290,8 +291,8 @@ echo "EX-35: AppRole ci-strict without the default policy: $(refused 'Vault Auth
   'a reveal without the default policy' env VAULT_ADDR="$url" VAULT_TOKEN="$(approle ci-strict)" \
   "${py[@]}" kapitan refs --reveal -f "$secret" --refs-path "$tmp/refs")"
 other=$(kubectl -n deployer create token other)
-code=$(curl -sS -o "$tmp/login" -w '%{http_code}' \
-  --data "$(jq -cn --arg j "$other" '{role: "deployer", jwt: $j}')" "$url/v1/auth/kubernetes/login")
+code=$(JWT=$other jq -n '{role: "deployer", jwt: env.JWT}' |
+  curl -sS -o "$tmp/login" -w '%{http_code}' --data @- "$url/v1/auth/kubernetes/login")
 if [[ $code != 403 ]]; then
   echo "EX-35: the login as ServiceAccount other got $code: $(cat "$tmp/login")" >&2
   exit 1

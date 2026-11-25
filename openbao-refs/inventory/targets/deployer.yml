@@ -29,8 +29,8 @@ parameters:
       args:
         - |
           jwt=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-          VAULT_TOKEN=$(curl -fsS --max-time 30 --data "{\"role\": \"deployer\", \"jwt\": \"$jwt\"}" \
-            "$VAULT_ADDR/v1/auth/kubernetes/login" |
+          VAULT_TOKEN=$(printf '{"role": "deployer", "jwt": "%s"}' "$jwt" |
+            curl -fsS --max-time 30 --data @- "$VAULT_ADDR/v1/auth/kubernetes/login" |
             python3 -c 'import json, sys; print(json.load(sys.stdin)["auth"]["client_token"])')
           export VAULT_TOKEN
           echo "gpg secret keys: $(gpg --list-secret-keys --with-colons 2>/dev/null | grep -c '^sec' || true)"
