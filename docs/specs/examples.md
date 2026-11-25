@@ -3146,7 +3146,7 @@ an error that names the token as invalid or expired.
   Related: EX-4, EX-6, EX-12
 
   - Test: `examples` workflow, job `openbao-refs`
-  - Since: this change
+  - Since: #271
 
 - EX-35a: `openbao-refs/check` MUST fail unless:
 
@@ -3173,7 +3173,7 @@ an error that names the token as invalid or expired.
   backups, and a reveal inside Argo CD.
 
   - Test: `examples` workflow, job `openbao-refs`
-  - Since: this change
+  - Since: #271
 
 ## Open questions
 
