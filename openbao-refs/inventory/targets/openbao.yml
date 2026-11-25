@@ -1,0 +1,57 @@
+# OpenBao's dev server, standing in for the OpenBao a platform team runs:
+# everything in memory, plain HTTP behind a ClusterIP Service. check creates
+# the Secret openbao-root with the root token and runs the bao CLI in this
+# container.
+classes:
+  - generators
+
+parameters:
+  kapitan:
+    vars:
+      target: openbao
+  namespace: openbao
+  generators:
+    kubernetes:
+      namespaces:
+        openbao:
+          labels:
+            pod-security.kubernetes.io/enforce: restricted
+      rbac:
+        # Kubernetes auth: OpenBao sends the ServiceAccount token a pod logs
+        # in with to the API server's TokenReview, with its own token.
+        openbao-tokenreview:
+          cluster_role: system:auth-delegator
+          cluster_wide: true
+          service_accounts: [openbao/openbao]
+  components:
+    openbao:
+      image: ghcr.io/openbao/openbao:2.7.3@sha256:ba4b133eb9586630024e71a617e66f37f29cc3534cdd46a6233e098ceded8dc9
+      # The entrypoint adds -dev-root-token-id from BAO_DEV_ROOT_TOKEN_ID and
+      # listens on 0.0.0.0:8200.
+      args: [server, -dev, -dev-no-store-token]
+      security_profile: restricted
+      workload_security_context: {runAsUser: 100, runAsGroup: 1000}
+      service_account: {create: true}
+      # OpenBao reads its token and the cluster CA from the mounted token.
+      automount_service_account_token: true
+      env:
+        BAO_DEV_ROOT_TOKEN_ID:
+          secretKeyRef: {name: openbao-root, key: token}
+        # For the bao CLI that check runs with kubectl exec.
+        BAO_ADDR: http://127.0.0.1:8200
+        BAO_TOKEN:
+          secretKeyRef: {name: openbao-root, key: token}
+      ports:
+        http:
+          container_port: 8200
+          service_port: 8200
+      healthcheck:
+        readiness:
+          type: http
+          port: http
+          path: /v1/sys/health
+      resources:
+        requests: {cpu: 50m, memory: 64Mi}
+        limits: {memory: 256Mi}
+      service:
+        type: ClusterIP

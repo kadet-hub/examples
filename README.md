@@ -35,6 +35,7 @@ longer holds.
 | [sso-keycloak](sso-keycloak/) | https://kadet-hub.org/blog/keycloak-sso-self-hosted-apps/ | `sso-keycloak/check` |
 | [matrix-federation](matrix-federation/) | https://kadet-hub.org/recipes/matrix-synapse/ | `matrix-federation/check` |
 | [open-webui-rag](open-webui-rag/) | https://kadet-hub.org/blog/open-webui-rag-kubernetes/ | `open-webui-rag/check` |
+| [openbao-refs](openbao-refs/) | https://kadet-hub.org/blog/kapitan-refs-openbao/ | `openbao-refs/check` |
 
 ## Running
 

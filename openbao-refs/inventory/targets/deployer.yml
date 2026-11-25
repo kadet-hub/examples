@@ -1,0 +1,62 @@
+# A workload in the cluster that reveals the app's refs. It logs in to
+# OpenBao with its ServiceAccount token (Kubernetes auth) and passes the
+# token it gets to Kapitan. It prints a hash of what it revealed, where a
+# deployer would apply it. The ConfigMap checkout, which check creates from
+# compiled/app and the ref files, stands in for a checkout of the repository.
+classes:
+  - generators
+
+parameters:
+  kapitan:
+    vars:
+      target: deployer
+  namespace: deployer
+  generators:
+    kubernetes:
+      namespaces:
+        deployer:
+          labels:
+            pod-security.kubernetes.io/enforce: restricted
+      service_accounts:
+        # Bound to no role in OpenBao: its token gets no login.
+        other: {}
+  components:
+    reveal:
+      type: job
+      backoff_limit: 0
+      image: docker.io/kapicorp/kapitan:0.36.3@sha256:04b9ca04f5041851631fb1041fbafe37b1ca6c3ad99a81d6ccd40f5ebd20f857
+      command: [sh, -ec]
+      args:
+        - |
+          jwt=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          VAULT_TOKEN=$(curl -fsS --max-time 30 --data "{\"role\": \"deployer\", \"jwt\": \"$jwt\"}" \
+            "$VAULT_ADDR/v1/auth/kubernetes/login" |
+            python3 -c 'import json, sys; print(json.load(sys.stdin)["auth"]["client_token"])')
+          export VAULT_TOKEN
+          echo "gpg secret keys: $(gpg --list-secret-keys --with-colons 2>/dev/null | grep -c '^sec' || true)"
+          revealed=$(kapitan refs --reveal -f /checkout/compiled/app-secret.yml --refs-path /checkout/refs)
+          echo "revealed sha256: $(printf '%s\n' "$revealed" | sha256sum | cut -d' ' -f1)"
+      env:
+        VAULT_ADDR: http://openbao.openbao.svc:8200
+        # The image's Python 3.11 makes google-api-core warn on every start.
+        PYTHONWARNINGS: ignore::FutureWarning
+      security_profile: restricted
+      workload_security_context: {runAsUser: 1000, runAsGroup: 1000}
+      service_account: {create: true, name: deployer}
+      # The token the pod logs in to OpenBao with.
+      automount_service_account_token: true
+      resources:
+        requests: {cpu: 100m, memory: 128Mi}
+        limits: {memory: 512Mi}
+      volumes:
+        checkout:
+          configMap:
+            name: checkout
+            items:
+              - {key: app-secret.yml, path: compiled/app-secret.yml}
+              - {key: db-password, path: refs/app/db-password}
+              - {key: api-key, path: refs/app/api-key}
+      volume_mounts:
+        checkout:
+          mount_path: /checkout
+          read_only: true

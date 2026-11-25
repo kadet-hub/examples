@@ -1,0 +1,35 @@
+# The app's Secret with two vaultkv refs. A ref file under refs/ names a
+# path and key in OpenBao's KV store, which holds the value.
+classes:
+  - generators
+
+parameters:
+  kapitan:
+    vars:
+      target: app
+    secrets:
+      # Kapitan copies this block into every ref file it writes and reads it
+      # back from there on reveal.
+      vaultkv:
+        # Each consumer logs in by its own method and passes the token in
+        # VAULT_TOKEN.
+        auth: token
+        # Without an address in the ref files, each consumer's VAULT_ADDR
+        # applies. A set address would be the one every consumer uses.
+        addr: null
+        engine: kv-v2
+        mount: secret
+  namespace: app
+  generators:
+    kubernetes:
+      namespaces:
+        app:
+          labels:
+            pod-security.kubernetes.io/enforce: restricted
+      secrets:
+        app:
+          string_data:
+            DB_PASSWORD:
+              value: ?{vaultkv:app/db-password}
+            API_KEY:
+              value: ?{vaultkv:app/api-key}

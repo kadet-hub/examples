@@ -1355,6 +1355,44 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: open-webui-rag/check
 
+  # EX-35: gpg refs moved to vaultkv refs in OpenBao, revealed by AppRole
+  # and by Kubernetes auth without a gpg key.
+  openbao-refs:
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.folders), 'openbao-refs')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      attestations: read # gh attestation verify
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install oras, uv, kubectl and kind
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin" && cd "$RUNNER_TEMP/bin"
+          gh release download "$ORAS_VERSION" -R oras-project/oras -p "oras_${ORAS_VERSION#v}_linux_amd64.tar.gz" -O oras.tgz
+          gh release download "$UV_VERSION" -R astral-sh/uv -p "uv-x86_64-unknown-linux-gnu.tar.gz" -O uv.tgz
+          gh release download "$KIND_VERSION" -R kubernetes-sigs/kind -p "kind-linux-amd64" -O kind
+          sha256sum -c <<EOF
+          $ORAS_SHA256  oras.tgz
+          $UV_SHA256  uv.tgz
+          $KIND_SHA256  kind
+          EOF
+          tar -xzf oras.tgz oras
+          tar -xzf uv.tgz --strip-components=1 uv-x86_64-unknown-linux-gnu/uv
+          c=$(docker create "$KUBECTL_IMAGE") && docker cp -q "$c:/bin/kubectl" . && docker rm "$c" >/dev/null
+          chmod +x kind
+          rm ./*.tgz
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: openbao-refs/check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: openbao-refs/check
+
   # EX-3f: published advisories for the packages in the lock files.
   advisories:
     needs: changes
@@ -1455,6 +1493,7 @@ jobs:
       - sso-keycloak
       - matrix-federation
       - open-webui-rag
+      - openbao-refs
       - advisories
       - pins
     if: always()
