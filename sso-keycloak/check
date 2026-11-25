@@ -209,7 +209,7 @@ wait "$pid" || status=$?
 # that the Playwright package of the same version drives. Renovate moves
 # both in one pull request.
 # renovate: datasource=docker depName=mcr.microsoft.com/playwright/python
-PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright/python:v1.64.1-noble@sha256:330d401ae23c905896a0c26c66c36fc971b621519e7b11b435a8328d7bf6e031
+PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright/python:v1.65.2-noble@sha256:38dd67fc654b56b3cba611e4c8eb71cd33750e1cd29eea2a5dc00b484817a75f
 c=$(docker create "$PLAYWRIGHT_IMAGE")
 docker cp -q "$c:/ms-playwright" "$tmp/"
 docker rm "$c" >/dev/null
@@ -217,5 +217,5 @@ reveal sso/ca.crt >"$tmp/ca.pem"
 password_alice=$(reveal sso/alice-password)
 password_bob=$(reveal sso/bob-password)
 PASSWORD_ALICE=$password_alice PASSWORD_BOB=$password_bob PLAYWRIGHT_BROWSERS_PATH=$tmp/ms-playwright \
-  uv run --quiet --python 3.13 --with playwright==1.64.1 python -I tests/login.py "$tmp/ca.pem" "$tmp/sso"
+  uv run --quiet --python 3.13 --with playwright==1.65.2 python -I tests/login.py "$tmp/ca.pem" "$tmp/sso"
 echo "sso-keycloak: single sign-on through Keycloak for Gitea, Open WebUI, Miniflux, Mattermost and Synapse passed"
