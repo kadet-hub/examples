@@ -73,8 +73,8 @@ kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
 # The operators from their release manifests; the generator renders the
 # KubeVirt CR, infra.yaml the CDI CR.
 # renovate: datasource=github-release-attachments depName=kubevirt/kubevirt
-KUBEVIRT_VERSION=v1.9.1
-KUBEVIRT_SHA256=9ac45a436c49d32e6fc21d542bcb7600b970705297b9e6752f3ef9b0a1d292da
+KUBEVIRT_VERSION=v1.10.0
+KUBEVIRT_SHA256=ad36ebf8aab206c538e1746e9ac295cb7ac473489dc27b99a6225a17915e9bf2
 # renovate: datasource=github-release-attachments depName=kubevirt/containerized-data-importer
 CDI_VERSION=v1.66.1
 CDI_SHA256=c7d92bd1b2ee1a3952a5990000437c08d58109f31c0bd48ab6188ec27a13e224
