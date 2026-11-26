@@ -44,7 +44,7 @@ env:
   # renovate: datasource=docker depName=registry.k8s.io/kube-apiserver
   KUBE_APISERVER_IMAGE: registry.k8s.io/kube-apiserver:v1.37.3@sha256:1a00343a748fe98faed757d719c4836465dfc63c96a6d3d07f2fc20397971773
   # renovate: datasource=docker depName=registry.k8s.io/kubectl
-  KUBECTL_IMAGE: registry.k8s.io/kubectl:v1.37.2@sha256:fe049faa65ae483ac200009a949a68fa4c9985daea12c9cb1195c9c7965301fc
+  KUBECTL_IMAGE: registry.k8s.io/kubectl:v1.37.3@sha256:82f06779a0dcd86225ffdb96c005418b9716093a39907a5ecf686d7a22e6b788
   # renovate: datasource=github-release-attachments depName=etcd-io/etcd
   ETCD_VERSION: v3.7.4
   ETCD_SHA256: a0d47d07d081c12611fe69dc81a16ae8dd758401c0fe3a83d508823a1dac558e
