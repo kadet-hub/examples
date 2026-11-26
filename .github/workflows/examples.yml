@@ -79,8 +79,8 @@ env:
   TOFU_VERSION: v1.13.9
   TOFU_SHA256: b34b327cc1ef07178207b6f2cd1f5276537d3e5b7be316500f6dac50d4c0a857
   # renovate: datasource=github-release-attachments depName=kubevirt/kubevirt
-  VIRTCTL_VERSION: v1.9.1
-  VIRTCTL_SHA256: c289393c8186a258653594605f5199b4c171a3131e6e409ed204a96b491b782a
+  VIRTCTL_VERSION: v1.10.0
+  VIRTCTL_SHA256: a46a344917e7131c5bdebcc186804b16127b9b6606525e39beacfbb9e326e737
   # renovate: datasource=github-release-attachments depName=vmware-tanzu/velero
   VELERO_VERSION: v1.18.4
   VELERO_SHA256: e520c17d8997e1c9d0a28ae013592e4473ca3bd82cb3acd132e51286263f74bf
