@@ -209,8 +209,8 @@ until_true() { # seconds jq-filter kubectl-get-arguments
 # sha256 (EX-3). Argo CD publishes its manifest in the repository only, so it
 # is pinned by the commit of its tag.
 # renovate: datasource=github-release-attachments depName=kyverno/kyverno
-KYVERNO_VERSION=v1.19.2
-KYVERNO_SHA256=4f785937dc7fe49a0731108b15def1538923c73d9236255bc69d94d498037969
+KYVERNO_VERSION=v1.20.0
+KYVERNO_SHA256=a93cbe980ce77142f6a5b2c0fdee72a2aaa7b1d0434116d2adbed1909dc9483e
 # renovate: datasource=github-release-attachments depName=prometheus-operator/prometheus-operator
 PROMETHEUS_OPERATOR_VERSION=v0.95.2
 PROMETHEUS_OPERATOR_SHA256=4bc269572c7b0a6849a6933eef2843bf2a0eaa6e55eb5d7b185efe1d2dc44335
