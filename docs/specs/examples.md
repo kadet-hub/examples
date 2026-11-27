@@ -1,7 +1,7 @@
 # Examples
 
 Status: Draft
-Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `argocd-cmp/`, `sso-keycloak/tests/`, `matrix-federation/tests/`, `open-webui-rag/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml`, `renovate.json`
+Code: `*/check`, `gvisor-ci/run`, `apiserver-dry-run/dry-run`, `argocd-vs-flux/`, `helm-mutate/`, `cert-manager-mutate/`, `first-platform/inventory/classes/shop.yml`, `helm-vs-terraform/inventory/classes/uploads.yml`, `kubevirt-csi/`, `open-webui-searxng/`, `platform-baseline/`, `immich-cnpg/`, `pihole-powerdns/`, `helmfile-vs-kapitan/`, `timoni-vs-kapitan/`, `kcl-vs-kapitan/`, `argocd-cmp/`, `sso-keycloak/tests/`, `matrix-federation/tests/`, `open-webui-rag/`, `openbao-refs/`, `.github/workflows/examples.yml`, `.github/workflows/request-review.yml`, `.github/workflows/compile-diff.yml`, `.github/workflows/compile-diff-comment.yml`, `renovate.json`
 Verified against: main @ 34709ad
 
 Each folder holds the runnable part of one kadet-hub.org blog post or
@@ -64,7 +64,7 @@ schedule instead of trusting the state on the publishing day.
   `helmfile-vs-kapitan` unless EX-21 holds, `timoni-vs-kapitan` unless
   EX-22 to EX-22b hold, `kcl-vs-kapitan` unless EX-23 to EX-23b hold,
   `argocd-cmp` unless EX-24 holds, `sso-keycloak` unless EX-32 and
-  EX-32a hold. `sso-keycloak/check` leaves the deploy to a Chainsaw test
+  EX-32a hold, `openbao-refs` unless EX-35 and EX-35a hold. `sso-keycloak/check` leaves the deploy to a Chainsaw test
   and the logins to a Playwright script and fails when either fails.
 
   Before the diff, `same-app` drops the `app.kubernetes.io/managed-by`
@@ -206,9 +206,9 @@ schedule instead of trusting the state on the publishing day.
   run, such as a readiness probe on a port the app does not listen on.
   `argocd-vs-flux`, `helm-mutate`, `cert-manager-mutate`,
   `kubevirt-csi`, `open-webui-searxng`, `platform-baseline`,
-  `immich-cnpg`, `pihole-powerdns`, `helmfile-vs-kapitan` and `argocd-cmp`
-  deploy their workloads under EX-7, EX-10, EX-11, EX-14, EX-17, EX-18,
-  EX-19, EX-20, EX-21 and EX-24.
+  `immich-cnpg`, `pihole-powerdns`, `helmfile-vs-kapitan`, `argocd-cmp`
+  and `openbao-refs` deploy their workloads under EX-7, EX-10, EX-11,
+  EX-14, EX-17, EX-18, EX-19, EX-20, EX-21, EX-24 and EX-35.
   `first-platform/check` deploys `compiled/prod/apps` (Namespace,
   Deployment, Service, PodDisruptionBudget), `helm-vs-terraform/check`
   the Deployment, Service and ConfigMap of its first compile. Both create
@@ -3079,6 +3079,102 @@ a knowledge base and adds the file to it.
   - Test: `examples` workflow, job `open-webui-rag`
   - Since: #185
 
+## Kapitan refs in OpenBao
+
+`openbao-refs/` backs the kadet-hub.org blog post on moving Kapitan refs
+from gpg to `vaultkv` refs in OpenBao. A gpg ref can be revealed only
+where a private key of one of its recipients is. A `vaultkv` ref file
+names a path and a key in a KV version 2 engine, and every consumer that
+reveals it logs in to OpenBao with a credential of its own.
+
+The target `openbao` runs OpenBao's dev server, which keeps everything in
+memory, behind a ClusterIP Service. It stands in for an OpenBao that
+another team runs. `check` creates the Secret `openbao-root` with a random
+root token and runs the `bao` CLI inside the container with `kubectl
+exec`, as OpenBao's admin. Kapitan on the runner reaches OpenBao through
+`kubectl port-forward`. The ServiceAccount `openbao` is bound to
+`system:auth-delegator`, so OpenBao can send a token that a pod logs in
+with to the API server's TokenReview.
+
+The target `app` renders the Secret `app` with the refs `app/db-password`
+and `app/api-key`. Both live in OpenBao's `secret/app`, one key each. Its
+`kapitan.secrets.vaultkv` block sets `auth: token` and `addr: null`.
+Kapitan 0.36.3 copies the block into every ref file it writes, values from
+`VAULT_ADDR` and the other `VAULT_*` variables included, and on reveal
+takes the settings from the ref file. Its vault client logs in with
+`token`, `userpass`, `ldap`, `approle` or `github`
+(`kapitan/refs/vault_resources.py`). Kubernetes auth is not among them,
+and the auth type in the file would hold for every consumer. So every
+consumer logs in on its own and passes the token in `VAULT_TOKEN`. The
+runner reaches OpenBao at the port-forward's address and the Job at the
+Service's name. With `addr: null` the ref files carry no address and
+each consumer's `VAULT_ADDR` applies, because hvac falls back to it. The
+model's default `skip_verify: true` stays in the files, which is
+harmless over the plain HTTP used here.
+
+`check` writes two gpg refs with a key made for the run, the state of a
+repository before the move. Each ref is revealed with that key and piped
+into `kapitan refs --write vaultkv:...`, with a token of the policy
+`app-write`, which writes the value to OpenBao and the `vaultkv` ref file
+over the gpg one. The key and its keyring are then deleted. CI is the
+runner with a token of the AppRole `ci`. The Job `reveal` of the target
+`deployer` runs `docker.io/kapicorp/kapitan` as the ServiceAccount
+`deployer`, logs in with its mounted token through Kubernetes auth and
+reveals the Secret. It prints a sha256 of what it revealed instead of
+applying it, so its log holds no value. The ConfigMap `checkout`, which
+`check` creates from the compiled Secret and the two ref files, stands in
+for a checkout of the repository.
+
+Kapitan checks a token with `auth/token/lookup-self` before it reads
+anything (hvac's `is_authenticated`). OpenBao's `default` policy grants
+that path. A token without it is refused by Kapitan before any read, with
+an error that names the token as invalid or expired.
+
+- EX-35: `openbao-refs/check` MUST fail unless the generator passes the
+  checks of EX-4 and, with OpenBao in a new kind cluster:
+
+  - after the move, `secret/app` holds both keys and every ref file of the
+    target is a `vaultkv` ref, and the run's gpg keyring is gone;
+  - with an empty gpg keyring and without a token or address, `kapitan
+    compile` succeeds and the Secret `app` holds both refs' tags and
+    neither value nor its base64 encoding;
+  - a token of the AppRole `ci` reveals the Secret, and the Secret applied
+    from it holds the values that the gpg refs had;
+  - the Job `reveal` completes, finds no gpg secret key and prints the
+    sha256 of the same revealed manifest.
+
+  Related: EX-4, EX-6, EX-12
+
+  - Test: `examples` workflow, job `openbao-refs`
+  - Since: #271
+
+- EX-35a: `openbao-refs/check` MUST fail unless:
+
+  - a reveal with a token of OpenBao's `default` policy alone fails with
+    Kapitan's `Permission Denied`;
+  - a reveal with a token of the AppRole `ci-strict`, which has the read
+    policy and `token_no_default_policy=true`, fails with `Vault
+    Authentication Error`;
+  - a Kubernetes auth login on the role `deployer` with a token of the
+    ServiceAccount `other` gets 403;
+  - a ref written without a target holds the runner's `VAULT_ADDR` in its
+    file and reveals with `VAULT_ADDR` set to an address where nothing
+    listens;
+  - after `bao kv patch` changes a value in OpenBao, a new compile leaves
+    `compiled/app` unchanged and the reveal holds the new value.
+
+  The last two are the settings and the change that a `vaultkv` ref does
+  not show in Git. A rotated value reaches the cluster with the next
+  reveal and deploy, and no diff of `compiled/` announces it.
+
+  Not tested: TLS to OpenBao and the settings it needs in the ref files,
+  JWT auth from a CI provider's OIDC token, the `vaulttransit` backend,
+  audit devices, revoking a secret ID or token, OpenBao's storage and
+  backups, and a reveal inside Argo CD.
+
+  - Test: `examples` workflow, job `openbao-refs`
+  - Since: #271
+
 ## Open questions
 
 - OQ-1: Python interpreters are downloaded by uv and package versions come
@@ -3131,3 +3227,4 @@ a knowledge base and adds the file to it.
 | `sso-keycloak/` | One Kapitan project on the omegaconf backend (targets `cert-manager`, `cnpg`, `keycloak-operator`, `keycloak`, `gitea`, `open-webui`, `miniflux`, `mattermost`, `matrix-synapse`), the class `inventory/classes/sso.yml` that Keycloak and the apps read, the nine recipes pinned in the fetch inventory `fetch/targets/recipes.yml`, the Chainsaw test `tests/chainsaw-test.yaml` with `tests/namespaces.yaml`, the Playwright script `tests/login.py`; `check` (EX-32 to EX-32c) |
 | `matrix-federation/` | One Kapitan project on the omegaconf backend (targets `cnpg`, `synapse-a`, `synapse-b`), the class `inventory/classes/federated.yml` with the TLS proxy and Synapse's settings for kind, the two recipes pinned in the fetch inventory `fetch/targets/recipes.yml`, the Chainsaw test `tests/chainsaw-test.yaml` with `tests/namespaces.yaml`, the federation script `tests/federate.sh`; `check` (EX-33, EX-33a) |
 | `open-webui-rag/` | One Kapitan project on the omegaconf backend (targets `ollama`, `litellm`, `qdrant`, `open-webui`), the class `inventory/classes/rag.yml` that the targets share, the four recipes pinned in the fetch inventory `fetch/targets/recipes.yml`, the Chainsaw test `tests/chainsaw-test.yaml` with `tests/namespaces.yaml`, the script `tests/rag.sh` with `tests/document.md`; `check` (EX-31, EX-31a) |
+| `openbao-refs/` | One Kapitan project on the omegaconf backend (targets `openbao`, `app`, `deployer`) with the kubernetes generator pinned in `inventory/classes/generators.yml`, the `vaultkv` settings and refs in `inventory/targets/app.yml`, the Job `reveal` in `inventory/targets/deployer.yml`; `check` (EX-35, EX-35a) |

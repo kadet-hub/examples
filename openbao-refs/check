@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+# Kapitan refs moved from gpg to vaultkv refs in OpenBao (EX-35). Verifies
+# the latest signed index and the kubernetes generator, pulls it by digest,
+# and starts OpenBao's dev server in a new kind cluster. Writes two gpg refs
+# with a key made for the run, moves them to vaultkv refs with that key, and
+# deletes the key. Exits 0 only if, with no gpg key anywhere:
+# - the compile without OpenBao access holds the refs' tags and no value;
+# - a CI login with AppRole reveals both values, which the deploy applies;
+# - a Job in the cluster, logged in with Kubernetes auth, reveals the same;
+# - a token with OpenBao's default policy only, an AppRole token without the
+#   default policy, and a ServiceAccount that no role names are refused;
+# - a ref file that holds an address keeps it against VAULT_ADDR;
+# - a value changed in OpenBao leaves compiled/ unchanged and reveals new.
+# Set KEEP=1 to keep the cluster.
+# Needs gh (authenticated), jq, oras, uv, gpg, kind, kubectl, openssl, curl,
+# docker.
+set -euo pipefail
+cd "$(dirname "$0")"
+id=https://github.com/kadet-hub/registry/.github/workflows/release.yml@refs/heads/main
+min_serial=148
+tmp=$(mktemp -d)
+cluster=openbao-refs
+export KUBECONFIG=$tmp/kubeconfig # kind and kubectl leave the caller's kubeconfig alone
+export GNUPGHOME=$tmp/gnupg       # the run's gpg key, deleted after the move
+cleanup() {
+  kill "${watcher:-}" "${forward:-}" 2>/dev/null || true
+  gpgconf --kill gpg-agent 2>/dev/null || true
+  rm -rf -- "$tmp"
+  [[ ${KEEP:-} == 1 ]] || kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+rm -rf lib compiled
+py=(uv run --quiet --python 3.13 --with 'kapitan[omegaconf,reclass-rs]==0.36.3' --with omegaconf==2.4.0.dev4)
+kapitan() { "${py[@]}" kapitan "$@"; }
+started=$SECONDS
+
+# EX-4: index signature, digest and attestation, then pull by digest.
+gh release download --repo kadet-hub/registry --pattern 'index.json*' -D "$tmp"
+gh attestation verify "$tmp/index.json" --bundle "$tmp/index.json.sigstore.json" \
+  --owner kadet-hub --cert-identity "$id" >/dev/null
+serial=$(jq -e .serial "$tmp/index.json")
+if ((serial < min_serial)); then
+  echo "index serial $serial is lower than $min_serial" >&2
+  exit 1
+fi
+echo "index serial $serial verified"
+while read -r name version digest; do
+  want=$(jq -er --arg n "$name" --arg v "$version" \
+    '.generators[$n][$v] | select(.yanked == null) | .digest' "$tmp/index.json") || {
+    echo "generator $name $version is missing or yanked in index serial $serial" >&2
+    exit 1
+  }
+  if [[ $want != "$digest" ]]; then
+    echo "generator $name $version: index has $want, the inventory pins $digest" >&2
+    exit 1
+  fi
+  gh attestation verify "oci://ghcr.io/kadet-hub/$name@$digest" \
+    --owner kadet-hub --cert-identity "$id" >/dev/null
+  oras pull -o "$tmp/generators/$name" "ghcr.io/kadet-hub/$name@$digest" >/dev/null
+  mkdir -p "lib/$name"
+  tar -xf "$tmp/generators/$name/$name.tar" -C "lib/$name" --no-same-owner
+  echo "generator $name $version verified and unpacked"
+done < <(sed -nE 's|^ *source: ghcr\.io/kadet-hub/([a-z0-9-]+):([^@]+)@(sha256:[0-9a-f]{64})$|\1 \2 \3|p' \
+  inventory/classes/generators.yml)
+echo "verified and pulled after $((SECONDS - started))s"
+
+# EX-6: what a broken or not ready pod leaves to read.
+describe_pods() { # namespace pod...
+  local ns=$1 pod
+  shift
+  for pod; do
+    kubectl -n "$ns" describe pod "$pod" >&2 || true
+    kubectl -n "$ns" logs "$pod" --all-containers --previous --tail=50 >&2 ||
+      kubectl -n "$ns" logs "$pod" --all-containers --tail=50 >&2 || true
+  done
+}
+# EX-6: stop the rollout status or wait as soon as a pod is broken.
+watch_pods() {
+  local bad now seen=''
+  while sleep 10; do
+    bad=$(kubectl get pods -A -o json | jq -r '.items[]
+      | select([.status.initContainerStatuses[]?, .status.containerStatuses[]?] | any(
+          .restartCount > 3 or (.state.waiting.reason | IN("CrashLoopBackOff", "ImagePullBackOff",
+            "CreateContainerConfigError", "InvalidImageName"))))
+      | "\(.metadata.namespace) \(.metadata.name)"') || continue
+    now=$bad
+    bad=$(comm -12 <(sort <<<"$seen") <(sort <<<"$now"))
+    seen=$now
+    [[ -n $bad ]] || continue
+    echo "EX-6: broken pods, stopping the check" >&2
+    while read -r ns pod; do
+      describe_pods "$ns" "$pod"
+    done <<<"$bad"
+    pkill -P $$ # check's children: the command it waits for and this watch
+    return
+  done
+}
+# EX-6: a kubectl rollout status that prints the namespace on a timeout.
+install_wait() { # namespace kubectl-arguments
+  local ns=$1 s
+  shift
+  kubectl -n "$ns" "$@" && return
+  s=$?
+  kubectl -n "$ns" get events --sort-by=.lastTimestamp >&2 || true
+  kubectl -n "$ns" get pods -o wide >&2 || true
+  # shellcheck disable=SC2046 # one pod name per word
+  describe_pods "$ns" $(kubectl -n "$ns" get pods -o json | jq -r '.items[]
+    | select(.status.phase != "Succeeded" and (any(.status.conditions[]?;
+        .type == "Ready" and .status == "True") | not)) | .metadata.name')
+  return "$s"
+}
+# Waits until a jq filter is true on a resource.
+until_true() { # seconds jq-filter kubectl-get-arguments
+  local deadline=$((SECONDS + $1)) filter=$2
+  shift 2
+  until kubectl get "$@" -o json 2>/dev/null | jq -e "$filter" >/dev/null; do
+    if ((SECONDS > deadline)); then
+      echo "timed out waiting for $filter on $*" >&2
+      kubectl get "$@" -o yaml >&2 || true
+      return 1
+    fi
+    sleep 1
+  done
+}
+# Runs a command that must fail, and prints the first line of its output
+# that matches a pattern.
+refused() { # pattern what command...
+  local pattern=$1 what=$2 out
+  shift 2
+  if out=$("$@" 2>&1); then
+    echo "EX-35: $what succeeded" >&2
+    exit 1
+  fi
+  grep -m1 -oE "$pattern" <<<"$out" || { echo "EX-35: $what failed otherwise:" >&2; tail -5 <<<"$out" >&2; exit 1; }
+}
+gpg_keys() { gpg --list-secret-keys --with-colons 2>/dev/null | grep -c '^sec' || true; }
+
+kapitan compile -t openbao deployer >"$tmp/compile.log" 2>&1 || { cat "$tmp/compile.log"; exit 1; }
+
+# The node image of the workflow's kind release; Renovate updates both together.
+# renovate: datasource=docker depName=kindest/node
+KIND_NODE_IMAGE=kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+t=$SECONDS
+kind create cluster --name "$cluster" --wait 120s --image "$KIND_NODE_IMAGE"
+echo "cluster ready after $((SECONDS - t))s"
+watch_pods &
+watcher=$!
+
+# OpenBao, with a root token for this run. check is OpenBao's admin.
+t=$SECONDS
+root=$(openssl rand -hex 16)
+kubectl apply -f compiled/openbao/openbao-namespace.yml >/dev/null
+kubectl -n openbao create secret generic openbao-root --from-literal=token="$root" >/dev/null
+kubectl apply -R -f compiled/openbao >/dev/null
+install_wait openbao rollout status deploy/openbao --timeout=300s >/dev/null
+bao() { kubectl -n openbao exec -i deploy/openbao -- bao "$@"; }
+echo "$(bao version | cut -d' ' -f1-2) ready after $((SECONDS - t))s"
+kubectl -n openbao port-forward service/openbao :8200 >"$tmp/port-forward" 2>&1 &
+forward=$!
+for _ in $(seq 30); do
+  url=$(grep -om1 '127\.0\.0\.1:[0-9]*' "$tmp/port-forward") && break
+  sleep 1
+done
+url=http://${url:?no port-forward to OpenBao}
+
+# Two policies on the app's secret, an AppRole for CI and a Kubernetes auth
+# role for the ServiceAccount deployer. The role ci-strict leaves out
+# OpenBao's default policy.
+bao policy write app-write - >/dev/null <<'EOF'
+path "secret/data/app" {
+  capabilities = ["create", "read", "update"]
+}
+EOF
+bao policy write app-read - >/dev/null <<'EOF'
+path "secret/data/app" {
+  capabilities = ["read"]
+}
+EOF
+bao auth enable approle >/dev/null
+bao write auth/approle/role/ci token_policies=app-read token_ttl=10m >/dev/null
+bao write auth/approle/role/ci-strict token_policies=app-read token_no_default_policy=true token_ttl=10m >/dev/null
+bao auth enable kubernetes >/dev/null
+bao write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc >/dev/null
+bao write auth/kubernetes/role/deployer bound_service_account_names=deployer \
+  bound_service_account_namespaces=deployer token_policies=app-read token_ttl=10m >/dev/null
+echo "OpenBao: $(bao read -format=json auth/approle/role/ci |
+  jq -r '.data | "AppRole ci with token_ttl \(.token_ttl), policies \(.token_policies | join(","))"');" \
+  "$(bao read -format=json auth/kubernetes/role/deployer |
+    jq -r '.data | "Kubernetes role deployer for \(.bound_service_account_namespaces[0])/\(.bound_service_account_names[0]), policies \(.token_policies | join(","))"')"
+# The CI job's login: role ID and secret ID go to curl on stdin, not on
+# its command line.
+approle() { # role: prints the client token of a new login
+  ROLE_ID=$(bao read -field=role_id "auth/approle/role/$1/role-id") \
+    SECRET_ID=$(bao write -f -field=secret_id "auth/approle/role/$1/secret-id") \
+    jq -n '{role_id: env.ROLE_ID, secret_id: env.SECRET_ID}' |
+    curl -fsS --data @- "$url/v1/auth/approle/login" | jq -er .auth.client_token
+}
+
+# Before: two gpg refs, encrypted for a key that exists for this run only.
+mkdir -m 700 "$GNUPGHOME" "$tmp/no-key"
+gpg --batch --quiet --passphrase '' --quick-gen-key app@example.com default default never 2>/dev/null
+declare -A value
+for ref in db-password api-key; do
+  value[$ref]=$(openssl rand -hex 24)
+  printf %s "${value[$ref]}" | kapitan refs --write "gpg:app/$ref" --recipients app@example.com \
+    -f - --refs-path "$tmp/refs" >/dev/null
+done
+echo "gpg refs app/db-password and app/api-key written for app@example.com"
+
+# EX-35: the move. The gpg key reveals each ref one last time, and a token
+# with the policy app-write writes the value to OpenBao and the vaultkv ref
+# file over the gpg one.
+writer=$(bao token create -policy=app-write -ttl=10m -field=token)
+t=$SECONDS
+for ref in db-password api-key; do
+  kapitan refs --reveal --ref-file "$tmp/refs/app/$ref" |
+    VAULT_ADDR=$url VAULT_TOKEN=$writer kapitan refs --write "vaultkv:app/$ref" -t app \
+      --vault-path app --vault-key "$ref" -f - --refs-path "$tmp/refs" >/dev/null
+done
+echo "EX-35: moved 2 refs to vaultkv in $((SECONDS - t))s;" \
+  "secret/app in OpenBao holds $(bao kv get -format=json secret/app | jq -r '.data.data | keys | join(", ")')," \
+  "version $(bao kv metadata get -format=json secret/app | jq -r .data.current_version)"
+gpgconf --kill gpg-agent
+rm -rf "$GNUPGHOME"
+export GNUPGHOME=$tmp/no-key
+if grep -L '^type: vaultkv$' "$tmp"/refs/app/* | grep .; then
+  echo "EX-35: a ref above is not a vaultkv ref" >&2
+  exit 1
+fi
+echo "EX-35: gpg key deleted, $(gpg_keys) secret keys in GNUPGHOME from here on"
+echo "refs/app/db-password:"
+sed 's/^/  /' "$tmp/refs/app/db-password"
+echo "  data decodes to $(sed -n 's/^data: //p' "$tmp/refs/app/db-password" | base64 -d)"
+
+# EX-35: the compile needs no OpenBao access. The output holds the tags.
+t=$SECONDS
+kapitan compile -t app --refs-path "$tmp/refs" >"$tmp/compile.log" 2>&1 || { cat "$tmp/compile.log"; exit 1; }
+echo "compiled app without a token or address in $((SECONDS - t))s"
+secret=compiled/app/app/app-secret.yml
+for ref in db-password api-key; do
+  if grep -rqF -e "${value[$ref]}" -e "$(printf %s "${value[$ref]}" | base64 -w0)" compiled; then
+    echo "EX-35: the value of app/$ref is in compiled/" >&2
+    exit 1
+  fi
+done
+tags=$(grep -oE '\?\{vaultkv:app/[a-z-]+:[0-9a-f]{8}\}' "$secret" | tr '\n' ' ')
+[[ $tags == *db-password*api-key* || $tags == *api-key*db-password* ]] || { cat "$secret" >&2; exit 1; }
+echo "EX-35: $secret holds ${tags% }"
+
+# EX-35: CI logs in with AppRole and reveals into kubectl apply.
+ci=$(approle ci)
+echo "AppRole token: $(curl -fsS -H "X-Vault-Token: $ci" "$url/v1/auth/token/lookup-self" |
+  jq -r '.data | "policies \(.policies | join(",")), ttl \(.ttl)s"')"
+t=$SECONDS
+revealed=$(VAULT_ADDR=$url VAULT_TOKEN=$ci kapitan refs --reveal -f "$secret" --refs-path "$tmp/refs")
+echo "revealed in $((SECONDS - t))s"
+kubectl apply -f compiled/app/app-namespace.yml >/dev/null
+printf '%s\n' "$revealed" | kubectl apply -f - >/dev/null
+kubectl -n app get secret app -o json | jq -e --arg d "${value[db-password]}" --arg a "${value[api-key]}" \
+  '.data.DB_PASSWORD == ($d | @base64) and .data.API_KEY == ($a | @base64)' >/dev/null || {
+  echo "EX-35: the Secret app does not hold the values the gpg refs had" >&2
+  exit 1
+}
+echo "EX-35: the AppRole token revealed both refs, and the Secret app holds the values the gpg refs had"
+sum=$(printf '%s\n' "$revealed" | sha256sum | cut -d' ' -f1)
+
+# EX-35: a Job logs in with its ServiceAccount token and reveals the same.
+kubectl apply -f compiled/deployer/deployer-namespace.yml >/dev/null
+kubectl -n deployer create configmap checkout --from-file=app-secret.yml="$secret" \
+  --from-file=db-password="$tmp/refs/app/db-password" --from-file=api-key="$tmp/refs/app/api-key" >/dev/null
+t=$SECONDS
+kubectl apply -R -f compiled/deployer >/dev/null
+until_true 300 '.status.succeeded == 1 or .status.failed > 0' -n deployer job reveal
+log=$(kubectl -n deployer logs job/reveal)
+if ! kubectl -n deployer get job reveal -o json | jq -e '.status.succeeded == 1' >/dev/null; then
+  echo "EX-35: the Job reveal failed:" >&2
+  echo "$log" >&2
+  exit 1
+fi
+echo "Job reveal finished after $((SECONDS - t))s, image pull included:"
+kubectl -n deployer logs job/reveal | sed 's/^/  /'
+grep -qx 'gpg secret keys: 0' <<<"$log" || { echo "EX-35: the Job found a gpg key" >&2; exit 1; }
+grep -qx "revealed sha256: $sum" <<<"$log" || { echo "EX-35: the Job revealed something else than CI ($sum)" >&2; exit 1; }
+echo "EX-35: the Job revealed what CI revealed, sha256 $sum"
+
+# EX-35: refused logins and reveals.
+echo "EX-35: default policy only: $(refused 'Permission Denied[^"]*' 'a reveal with the default policy only' \
+  env VAULT_ADDR="$url" VAULT_TOKEN="$(bao token create -policy=default -field=token)" \
+  "${py[@]}" kapitan refs --reveal -f "$secret" --refs-path "$tmp/refs")"
+echo "EX-35: AppRole ci-strict without the default policy: $(refused 'Vault Authentication Error[^"]*' \
+  'a reveal without the default policy' env VAULT_ADDR="$url" VAULT_TOKEN="$(approle ci-strict)" \
+  "${py[@]}" kapitan refs --reveal -f "$secret" --refs-path "$tmp/refs")"
+other=$(kubectl -n deployer create token other)
+code=$(JWT=$other jq -n '{role: "deployer", jwt: env.JWT}' |
+  curl -sS -o "$tmp/login" -w '%{http_code}' --data @- "$url/v1/auth/kubernetes/login")
+if [[ $code != 403 ]]; then
+  echo "EX-35: the login as ServiceAccount other got $code: $(cat "$tmp/login")" >&2
+  exit 1
+fi
+echo "EX-35: ServiceAccount other on role deployer: $code $(jq -c .errors "$tmp/login")"
+
+# EX-35: a ref written without a target takes VAULT_ADDR into its file, and
+# a reveal keeps that address against another VAULT_ADDR.
+printf probe | VAULT_ADDR=$url VAULT_TOKEN=$root kapitan refs --write vaultkv:probe/addr --vault-auth token \
+  --vault-path probe --vault-key addr -f - --refs-path "$tmp/probe" >/dev/null
+echo "probe ref file: $(grep -m1 '^  addr:' "$tmp/probe/probe/addr" | sed 's/^ *//')"
+got=$(VAULT_ADDR=http://127.0.0.1:9 VAULT_TOKEN=$root kapitan refs --reveal --ref-file "$tmp/probe/probe/addr")
+[[ $got == probe ]] || { echo "EX-35: the probe revealed '$got'" >&2; exit 1; }
+echo "EX-35: revealed with VAULT_ADDR=http://127.0.0.1:9 through the address in the file"
+
+# EX-35: a new value in OpenBao changes no file in the repository.
+cp -r compiled/app "$tmp/compiled-app"
+new=$(openssl rand -hex 24)
+printf %s "$new" | bao kv patch secret/app db-password=- >/dev/null
+kapitan compile -t app --refs-path "$tmp/refs" >"$tmp/compile.log" 2>&1 || { cat "$tmp/compile.log"; exit 1; }
+diff -r "$tmp/compiled-app" compiled/app >&2 || { echo "EX-35: compiled/app changed" >&2; exit 1; }
+revealed=$(VAULT_ADDR=$url VAULT_TOKEN=$ci kapitan refs --reveal -f "$secret" --refs-path "$tmp/refs")
+grep -qxF "  DB_PASSWORD: $new" <<<"$revealed" || { echo "EX-35: the reveal does not hold the new value" >&2; exit 1; }
+echo "EX-35: after bao kv patch, compiled/app is unchanged and the reveal holds the new value"
+echo "openbao-refs: passed in $((SECONDS - started))s"
